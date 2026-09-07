@@ -1,5 +1,8 @@
-# tsx (der Runner der Harness) braucht das esbuild-Binary; ohne Freigabe blockt pnpm den
-# Install. Weitere Pakete mit Build-Skripten (ORM-Engines, Test-Container-Treiber, ...)
-# hier nachtragen.
+# Pakete, deren Build-/Postinstall-Skripte laufen duerfen. Ohne Freigabe blockt pnpm den
+# Install. esbuild braucht tsx (der Runner der Harness), die Prisma-Pakete generieren beim
+# Install ihre Engine bzw. den Client.
 allowBuilds:
   esbuild: true
+  prisma: true
+  '@prisma/client': true
+  '@prisma/engines': true

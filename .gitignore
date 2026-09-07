@@ -17,6 +17,15 @@ dist/
 .harness/runs/
 .harness/wt/
 
+# SQLite-Dateien. Die Entwicklungs-DB (prisma/dev.db) ist lokaler Zustand und enthaelt echte
+# Konten samt Passwort-Hashes; die Wegwerf-DB der Integrationstests (test.db) entsteht pro
+# Lauf neu. Beides gehoert nie ins Repo - die Migrationen unter prisma/migrations/ dagegen
+# schon, die sind der versionierte Teil.
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
 # OS / Crash-Artefakte
 .DS_Store
 *.stackdump

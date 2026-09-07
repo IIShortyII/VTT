@@ -12,3 +12,34 @@ datasource db {
 generator client {
   provider = "prisma-client-js"
 }
+
+// user-auth (#12): Identitaet (User) und Anmeldeverfahren (Account) getrennt, damit ein
+// zweiter Provider spaeter danebengelegt werden kann, statt User umzubauen. Siehe
+// openspec/changes/add-user-auth/design.md D2.
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  createdAt DateTime  @default(now())
+  accounts  Account[]
+  sessions  Session[]
+}
+
+model Account {
+  id           String @id @default(cuid())
+  userId       String
+  provider     String
+  passwordHash String
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

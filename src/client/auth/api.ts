@@ -33,14 +33,27 @@ async function parseAuthResult(response: Response): Promise<AuthResult> {
 }
 
 export async function register(input: RegisterInput): Promise<AuthResult> {
-  const body = RegisterInputSchema.parse(input)
-  const response = await postJson('/api/auth/register', body)
+  // Clientseitige Vorpruefung mit `safeParse` statt `parse`: ein zu kurzes Passwort soll die
+  // in design.md D11 entworfene Meldung (Zahl + Passphrasen-Hinweis) und das betroffene Feld
+  // bis zum Formular durchreichen, statt als geworfener ZodError im generischen
+  // Fehler-Catch des Formulars zu verschwinden (Review-Runde 2). Kein Netzwerkaufruf, wenn
+  // die Eingabe schon lokal ungueltig ist.
+  const parsed = RegisterInputSchema.safeParse(input)
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]
+    return { ok: false, message: issue.message, field: issue.path.join('.') }
+  }
+  const response = await postJson('/api/auth/register', parsed.data)
   return parseAuthResult(response)
 }
 
 export async function login(input: LoginInput): Promise<AuthResult> {
-  const body = LoginInputSchema.parse(input)
-  const response = await postJson('/api/auth/login', body)
+  const parsed = LoginInputSchema.safeParse(input)
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]
+    return { ok: false, message: issue.message, field: issue.path.join('.') }
+  }
+  const response = await postJson('/api/auth/login', parsed.data)
   return parseAuthResult(response)
 }
 
@@ -53,6 +66,13 @@ export async function fetchCurrentUser(): Promise<UserOutput | null> {
   return UserOutputSchema.parse(data)
 }
 
-export async function logout(): Promise<void> {
-  await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+/**
+ * Meldet ab und gibt zurueck, ob der Server das bestaetigt hat. Der Aufrufer MUSS diesen
+ * Rueckgabewert pruefen statt den Zustand selbst zu entscheiden - der Server ist autoritativ
+ * (constitution.md §9.1); scheitert die Anfrage, lebt die Sitzung serverseitig weiter, auch
+ * wenn der Client sie gern beendet haette.
+ */
+export async function logout(): Promise<boolean> {
+  const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+  return response.ok
 }

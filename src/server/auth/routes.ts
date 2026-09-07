@@ -91,8 +91,18 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
   app.post('/api/auth/login', async (request, reply) => {
     const parsed = LoginInputSchema.safeParse(request.body)
     if (!parsed.success) {
-      const issue = parsed.error.issues[0]
-      return sendError(reply, 400, 'Bad Request', issue.message, issue.path.join('.'))
+      const emailIssue = parsed.error.issues.find((issue) => issue.path[0] === 'email')
+      if (emailIssue) {
+        // Eine syntaktisch ungueltige E-Mail kann zu keinem Konto gehoeren - das als 400 zu
+        // melden verraet nichts ueber die Kontoexistenz.
+        return sendError(reply, 400, 'Bad Request', emailIssue.message, 'email')
+      }
+      // Das Passwort hat nicht die erwartete Form (leer oder laenger als ein gueltiges
+      // Passwort je sein kann - PASSWORD_MAX_LENGTH). Das ist garantiert keine gueltige
+      // Anmeldung; wie falsche Zugangsdaten behandeln (401, gleiche Meldung), statt einen
+      // dritten, unterscheidbaren Antworttyp zu erzeugen und ohne den Wert erst durch
+      // `scrypt` zu schicken (Review-Runde 2).
+      return sendError(reply, 401, 'Unauthorized', 'E-Mail oder Passwort ist falsch.')
     }
 
     const email = normalizeEmail(parsed.data.email)
@@ -114,11 +124,23 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
 
   app.get('/api/auth/me', async (request, reply) => {
     const sessionId = request.cookies[SESSION_COOKIE_NAME]
-    const user = sessionId ? await resolveSession(prisma, sessionId, clock) : null
-    if (!user) {
+    if (!sessionId) {
       return sendError(reply, 401, 'Unauthorized', 'Nicht angemeldet.')
     }
-    return reply.status(200).send(toUserOutput(user))
+
+    const resolved = await resolveSession(prisma, sessionId, clock)
+    if (!resolved) {
+      return sendError(reply, 401, 'Unauthorized', 'Nicht angemeldet.')
+    }
+
+    // Die Halbwertsregel hat die DB-Zeile bereits verlaengert - ohne ein frisches Cookie
+    // bliebe das im Browser wirkungslos, und ein durchgehend aktiver Nutzer wuerde trotz
+    // gueltiger Sitzung nach 30 Tagen abgemeldet (Review-Runde 2).
+    if (resolved.renewed) {
+      setSessionCookie(reply, sessionId, cookieSecure)
+    }
+
+    return reply.status(200).send(toUserOutput(resolved.user))
   })
 
   app.post('/api/auth/logout', async (request, reply) => {

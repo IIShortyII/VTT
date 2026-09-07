@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 
-import type { UserOutput } from '../../shared/auth.js'
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, type UserOutput } from '../../shared/auth.js'
 import { register } from './api.js'
 
 export interface RegisterFormProps {
@@ -55,6 +55,8 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
         name="password"
         type="password"
         autoComplete="new-password"
+        minLength={PASSWORD_MIN_LENGTH}
+        maxLength={PASSWORD_MAX_LENGTH}
         value={password}
         onChange={(event) => setPassword(event.target.value)}
         required

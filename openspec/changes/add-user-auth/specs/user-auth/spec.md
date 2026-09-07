@@ -92,8 +92,13 @@ fehlgeschlagene Anmeldung MUST keine Sitzung hinterlassen.
 
 ### Requirement: Zurückhaltung des Servers
 
-Das System MUST NOT preisgeben, ob zu einer E-Mail ein Konto existiert, und MUST NOT
-Hashwerte, Salt oder Hash-Parameter an einen Client senden (`constitution.md` §9.2).
+Das System MUST NOT **im Anmeldepfad** preisgeben, ob zu einer E-Mail ein Konto existiert, und
+MUST NOT Hashwerte, Salt oder Hash-Parameter an einen Client senden (`constitution.md` §9.2).
+
+Die Registrierung ist davon ausgenommen: sie antwortet auf eine bereits vergebene E-Mail mit
+`409` und sagt das auch. Begründung in design.md D12 — eine Verschleierung an dieser Stelle
+schützt nichts, was nicht ohnehin herausfindbar wäre, kostet aber den legitimen Nutzer die
+Auskunft, warum sein Konto nicht entsteht.
 
 #### Scenario: Unbekannte E-Mail ist von falschem Passwort nicht zu unterscheiden
 

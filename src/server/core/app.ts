@@ -16,17 +16,30 @@ export interface CreateAppOptions {
   prisma?: PrismaClient
   clock?: Clock
   cookieSecure?: boolean
+  /** Fastify-Logger an-/abschalten. Default an - bei abgeschaltetem Logger wuerde der
+   * zentrale Fehler-Handler unerwartete 5xx spurlos verschlucken (Review-Runde 2). Tests
+   * duerfen bewusst `false` setzen. */
+  logger?: boolean
 }
 
 export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   const config = loadConfig()
   const prisma = options.prisma ?? defaultPrisma
+  const usingDefaultPrisma = options.prisma === undefined
   const clock = options.clock ?? systemClock
   const cookieSecure = options.cookieSecure ?? config.cookieSecure
 
-  const app = Fastify({ logger: false })
+  const app = Fastify({ logger: options.logger ?? true })
 
   app.register(cookie)
+
+  // Nur den geteilten Default-Client trennen, nie einen von aussen injizierten - der gehoert
+  // dem Aufrufer (etwa einem Test mit einer zweiten Instanz auf derselben DB-Datei).
+  app.addHook('onClose', async () => {
+    if (usingDefaultPrisma) {
+      await prisma.$disconnect()
+    }
+  })
 
   // Zentraler Fehler-Handler: kein stilles catch{} irgendwo in den Routen - ein
   // unerwarteter Fehler wird geloggt und sprechend beantwortet statt abzustuerzen

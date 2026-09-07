@@ -34,8 +34,16 @@ export function App() {
   }
 
   const handleLogout = async () => {
-    await logout()
-    setState({ status: 'anonym' })
+    // Der Server entscheidet, ob abgemeldet wurde (constitution.md §9.1) - scheitert die
+    // Anfrage, lebt die Sitzung serverseitig weiter; der Client fragt dann den tatsaechlichen
+    // Stand erneut ab, statt sich selbst als abgemeldet zu erklaeren (Review-Runde 2).
+    const success = await logout()
+    if (success) {
+      setState({ status: 'anonym' })
+      return
+    }
+    const user = await fetchCurrentUser()
+    setState(user ? { status: 'angemeldet', user } : { status: 'anonym' })
   }
 
   if (state.status === 'unbekannt') {

@@ -39,9 +39,19 @@ export const RegisterInputSchema = z.object({
 })
 export type RegisterInput = z.infer<typeof RegisterInputSchema>
 
+/**
+ * An der Anmeldegrenze wird nur die Form geprueft (nicht leer, nicht laenger als ein
+ * gueltiges Passwort je sein kann) - keine Mindestlaenge, da sonst ein Bestandskonto mit
+ * einem vor dieser Regel vergebenen Passwort nicht mehr einloggen koennte. Die Obergrenze
+ * ist kein Stilmittel, sondern verhindert, dass eine beliebig lange Eingabe ungebremst in
+ * `scrypt` laeuft (design.md D3 Risiko, tasks.md Review-Runde 2).
+ */
 export const LoginInputSchema = z.object({
   email: EmailSchema,
-  password: z.string().min(1, 'Passwort wird benötigt.'),
+  password: z
+    .string()
+    .min(1, 'Passwort wird benötigt.')
+    .max(PASSWORD_MAX_LENGTH, `Passwort darf höchstens ${PASSWORD_MAX_LENGTH} Zeichen lang sein.`),
 })
 export type LoginInput = z.infer<typeof LoginInputSchema>
 

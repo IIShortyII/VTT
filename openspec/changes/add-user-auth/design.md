@@ -251,6 +251,27 @@ drei bis vier Wörter erreichen die 15 mühelos, eine Zeichensuppe nicht.
 Quellen: [NIST SP 800-63B-4, §3.1.1](https://pages.nist.gov/800-63-4/sp800-63b.html) ·
 [OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)
 
+### D12 — Die Registrierung verrät die Kontoexistenz, der Anmeldepfad nicht
+
+Ein Review-Befund hat eine Spannung in der eigenen Spec sichtbar gemacht: die Requirement
+„Zurückhaltung des Servers" formulierte ein pauschales Verbot, die Kontoexistenz preiszugeben
+— während die Requirement „Kontoregistrierung" für eine vergebene E-Mail ausdrücklich `409`
+verlangt. Der Code folgte korrekt dem konkreteren Szenario; widersprüchlich war die Spec.
+
+Aufgelöst zugunsten des Verhaltens: Das Verbot gilt für den **Anmeldepfad**, wo unbekannte
+E-Mail und falsches Passwort ununterscheidbar bleiben. Die Registrierung antwortet weiter mit
+`409`.
+
+Begründung: Eine Verschleierung an dieser Stelle schützt kaum etwas. Wer wissen will, ob eine
+Adresse registriert ist, trägt sie ins Registrierungsformular ein — bleibt die Anmeldung
+danach aus, ist die Antwort dieselbe. Sie sauber zu verbergen hieße, wie große Anbieter mit
+einer Erfolgsmeldung zu antworten und die bestehende Adresse per Mail zu benachrichtigen; den
+Mailweg hat Epic #5 ausgeschlossen. Ohne ihn stünde ein Nutzer, der seine eigene Adresse
+zweimal eingibt, vor einer App, die „angelegt" sagt und ihn nicht hereinlässt.
+
+Für #13 bleibt das ein Thema: dort geht es um Fehlversuchszähler und Sperre, und die
+Enumeration über den Registrierungspfad ist die natürliche Nachbarfrage.
+
 ## Risks / Trade-offs
 
 - **`scrypt` mit `N=16384` kostet ~100 ms pro Anmeldung** → Bei einer Handvoll gleichzeitiger

@@ -1,0 +1,9 @@
+{
+  // Typecheck des implementers (constitution.md §2.2, Issue #18): erbt alle Einstellungen von
+  // tsconfig.json und schraenkt allein "include" auf die Quellpfade ein. Das volle
+  // tsconfig.json deckt tests/ mit ab - tsc gibt dort bei einem Fehler Pfad, Symbolnamen und
+  // Quellzeile aus und wuerde dem implementer damit die Tests zeigen. Den vollen Lauf faehrt
+  // das Gate (`pnpm harness gate`), nicht die Rolle.
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

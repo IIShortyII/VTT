@@ -12,7 +12,9 @@ und NPC-Tokens.
 - Install: `pnpm install` (CI: `pnpm install --frozen-lockfile`)
 - Dev: `pnpm dev` (Client auf Vite + Server parallel) · einzeln: `pnpm dev:client`, `pnpm dev:server`
 - Build: `pnpm build`
-- Typecheck: `pnpm typecheck` (tsc --noEmit)
+- Typecheck: `pnpm typecheck` (tsc --noEmit, gesamtes Projekt inkl. `tests/`)
+- Typecheck nur der Quellpfade: `pnpm typecheck:src` (`tsconfig.src.json`) — der Lauf, den der
+  implementer fährt; der volle Lauf würde ihm Testinhalt zeigen (siehe Kritische Grenzen)
 - Lint: `pnpm lint` · Autofix: `pnpm lint:fix`
 - Format: `pnpm format` (Prettier)
 - Unit-Tests: `pnpm test:unit`
@@ -96,6 +98,11 @@ Bibliothek im Projekt sie mitbringt.
   nennen, nicht selbst installieren.
 - implementer: Testdateien weder lesen noch ändern. Auch die Testsuite selbst nicht
   ausführen — ihre Ausgabe enthält Testquellcode. Das Gate läuft über den Orchestrator.
+- implementer: ebenso wenig den vollen Typecheck (`pnpm typecheck`, `tsc` ohne
+  `tsconfig.src.json`). `tsconfig.json` schließt `tests/**` ein; `tsc` nennt bei einem Fehler
+  Pfad, Symbolnamen und Quellzeile der Testdatei und umgeht die Pfadsperre damit genauso
+  vollständig wie ein Testlauf. Für ihn gilt `pnpm typecheck:src`; den vollen Lauf fährt das
+  Gate.
 
 ## Commits & PRs
 - Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`).

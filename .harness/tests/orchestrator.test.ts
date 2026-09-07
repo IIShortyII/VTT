@@ -1,0 +1,334 @@
+import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
+import {
+  readStatus, writeStatus, next, reviewRework, confirmTestRework, confirmAppReview, checkPreflight,
+  scopeOfFinding, parseJestFailures, recordRoundSummary, recordReview, runDir, worktreeDir,
+  cleanup as cleanupRun,
+  MAX_ROUNDS,
+} from '../orchestrator.js'
+import type { Status } from '../orchestrator.js'
+
+let counter = 0
+function freshIssue(): string {
+  counter += 1
+  return `__orch_test_${counter}__`
+}
+function makeStatus(issue: string, overrides: Partial<Status> = {}): Status {
+  const status: Status = { issue, branch: `feat/${issue}`, round: 0, phase: 'implement', rounds: [], ...overrides }
+  writeStatus(status)
+  return status
+}
+function cleanup(issue: string) {
+  rmSync(runDir(issue), { recursive: true, force: true })
+  rmSync(worktreeDir(issue), { recursive: true, force: true })
+}
+
+describe('scopeOfFinding', () => {
+  it('ordnet src/ und prisma/ der impl-Rolle zu', () => {
+    expect(scopeOfFinding({ ort: 'src/foo.ts' })).toBe('impl')
+    expect(scopeOfFinding({ ort: 'prisma/schema.prisma' })).toBe('impl')
+  })
+  it('ordnet tests/ der test-Rolle zu', () => {
+    expect(scopeOfFinding({ ort: 'tests/foo.unit.test.ts' })).toBe('test')
+    expect(scopeOfFinding({ ort: 'tests/__mocks__/styleMock.cjs' })).toBe('test')
+  })
+  it('ordnet alles andere konservativ der human-Rolle zu', () => {
+    expect(scopeOfFinding({ ort: 'openspec/changes/x/proposal.md' })).toBe('human')
+    expect(scopeOfFinding({ ort: '.github/workflows/ci.yml' })).toBe('human')
+  })
+})
+
+describe('Spec-Szenario: Test-scoped Block-Findings gehen an den test-author', () => {
+  const issue = freshIssue()
+  afterEach(() => cleanup(issue))
+
+  it('routet ausschließlich test-scoped Block-Findings an invoke-test-author-rework und erhöht die Runde', () => {
+    const s = makeStatus(issue, {
+      round: 0,
+      lastReview: { recommendation: 'nacharbeit', findings: [{ schwere: 'block', ort: 'tests/foo.test.ts', problem: 'x' }] },
+    })
+    const action = reviewRework(s as Parameters<typeof reviewRework>[0])
+    expect(JSON.parse(action).action).toBe('invoke-test-author-rework')
+    const after = readStatus(issue)
+    expect(after.round).toBe(1)
+    expect(after.phase).toBe('rework-tests')
+    expect(after.pendingTestFindings).toHaveLength(1)
+  })
+
+  it('parkt bei gemischten Block-Findings nur den test-scoped Anteil und routet an den implementer', () => {
+    const s = makeStatus(issue, {
+      round: 0,
+      lastReview: {
+        recommendation: 'nacharbeit',
+        findings: [
+          { schwere: 'block', ort: 'src/foo.ts', problem: 'impl-problem' },
+          { schwere: 'block', ort: 'tests/foo.test.ts', problem: 'test-problem' },
+        ],
+      },
+    })
+    const action = reviewRework(s as Parameters<typeof reviewRework>[0])
+    expect(JSON.parse(action).action).toBe('invoke-implementer')
+    const after = readStatus(issue)
+    expect(after.phase).toBe('implement')
+    expect(after.pendingTestFindings).toHaveLength(1)
+    expect((after.pendingTestFindings![0] as Record<string, unknown>).ort).toBe('tests/foo.test.ts')
+  })
+
+  it('eskaliert sofort ohne Rundenverbrauch bei einem human-scoped Block-Finding', () => {
+    const s = makeStatus(issue, {
+      round: 1,
+      lastReview: { recommendation: 'nacharbeit', findings: [{ schwere: 'block', ort: 'openspec/changes/x/proposal.md', problem: 'x' }] },
+    })
+    const action = reviewRework(s as Parameters<typeof reviewRework>[0])
+    expect(JSON.parse(action).action).toBe('escalate')
+    const after = readStatus(issue)
+    expect(after.phase).toBe('escalated')
+    expect(after.round).toBe(1) // unveraendert - keine Rolle haette es beheben koennen
+  })
+})
+
+describe('Spec-Szenario: Revalidierung nach Test-Nacharbeit', () => {
+  const issue = freshIssue()
+  afterEach(() => cleanup(issue))
+
+  it('confirmTestRework setzt IMMER auf Phase gate zurueck statt direkt auf review (§3.2: Typecheck/Lint muessen vor dem Review laufen)', () => {
+    makeStatus(issue, {
+      round: 1, phase: 'rework-tests',
+      pendingTestFindings: [{ schwere: 'block', ort: 'tests/foo.test.ts', problem: 'x' }],
+      lastReview: { recommendation: 'nacharbeit', findings: [] },
+      lastGate: { green: true },
+    })
+    confirmTestRework(issue)
+    const after = readStatus(issue)
+    expect(after.phase).toBe('gate')
+    expect(after.lastGate).toBeUndefined()
+    expect(after.lastReview).toBeUndefined()
+    expect(after.pendingTestFindings).toBeUndefined()
+  })
+
+  it('geht bei gruenem Gate ohne offene Test-Findings direkt zum Reviewer, ohne Implementer-Runde', () => {
+    const before = makeStatus(issue, { round: 1, phase: 'gate', lastGate: { green: true } })
+    const action = next(issue)
+    expect(JSON.parse(action).action).toBe('invoke-reviewer')
+    expect(readStatus(issue).round).toBe(before.round) // keine Implementer-Runde => kein Rundenverbrauch
+  })
+
+  it('geht bei weiterhin rotem Gate reguraer zur Implementer-Runde mit Gate-Feedback', () => {
+    makeStatus(issue, { round: 1, phase: 'gate', lastGate: { green: false, failures: [{ name: 'x', message: 'y' }] } })
+    const action = next(issue)
+    expect(JSON.parse(action).action).toBe('invoke-implementer')
+    expect(readStatus(issue).round).toBe(2)
+  })
+})
+
+describe('Spec-Szenario: Eskalationsgarantie bleibt rollenunabhängig', () => {
+  const issue = freshIssue()
+  afterEach(() => cleanup(issue))
+
+  it('eskaliert nach der dritten Nacharbeit-Runde ueber drei verschiedene reale Einstiegspunkte (rotes Gate, test-scoped Review, App-Test-Ablehnung)', () => {
+    // Runde 1: rotes Gate -> next() routet an den implementer (reworkImplementer intern).
+    makeStatus(issue, { round: 0, phase: 'gate', lastGate: { green: false, failures: [{ name: 'x', message: 'y' }] } })
+    expect(JSON.parse(next(issue)).action).toBe('invoke-implementer')
+    expect(readStatus(issue).round).toBe(1)
+
+    // Runde 2: Reviewer meldet ausschliesslich test-scoped Block-Findings -> reviewRework routet
+    // an den test-author (der andere reale Einstiegspunkt in denselben Zaehler).
+    writeStatus({
+      ...readStatus(issue), phase: 'review',
+      lastReview: { recommendation: 'nacharbeit', findings: [{ schwere: 'block', ort: 'tests/x.test.ts', problem: 'x' }] },
+    })
+    expect(JSON.parse(next(issue)).action).toBe('invoke-test-author-rework')
+    expect(readStatus(issue).round).toBe(2)
+
+    // Runde 3: menschliche App-Test-Ablehnung -> dritter Einstiegspunkt (confirmAppReview).
+    writeStatus({ ...readStatus(issue), phase: 'app-review' })
+    confirmAppReview(issue, 'nein', 'gefaellt mir noch nicht')
+    expect(JSON.parse(next(issue)).action).toBe('invoke-implementer') // idempotent: Runde bereits von confirmAppReview gebucht
+    expect(readStatus(issue).round).toBe(3)
+    expect(readStatus(issue).round).toBe(MAX_ROUNDS)
+
+    // 4. Nacharbeit waere noetig (z.B. erneut rotes Gate) -> Eskalation statt einer vierten Runde.
+    writeStatus({ ...readStatus(issue), phase: 'gate', lastGate: { green: false, failures: [] } })
+    expect(JSON.parse(next(issue)).action).toBe('escalate')
+    expect(readStatus(issue).phase).toBe('escalated')
+    expect(readStatus(issue).round).toBe(MAX_ROUNDS) // kein weiterer Rundenverbrauch bei der Eskalation selbst
+  })
+})
+
+describe('Spec-Szenario: Mehrzeiliger Diff wird durchgereicht', () => {
+  const issue = freshIssue()
+  afterEach(() => cleanup(issue))
+
+  it('reicht den vollstaendigen Expected/Received-Diff durch und schneidet den Codeframe/Stacktrace ab', () => {
+    mkdirSync(runDir(issue), { recursive: true })
+    const jest = {
+      testResults: [{
+        assertionResults: [{
+          status: 'failed',
+          title: 'GIVEN etwas WHEN etwas passiert THEN etwas anderes',
+          failureMessages: [
+            [
+              'expect(received).toEqual(expected)',
+              '',
+              'Expected: {"a": 1, "b": 2}',
+              'Received: {"a": 1, "b": 3}',
+              '',
+              '  10 |',
+              '> 11 |   expect(x).toEqual(y)',
+              '     |             ^',
+              '',
+              '  at Object.<anonymous> (tests/foo.unit.test.ts:11:20)',
+            ].join('\n'),
+          ],
+        }],
+      }],
+    }
+    writeFileSync(join(runDir(issue), 'jest.json'), JSON.stringify(jest))
+    const failures = parseJestFailures(issue)
+    expect(failures).toHaveLength(1)
+    expect(failures[0].message).toContain('Expected: {"a": 1, "b": 2}')
+    expect(failures[0].message).toContain('Received: {"a": 1, "b": 3}')
+    expect(failures[0].message).not.toContain('tests/foo.unit.test.ts')
+    expect(failures[0].message).not.toContain('expect(x).toEqual(y)')
+  })
+})
+
+describe('Spec-Szenario: Leak degradiert statt zu blockieren', () => {
+  const issue = freshIssue()
+  afterEach(() => cleanup(issue))
+
+  it('degradiert auf die Erstzeilen-Form, wenn die Failure-Message woertlichen Testinhalt enthaelt, statt den Run zu blockieren', () => {
+    const testDir = join(worktreeDir(issue), 'tests')
+    mkdirSync(testDir, { recursive: true })
+    const testLine = 'expect(berechneGesamtsummeFuerMehrereEintraege(sammlung)).toBe(42)'
+    writeFileSync(join(testDir, 'foo.unit.test.ts'), `it('x', () => {\n  ${testLine}\n})\n`)
+    mkdirSync(runDir(issue), { recursive: true })
+    const leakedMessage = `Custom matcher error\n\n${testLine}\n\nirgendein DOM-Auszug ohne Codeframe-Marker`
+    const jest = { testResults: [{ assertionResults: [{ status: 'failed', title: 'Szenario X', failureMessages: [leakedMessage] }] }] }
+    writeFileSync(join(runDir(issue), 'jest.json'), JSON.stringify(jest))
+    const failures = parseJestFailures(issue)
+    expect(failures).toHaveLength(1)
+    expect(failures[0].message).not.toContain(testLine)
+    expect(failures[0].message).toBe('Custom matcher error')
+  })
+})
+
+describe('preflight-archive (mechanischer Check statt Review-Finding)', () => {
+  const issue = freshIssue()
+  const change = 'x'
+  afterEach(() => cleanup(issue))
+
+  function writeTasks(content: string) {
+    const dir = join(worktreeDir(issue), 'openspec', 'changes', change)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'tasks.md'), content)
+  }
+
+  it('meldet offene Tasks, auch eingerueckt oder mit "*"-Aufzaehlung', () => {
+    makeStatus(issue, { change })
+    writeTasks('# Tasks\n- [ ] 1.1 x\n  - [ ] 1.1.1 y\n* [ ] 1.2 z\n')
+    expect(checkPreflight(issue).ok).toBe(false)
+  })
+  it('ist ok, wenn alle Tasks abgehakt sind', () => {
+    makeStatus(issue, { change })
+    writeTasks('# Tasks\n- [x] 1.1 x\n  - [x] 1.1.1 y\n')
+    expect(checkPreflight(issue).ok).toBe(true)
+  })
+  it('meldet ein fehlendes Change-Verzeichnis', () => {
+    makeStatus(issue, { change: 'existiert-nicht' })
+    expect(checkPreflight(issue)).toEqual({ ok: false, reason: 'change-dir-missing' })
+  })
+})
+
+describe("'done'-Phase ist terminal (kein Ruecksturz in fix-tasks nach dem Archivieren)", () => {
+  const issue = freshIssue()
+  const change = 'x'
+  afterEach(() => cleanup(issue))
+
+  it('bleibt nach dem Uebergang in "archived" bei archive-and-open-pr, auch wenn das Change-Verzeichnis inzwischen fehlt', () => {
+    const dir = join(worktreeDir(issue), 'openspec', 'changes', change)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'tasks.md'), '- [x] 1.1 erledigt\n')
+    makeStatus(issue, { change, phase: 'done' })
+
+    const first = next(issue)
+    expect(JSON.parse(first).action).toBe('archive-and-open-pr')
+    expect(readStatus(issue).phase).toBe('archived')
+
+    // Simuliert das tatsaechliche Verschieben des Change-Verzeichnisses beim Archivieren.
+    rmSync(dir, { recursive: true, force: true })
+
+    const second = next(issue)
+    expect(JSON.parse(second).action).toBe('archive-and-open-pr') // NICHT fix-tasks
+  })
+})
+
+describe('Rollen-Validierung (G1/G2)', () => {
+  const issue = freshIssue()
+  let exitSpy: jest.SpyInstance
+  let errorSpy: jest.SpyInstance
+
+  beforeEach(() => {
+    makeStatus(issue)
+    exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`)
+    }) as never)
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+  })
+  afterEach(() => { exitSpy.mockRestore(); errorSpy.mockRestore(); cleanup(issue) })
+
+  it('lehnt record-round-summary mit unbekannter Rolle ab, statt sie als implementer-Historie zu verwenden', () => {
+    expect(() => recordRoundSummary(issue, 'testauthor' as never, '{}')).toThrow(/process\.exit/)
+  })
+
+  it('lehnt eine Reviewer-Antwort ab, die vom Schema abweicht (freigabe_empfehlung fehlt)', () => {
+    expect(() => recordReview(issue, JSON.stringify({ findings: [] }))).toThrow(/process\.exit/)
+  })
+
+  it('lehnt "nacharbeit" ohne jedes Block-Finding ab, statt eine Runde ohne Feedback zu verbrauchen', () => {
+    const json = JSON.stringify({ freigabe_empfehlung: 'nacharbeit', findings: [{ schwere: 'hinweis', ort: 'src/x.ts', problem: 'kosmetisch' }] })
+    expect(() => recordReview(issue, json)).toThrow(/process\.exit/)
+  })
+
+  it('persistiert eine schemawidrige Reviewer-Antwort statt sie zu verwerfen (teure Opus-Antwort)', () => {
+    const json = JSON.stringify({ freigabe_empfehlung: 'vielleicht' })
+    expect(() => recordReview(issue, json)).toThrow(/process\.exit/)
+    const persisted = readFileSync(join(runDir(issue), 'rejected-review.json'), 'utf8')
+    expect(persisted).toBe(json)
+  })
+})
+
+describe('Cleanup nach dem Merge', () => {
+  const issue = freshIssue()
+  let exitSpy: jest.SpyInstance
+  let errorSpy: jest.SpyInstance
+  let logSpy: jest.SpyInstance
+
+  beforeEach(() => {
+    exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`)
+    }) as never)
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+    logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined)
+  })
+  afterEach(() => { exitSpy.mockRestore(); errorSpy.mockRestore(); logSpy.mockRestore(); cleanup(issue) })
+
+  it('raeumt einen laufenden Run nicht auf (wuerde sich selbst den Boden entziehen)', () => {
+    makeStatus(issue, { phase: 'implement' })
+    expect(() => cleanupRun(issue)).toThrow(/process\.exit/)
+  })
+
+  it('raeumt einen eskalierten Run nicht auf (muss fuer den Menschen inspizierbar bleiben)', () => {
+    makeStatus(issue, { phase: 'escalated' })
+    expect(() => cleanupRun(issue)).toThrow(/process\.exit/)
+  })
+
+  it('entfernt nach dem Archivieren den Rollenmarker, behaelt aber den Audit-Trail', () => {
+    makeStatus(issue, { phase: 'archived' })
+    const marker = join(runDir(issue), 'active-role')
+    writeFileSync(marker, 'implementer')
+    cleanupRun(issue)
+    expect(existsSync(marker)).toBe(false)
+    expect(existsSync(join(runDir(issue), 'status.json'))).toBe(true)
+  })
+})

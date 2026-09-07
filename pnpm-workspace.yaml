@@ -1,0 +1,5 @@
+# tsx (der Runner der Harness) braucht das esbuild-Binary; ohne Freigabe blockt pnpm den
+# Install. Weitere Pakete mit Build-Skripten (ORM-Engines, Test-Container-Treiber, ...)
+# hier nachtragen.
+allowBuilds:
+  esbuild: true

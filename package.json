@@ -1,0 +1,31 @@
+{
+  "name": "agentic-harness-blueprint",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.0.5",
+  "scripts": {
+    "dev": "echo 'Kein dev-Skript konfiguriert. Wird fuer den menschlichen App-Test (constitution.md 3.4) gebraucht - beim Aufsetzen des Projekts eintragen.' && exit 1",
+    "build": "echo 'Kein build-Skript konfiguriert - beim Aufsetzen des Projekts eintragen.' && exit 1",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "test": "jest",
+    "test:unit": "jest --testPathPattern unit.test",
+    "test:integration": "jest --testPathPattern integration.test",
+    "test:harness": "jest -c .harness/jest.config.cjs",
+    "harness": "tsx .harness/orchestrator.ts"
+  },
+  "devDependencies": {
+    "@types/jest": "^29",
+    "@types/node": "^22",
+    "@typescript-eslint/eslint-plugin": "^8",
+    "@typescript-eslint/parser": "^8",
+    "eslint": "^9",
+    "jest": "^29",
+    "prettier": "^3",
+    "ts-jest": "^29",
+    "tsx": "^4",
+    "typescript": "^5"
+  }
+}

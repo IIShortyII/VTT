@@ -1,0 +1,62 @@
+name: pr-gate
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  test:
+    runs-on: ubuntu-latest        # Docker vorhanden -> ephemere Test-DB kann hochfahren
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test            # Unit + Integration
+
+  # Die Harness setzt die Rollentrennung durch (guard.ts) und besitzt die harten Invarianten
+  # (orchestrator.ts). Ohne diesen Job waere ausgerechnet der Sicherungsmechanismus der
+  # einzige Teil des Repos ohne CI-Netz: `pnpm test` deckt ihn nicht ab, weil die
+  # Harness-Tests bewusst ausserhalb der App-Testsuite liegen (roots: tests/).
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:harness
+
+  traceability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { fetch-depth: 0 }
+      - name: PR schließt ein Issue?
+        env:
+          BODY: ${{ github.event.pull_request.body }}   # untrusted -> via env, nie inline
+        run: |
+          echo "$BODY" | grep -qiE 'closes #[0-9]+' || { echo "PR muss ein Issue schließen (Closes #<n>)."; exit 1; }
+      - name: Zugehöriger OpenSpec-Change?
+        run: git diff --name-only origin/main...HEAD | grep -q '^openspec/changes/' || { echo "Kein OpenSpec-Change im PR."; exit 1; }

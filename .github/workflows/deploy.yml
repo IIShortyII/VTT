@@ -1,0 +1,45 @@
+# Gerüst gemäß constitution.md §6: Deploys und Migrationen laufen ausschließlich hier,
+# nie von einer lokalen oder Agenten-Maschine. Die Ausführungsschritte sind bewusst leer —
+# eingetragen werden sie beim Aufsetzen des Projekts. Was NICHT verhandelbar ist:
+#   - dev deployt automatisch bei Merge auf main (§6.3)
+#   - stage/prod hängen an GitHub Environments mit Required Reviewers (§6.3)
+#   - Authentifizierung per OIDC / Workload Identity Federation, keine langlebigen
+#     Credentials im Repo (§6.2) -> daher `permissions: id-token: write`
+name: deploy
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write     # OIDC
+  contents: read
+
+jobs:
+  dev:
+    runs-on: ubuntu-latest
+    environment: dev            # keine Required Reviewers -> automatisch
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # 1. Cloud-Login per OIDC (z. B. azure/login, google-github-actions/auth,
+      #    aws-actions/configure-aws-credentials) — Client-/Tenant-IDs als vars, keine Secrets.
+      # 2. Migration gegen die dev-Datenbank; DATABASE_URL aus vars.DEV_DATABASE_URL,
+      #    passwortlos über die per OIDC erlangte Identität.
+      - run: pnpm build
+
+  stage:
+    needs: dev
+    runs-on: ubuntu-latest
+    environment: stage          # Required Reviewers (Settings) -> pausiert bis menschlicher Freigabe
+    steps:
+      - run: echo "analog dev — stage"
+
+  prod:
+    needs: stage
+    runs-on: ubuntu-latest
+    environment: prod           # Required Reviewers -> menschliche Freigabe
+    steps:
+      - run: echo "analog dev — prod"

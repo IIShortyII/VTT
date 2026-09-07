@@ -1,0 +1,19 @@
+# Node
+node_modules/
+dist/
+
+# Env
+.env
+.env.*
+*.local
+
+# Claude Code — nur die Secrets, nicht die Harness-Definitionen
+.claude/settings.local.json
+
+# Harness-Laufzeitzustand (Run-State und Feature-Worktrees)
+.harness/runs/
+.harness/wt/
+
+# OS / Crash-Artefakte
+.DS_Store
+*.stackdump

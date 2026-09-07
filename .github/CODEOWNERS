@@ -1,0 +1,20 @@
+# Wer diese Pfade ändert, braucht Review durch den/die Owner.
+
+# Testdateien — schützt die Test-Sperre (Rollentrennung)
+/tests/                 @dennishof
+**/*.test.ts            @dennishof
+
+# Harness-Kern & Verfassung — freigabepflichtig
+/constitution.md        @dennishof
+/AGENTS.md              @dennishof
+/.claude/               @dennishof
+/.harness/              @dennishof
+
+# CI & Ownership — Änderung an den Gates ist freigabepflichtig
+/.github/workflows/     @dennishof
+/.github/CODEOWNERS     @dennishof
+
+# Dependencies — menschliche Freigabe
+/package.json           @dennishof
+/pnpm-lock.yaml         @dennishof
+/pnpm-workspace.yaml    @dennishof

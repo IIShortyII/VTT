@@ -1,0 +1,31 @@
+{
+  "env": {
+    "ANTHROPIC_MODEL": "claude-sonnet-5[1m]",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4.5",
+    "DISABLE_TELEMETRY": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Read", "Glob", "Grep", "Edit", "Write",
+      "Bash(pnpm typecheck)", "Bash(pnpm lint:*)", "Bash(pnpm test:*)",
+      "Bash(pnpm test)", "Bash(pnpm build)",
+      "Bash(git status)", "Bash(git diff:*)", "Bash(git add:*)",
+      "Bash(git commit:*)", "Bash(git worktree:*)", "Bash(git switch:*)",
+      "Task(test-author)", "Task(implementer)", "Task(reviewer)"
+    ],
+    "deny": [
+      "Read(./.env)", "Read(./.env.*)", "Read(**/secrets/**)",
+      "Bash(pnpm add:*)", "Bash(pnpm install:*)", "Bash(npm install:*)", "Bash(yarn add:*)",
+      "Bash(git push * main)", "Bash(rm -rf:*)"
+    ],
+    "disableBypassPermissionsMode": "disable"
+  },
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Read|Edit|Write|Bash|Grep|Glob", "hooks": [ { "type": "command", "command": "tsx .harness/guard.ts" } ] }
+    ]
+  },
+  "attribution": {
+    "pr": "---\n_Erstellt mit der agentischen Harness. Alle Änderungen wurden vor dem Merge menschlich geprüft und verantwortet._"
+  }
+}

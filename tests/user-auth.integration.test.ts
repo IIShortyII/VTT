@@ -69,11 +69,37 @@ function userOf(res: Res): { id: string; email: string } {
   }
 }
 
+/** Das von der Spec geforderte Antwortfeld `field` einer 400er-Antwort. */
+function fieldOf(res: Res): unknown {
+  return must(asRecord(JSON.parse(res.body)), 'ein JSON-Objekt als Antwortkoerper').field
+}
+
 function setCookieHeaders(res: Res): string[] {
   const raw = res.headers['set-cookie']
   if (typeof raw === 'string') return [raw]
   if (Array.isArray(raw)) return raw.map(String)
   return []
+}
+
+/** Der Set-Cookie-Header, der das Sitzungscookie setzt oder entwertet — falls vorhanden. */
+function sessionCookieHeader(res: Res): string | undefined {
+  return setCookieHeaders(res).find((value) => value.startsWith('sid='))
+}
+
+function sessionCookieValue(header: string): string {
+  return decodeURIComponent(/^sid=([^;]*)/.exec(header)?.[1] ?? '')
+}
+
+/**
+ * Laufzeit, die ein Set-Cookie-Header dem Browser mitgibt — aus `Max-Age` oder ersatzweise
+ * `Expires`. Die Spec fordert die volle Laufzeit, nicht eine bestimmte Schreibweise.
+ */
+function cookieLifetimeMs(header: string, now: Date): number | null {
+  const maxAge = /;\s*Max-Age=(-?\d+)/i.exec(header)
+  if (maxAge) return Number(maxAge[1]) * 1000
+  const expires = /;\s*Expires=([^;]+)/i.exec(header)
+  if (expires) return new Date(expires[1]).getTime() - now.getTime()
+  return null
 }
 
 function sidOf(res: Res): string {
@@ -84,7 +110,9 @@ function sidOf(res: Res): string {
 }
 
 async function makeApp(clock: () => Date = () => new Date()): Promise<App> {
-  const app = await createApp({ prisma, clock })
+  // `logger: false`: jede `inject()`-Antwort schriebe sonst pino-Zeilen in genau die
+  // Gate-Ausgabe, aus der das Fehler-Feedback geparst wird.
+  const app = await createApp({ prisma, clock, logger: false })
   openApps.push(app)
   return app
 }
@@ -182,10 +210,12 @@ test('Registrierung mit ungültigen Eingaben', async () => {
   const badEmail = await register(app, 'keine-gueltige-adresse', PASSWORD)
   const shortPassword = await register(app, EMAIL, 'a'.repeat(14))
 
+  // Das verletzte Feld muss maschinenlesbar in einem eigenen Antwortfeld `field` stehen —
+  // eine Fehlermeldung, die das Wort zufaellig enthaelt, genuegt der Spec nicht.
   expect(badEmail.statusCode).toBe(400)
-  expect(badEmail.body).toMatch(/e-?mail/i)
+  expect(fieldOf(badEmail)).toBe('email')
   expect(shortPassword.statusCode).toBe(400)
-  expect(shortPassword.body).toMatch(/passwor[dt]/i)
+  expect(fieldOf(shortPassword)).toBe('password')
   expect(await prisma.user.count()).toBe(0)
 })
 
@@ -300,10 +330,7 @@ test('Sitzungscookie ist für Skripte unerreichbar', async () => {
 
   const res = await login(app, EMAIL, PASSWORD)
 
-  const header = must(
-    setCookieHeaders(res).find((value) => value.startsWith('sid=')),
-    'ein Set-Cookie-Header für "sid"',
-  )
+  const header = must(sessionCookieHeader(res), 'ein Set-Cookie-Header für "sid"')
   expect(header).toMatch(/;\s*HttpOnly/i)
   expect(header).toMatch(/;\s*SameSite=Lax/i)
   expect(header).toMatch(/;\s*Path=\/(;|$)/i)
@@ -370,6 +397,11 @@ test('Aktivität in der zweiten Hälfte der Laufzeit verlängert die Sitzung', a
   expect(res.statusCode).toBe(200)
   const session = must(await prisma.session.findUnique({ where: { id: sid } }), 'die Sitzungszeile')
   expect(session.expiresAt.getTime()).toBe(now.getTime() + SESSION_TTL)
+  // Die Verlaengerung muss den Browser erreichen: sonst laeuft das Cookie ab, waehrend die
+  // Sitzung noch gilt, und der Nutzer wird trotz durchgehender Aktivitaet abgemeldet.
+  const cookie = must(sessionCookieHeader(res), 'ein erneuertes Sitzungscookie in der Antwort')
+  expect(sessionCookieValue(cookie)).toBe(sid)
+  expect(cookieLifetimeMs(cookie, now)).toBe(SESSION_TTL)
 })
 
 test('Aktivität in der ersten Hälfte der Laufzeit ändert nichts', async () => {
@@ -385,6 +417,9 @@ test('Aktivität in der ersten Hälfte der Laufzeit ändert nichts', async () =>
   expect(res.statusCode).toBe(200)
   const session = must(await prisma.session.findUnique({ where: { id: sid } }), 'die Sitzungszeile')
   expect(session.expiresAt.getTime()).toBe(vorher.getTime())
+  // Unveraendert heisst auch: kein neues Sitzungscookie, also kein Schreibzugriff auf den
+  // Browser ohne Anlass.
+  expect(sessionCookieHeader(res)).toBeUndefined()
 })
 
 // --- Abmeldung ------------------------------------------------------------------------------
@@ -399,5 +434,11 @@ test('Abmeldung beendet die Sitzung', async () => {
 
   expect(logout.statusCode).toBeLessThan(400)
   expect(await prisma.session.findUnique({ where: { id: sid } })).toBeNull()
+  // Das folgende 401 kaeme auch von der geloeschten Zeile allein — die Spec verlangt
+  // zusaetzlich, dass die Abmeldeantwort das Cookie im Browser entwertet.
+  const cookie = must(sessionCookieHeader(logout), 'ein Set-Cookie-Header der Abmeldeantwort')
+  const laufzeit = cookieLifetimeMs(cookie, new Date())
+  const entwertet = sessionCookieValue(cookie) === '' || (laufzeit !== null && laufzeit <= 0)
+  expect(entwertet ? 'entwertet' : cookie).toBe('entwertet')
   expect(danach.statusCode).toBe(401)
 })

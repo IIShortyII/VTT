@@ -43,7 +43,8 @@ Für das Passwort gilt (Herleitung in design.md D11):
 - **GIVEN** kein Konto existiert
 - **WHEN** `POST /api/auth/register` mit einer syntaktisch ungültigen E-Mail oder einem
   Passwort von 14 Zeichen eingeht
-- **THEN** antwortet der Server mit `400`, nennt das verletzte Feld und legt kein Konto an
+- **THEN** antwortet der Server mit `400`, benennt das verletzte Feld maschinenlesbar in
+  einem eigenen Antwortfeld `field` (`email` bzw. `password`), und legt kein Konto an
 
 #### Scenario: E-Mail wird unabhängig von der Schreibweise erkannt
 
@@ -152,6 +153,10 @@ Gültigkeit auf volle 30 Tage zurückgesetzt werden, sobald weniger als die Häl
 verbleibt; andernfalls bleibt sie unverändert. Eine abgelaufene Sitzung MUST NOT mehr als
 Anmeldung gelten.
 
+Die Verlängerung MUST den Browser erreichen: wird die Sitzung serverseitig verlängert, SHALL
+dieselbe Antwort ein erneuertes Sitzungscookie tragen. Andernfalls läuft das Cookie ab,
+während die Sitzung noch gilt, und der Nutzer wird trotz durchgehender Aktivität abgemeldet.
+
 #### Scenario: Abgelaufene Sitzung gilt nicht mehr
 
 - **GIVEN** eine Sitzung, deren Ablaufzeitpunkt in der Vergangenheit liegt
@@ -162,13 +167,15 @@ Anmeldung gelten.
 
 - **GIVEN** eine Sitzung, deren Restlaufzeit weniger als die Hälfte von 30 Tagen beträgt
 - **WHEN** `GET /api/auth/me` mit deren Cookie eingeht
-- **THEN** liegt ihr Ablaufzeitpunkt anschließend wieder 30 Tage in der Zukunft
+- **THEN** liegt ihr Ablaufzeitpunkt anschließend wieder 30 Tage in der Zukunft, und die
+  Antwort trägt ein erneuertes Sitzungscookie mit der vollen Laufzeit
 
 #### Scenario: Aktivität in der ersten Hälfte der Laufzeit ändert nichts
 
 - **GIVEN** eine Sitzung, deren Restlaufzeit mehr als die Hälfte von 30 Tagen beträgt
 - **WHEN** `GET /api/auth/me` mit deren Cookie eingeht
-- **THEN** ist ihr Ablaufzeitpunkt unverändert
+- **THEN** ist ihr Ablaufzeitpunkt unverändert, und die Antwort setzt kein neues
+  Sitzungscookie
 
 ### Requirement: Abmeldung
 
@@ -181,7 +188,8 @@ gelten.
 - **GIVEN** eine erfolgreiche Anmeldung und das dabei gesetzte Cookie
 - **WHEN** `POST /api/auth/logout` mit diesem Cookie eingeht und danach `GET /api/auth/me`
   mit demselben Cookie
-- **THEN** ist die Sitzungszeile gelöscht und die zweite Anfrage wird mit `401` beantwortet
+- **THEN** ist die Sitzungszeile gelöscht, die Abmeldeantwort entwertet das Cookie
+  (`Max-Age=0` bzw. leerer Wert), und die zweite Anfrage wird mit `401` beantwortet
 
 ### Requirement: Anmeldeoberfläche
 

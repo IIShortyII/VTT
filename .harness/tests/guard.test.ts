@@ -63,12 +63,49 @@ describe('Testsuite-Ausfuehrung durch den implementer', () => {
   it('blockiert einen direkten jest-Aufruf', () => {
     expect(evaluate(bash('cd .harness/wt/1 && npx jest --watch=false'), deps).blocked).toBe(true)
   })
-  it('erlaubt Typecheck und Lint', () => {
-    expect(evaluate(bash('cd .harness/wt/1 && pnpm typecheck'), deps).blocked).toBe(false)
+  // Frueher stand hier "erlaubt Typecheck und Lint". Der volle Typecheck ist inzwischen ein
+  // eigener Leckkanal (tsconfig.json schliesst tests/** ein) und hat eine eigene Sperre -
+  // siehe 'Typecheck-Umgehung der Leseschranke (implementer)'.
+  it('erlaubt Lint und den auf die Quellpfade eingeschraenkten Typecheck', () => {
     expect(evaluate(bash('cd .harness/wt/1 && pnpm lint'), deps).blocked).toBe(false)
+    expect(evaluate(bash('cd .harness/wt/1 && pnpm typecheck:src'), deps).blocked).toBe(false)
   })
   it('laesst den test-author die Suite laufen (Rot-Bestaetigung, constitution.md 3.1)', () => {
     expect(evaluate(bash('cd .harness/wt/1 && pnpm test'), { readRole: () => 'test-author' }).blocked).toBe(false)
+  })
+})
+
+// Beobachtet im ersten Feature-Run (#12, Issue #18): der implementer erfuhr aus der Ausgabe
+// von `pnpm typecheck`, wie die Tests seine Fabrikfunktion nennen, und benannte sie um.
+// tsconfig.json schliesst tests/** in "include" ein - tsc gibt bei einem Fehler Pfad, Zeile,
+// Symbolnamen und die betroffene Quellzeile aus und umgeht damit die Pfadsperre aus Regel 1
+// genauso wie ein direkter Testlauf (constitution.md 2.2).
+describe('Typecheck-Umgehung der Leseschranke (implementer)', () => {
+  const deps = { readRole: () => 'implementer' }
+
+  it('blockiert den vollen Typecheck und nennt den erlaubten Weg', () => {
+    const result = evaluate(bash('cd .harness/wt/1 && pnpm typecheck'), deps)
+    expect(result.blocked).toBe(true)
+    expect(result.message).toMatch(/typecheck:src/)
+  })
+  it('erlaubt den auf die Quellpfade eingeschraenkten Typecheck', () => {
+    expect(evaluate(bash('cd .harness/wt/1 && pnpm typecheck:src'), deps).blocked).toBe(false)
+  })
+  // Ohne diese Sperre waere `npx tsc --noEmit` die naheliegende Hintertuer - sie steht in
+  // jeder TypeScript-Dokumentation und braucht das Projektskript gar nicht.
+  it('blockiert einen nackten Compiler-Aufruf', () => {
+    expect(evaluate(bash('cd .harness/wt/1 && npx tsc --noEmit'), deps).blocked).toBe(true)
+  })
+  it('erlaubt den Compiler-Aufruf mit der Quellpfad-Projektdatei', () => {
+    expect(evaluate(bash('cd .harness/wt/1 && npx tsc --noEmit -p tsconfig.src.json'), deps).blocked).toBe(false)
+  })
+  it('laesst den test-author den vollen Typecheck fahren (tests/ ist sein Bereich)', () => {
+    expect(evaluate(bash('cd .harness/wt/1 && pnpm typecheck'), { readRole: () => 'test-author' }).blocked).toBe(false)
+  })
+  // Das Gate faehrt den vollen Typecheck als Subprozess des Orchestrators - es unterliegt dem
+  // Guard ohnehin nicht, aber ein rollenloser Aufruf darf ebenso wenig haengenbleiben.
+  it('laesst einen rollenlosen Aufruf den vollen Typecheck fahren', () => {
+    expect(evaluate(bash('pnpm typecheck'), { readRole: () => '' }).blocked).toBe(false)
   })
 })
 
@@ -128,11 +165,11 @@ describe('Harness-Steuerdateien sind tabu', () => {
   it('blockiert Entfernen des active-role-Markers', () => {
     expect(evaluate(bash('rm .harness/runs/1/active-role'), deps).blocked).toBe(true)
   })
-  // Bewusst nicht `pnpm test`: die Testsuite auszufuehren ist fuer den implementer eine
-  // eigene Sperre (siehe 'Testsuite-Ausfuehrung durch den implementer') und waere hier
-  // kein unbeteiligtes Kommando mehr.
+  // Bewusst weder `pnpm test` noch `pnpm typecheck`: beide auszufuehren ist fuer den
+  // implementer eine eigene Sperre (siehe 'Testsuite-Ausfuehrung durch den implementer' und
+  // 'Typecheck-Umgehung der Leseschranke') und waere hier kein unbeteiligtes Kommando mehr.
   it('erlaubt ein unbeteiligtes Kommando', () => {
-    expect(evaluate(bash('pnpm typecheck --pretty false'), deps).blocked).toBe(false)
+    expect(evaluate(bash('pnpm lint --max-warnings 0'), deps).blocked).toBe(false)
   })
 })
 

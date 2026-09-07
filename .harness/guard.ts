@@ -32,6 +32,19 @@ const EPHEMERAL_DB = /:memory:|test\.db|localhost|127\.0\.0\.1/
 // (1) vollstaendig (constitution.md 2.2). Das Gate ruft die Suite als Subprozess des
 // Orchestrators auf, nicht als Session-Tool-Call - es ist von dieser Sperre nicht betroffen.
 const TEST_RUNNER_COMMANDS = /\b(jest|vitest|mocha|ava)\b|\b(pnpm|npm|yarn|npx)\s+(run\s+)?test\b/
+// Kommandos, die den Typecheck ueber das GESAMTE Projekt fahren. tsconfig.json schliesst
+// tests/** in "include" ein - tsc nennt bei einem Fehler Pfad, Zeile, Symbolnamen und die
+// betroffene Quellzeile der Testdatei und umgeht die Pfadsperre aus (1) damit genauso
+// vollstaendig wie ein direkter Testlauf (beobachtet im ersten Feature-Run, Issue #18: der
+// implementer erfuhr so den von den Tests erwarteten Namen seiner Fabrikfunktion).
+// Der nackte Compiler-Aufruf gehoert mit hinein - `npx tsc --noEmit` braucht das
+// Projektskript gar nicht und steht in jeder TypeScript-Dokumentation.
+const TYPECHECK_COMMANDS = /\b(?:pnpm|npm|yarn|npx)\s+(?:run\s+)?typecheck(?![:\w-])|\btsc\b/
+// Der erlaubte Ersatz: das ":src"-Skript bzw. ein tsc-Aufruf, der die auf src/ eingeschraenkte
+// Projektdatei nennt. Ein ersatzloses Verbot waere der schlechtere Tausch - AGENTS.md weist
+// Struktur und Mechanik ausdruecklich dem Typecheck zu, und ohne ihn fiele jeder Tippfehler
+// erst im Gate auf, dessen Runden gegen constitution.md 3.5 zaehlen.
+const SRC_ONLY_TYPECHECK = /\btypecheck:src\b|tsconfig\.src\.json/
 // ---------------------------------------------------------------------------------------------
 
 const norm = (p: string): string => p.replace(/\\/g, '/')
@@ -193,6 +206,10 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
       // aus dem Gate-Feedback herausschneidet.
       if (TEST_RUNNER_COMMANDS.test(cmd))
         return { blocked: true, message: 'Blockiert: implementer führt die Testsuite nicht selbst aus — ihre Ausgabe enthält Testquellcode. Das Gate läuft über den Orchestrator (`pnpm harness gate`).' }
+      // Zweiter Kanal derselben Art: der volle Typecheck deckt tests/ mit ab und meldet
+      // Fehler samt Quellzeile der Testdatei.
+      if (TYPECHECK_COMMANDS.test(cmd) && !SRC_ONLY_TYPECHECK.test(cmd))
+        return { blocked: true, message: 'Blockiert: implementer prüft Typen mit `pnpm typecheck:src` — der volle Typecheck schließt tests/ ein und gibt bei Fehlern Pfad, Symbolnamen und Quellzeile der Testdatei aus. Den vollen Lauf fährt das Gate.' }
     }
   }
 

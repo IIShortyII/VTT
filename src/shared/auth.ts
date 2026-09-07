@@ -55,11 +55,15 @@ export const UserOutputSchema = z.object({
 })
 export type UserOutput = z.infer<typeof UserOutputSchema>
 
-/** Fehlerantwort-Form, von Login/Registrierung/Me gemeinsam benutzt. */
+/**
+ * Fehlerantwort-Form, von Login/Registrierung/Me gemeinsam benutzt. Nur `message` ist
+ * Pflicht - der Statuscode steht ohnehin im HTTP-Status, nicht im Body; `error`/`field`
+ * sind zusaetzlicher Kontext, den nicht jede Fehlerantwort traegt.
+ */
 export const ErrorOutputSchema = z.object({
-  statusCode: z.number(),
-  error: z.string(),
   message: z.string(),
+  error: z.string().optional(),
   field: z.string().optional(),
+  statusCode: z.number().optional(),
 })
 export type ErrorOutput = z.infer<typeof ErrorOutputSchema>

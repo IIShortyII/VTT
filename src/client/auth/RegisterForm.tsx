@@ -8,6 +8,8 @@ export interface RegisterFormProps {
   onSwitchToLogin: () => void
 }
 
+const GENERIC_ERROR_MESSAGE = 'Die Registrierung ist fehlgeschlagen. Bitte versuche es erneut.'
+
 export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -18,18 +20,25 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
     event.preventDefault()
     setSubmitting(true)
     setError(null)
-    const result = await register({ email, password })
-    setSubmitting(false)
-    if (result.ok) {
-      onSuccess(result.user)
-    } else {
-      setError(result.message)
+    try {
+      const result = await register({ email, password })
+      if (result.ok) {
+        onSuccess(result.user)
+      } else {
+        setError(result.message)
+      }
+    } catch {
+      // Ein Server- oder Netzwerkfehler wird angezeigt statt lautlos zu verpuffen
+      // (AGENTS.md: "Fehler sprudeln bis zum zentralen Handler").
+      setError(GENERIC_ERROR_MESSAGE)
+    } finally {
+      setSubmitting(false)
     }
   }
 
   return (
     <form onSubmit={(event) => void handleSubmit(event)}>
-      <h1>Konto erstellen</h1>
+      <h1>Registrierung</h1>
       <label htmlFor="register-email">E-Mail</label>
       <input
         id="register-email"
@@ -52,7 +61,7 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
       />
       {error !== null && <p role="alert">{error}</p>}
       <button type="submit" disabled={submitting}>
-        Konto erstellen
+        Registrieren
       </button>
       <button type="button" onClick={onSwitchToLogin}>
         Ich habe schon ein Konto

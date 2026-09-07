@@ -8,6 +8,8 @@ export interface LoginFormProps {
   onSwitchToRegister: () => void
 }
 
+const GENERIC_ERROR_MESSAGE = 'Die Anmeldung ist fehlgeschlagen. Bitte versuche es erneut.'
+
 export function LoginForm({ onSuccess, onSwitchToRegister }: LoginFormProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -18,12 +20,19 @@ export function LoginForm({ onSuccess, onSwitchToRegister }: LoginFormProps) {
     event.preventDefault()
     setSubmitting(true)
     setError(null)
-    const result = await login({ email, password })
-    setSubmitting(false)
-    if (result.ok) {
-      onSuccess(result.user)
-    } else {
-      setError(result.message)
+    try {
+      const result = await login({ email, password })
+      if (result.ok) {
+        onSuccess(result.user)
+      } else {
+        setError(result.message)
+      }
+    } catch {
+      // Ein Server- oder Netzwerkfehler wird angezeigt statt lautlos zu verpuffen
+      // (AGENTS.md: "Fehler sprudeln bis zum zentralen Handler").
+      setError(GENERIC_ERROR_MESSAGE)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -55,7 +64,7 @@ export function LoginForm({ onSuccess, onSwitchToRegister }: LoginFormProps) {
         Anmelden
       </button>
       <button type="button" onClick={onSwitchToRegister}>
-        Konto erstellen
+        Noch kein Konto? Registrieren
       </button>
     </form>
   )

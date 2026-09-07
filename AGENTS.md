@@ -25,11 +25,8 @@ und NPC-Tokens.
   Ausführen ist menschlich (constitution.md §5.1) bzw. Sache der CI (§6.1).
 
 ## Projektstruktur
-- `src/domain/` — Spiellogik, framework-frei: kein PixiJS, kein Socket, kein Prisma, kein React.
-  Sichtbarkeit, Berechtigungen, Distanzen, Status-/Effektstapel, Healthbar-Übergänge.
-- `src/shared/` — Wire-Protokoll: Event-Typen und zod-Schemas, von Client **und** Server genutzt.
-- `src/server/` — Fastify, Socket.IO, Prisma-Zugriff. Dünn: übersetzt Events in Domänenaufrufe.
-- `src/client/` — React-Komponenten und der PixiJS-Adapter. Dünn: rendert, sendet Absichten.
+- `src/` — Anwendungscode. Der Unterbau entsteht mit dem ersten Change und ist dort
+  begründet (`openspec/changes/<change>/design.md`), nicht hier vorweggenommen.
 - `prisma/` — Schema + Migrationen
 - `tests/` — Tests (`*.unit.test.ts(x)`, `*.integration.test.ts`)
 - `openspec/` — Specs & Changes (Intent-Quelle)
@@ -38,65 +35,41 @@ und NPC-Tokens.
 
 ## Konventionen (je ein Beispiel)
 
-**Der Server ist autoritativ.** Clients senden Absichten, nie Zustand. Der Server prüft,
-entscheidet und broadcastet das Ergebnis. Ein Client, der `{ token: 'x', position: [4,7] }`
-als Tatsache schickt, ist ein Fehler — richtig ist `{ type: 'token:move', token: 'x', to: [4,7] }`,
-und der Server antwortet mit dem, was tatsächlich passiert ist.
-
-**Fog of War wird serverseitig gefiltert, nie clientseitig maskiert.** Was ein Spieler nicht
-sehen darf, verlässt den Server nicht — eine im Client ausgeblendete Karte steht in der
-DevTools-Konsole. Jeder Broadcast wird pro Empfänger auf dessen Sicht reduziert:
-```ts
-for (const [socketId, viewer] of session.viewers)
-  io.to(socketId).emit('state:patch', visibleTo(state, viewer)) // nie io.emit(state)
-```
-
-**Spiellogik gehört nach `src/domain/` und ist eine pure Funktion.** Kein I/O, keine Zeit,
-kein Zufall aus der Umgebung — Würfel und Uhr kommen als Parameter herein:
-```ts
-export function applyDamage(token: Token, amount: number): Token   // ja
-export async function applyDamage(id: string): Promise<void>       // nein: lädt und schreibt selbst
-```
-
-**Socket-Handler sind Übersetzer, keine Logik.** Ein Handler validiert, ruft die Domäne und
-verteilt das Ergebnis. Steht Spiellogik im Handler, ist sie nicht mehr ohne Transport testbar.
-
-**Jedes eingehende Event wird an der Grenze mit zod validiert.** Das Schema liegt in
-`src/shared/`, damit Client und Server denselben Vertrag benutzen:
+**Jedes eingehende Event wird an der Grenze mit zod validiert.** Das Schema wird von Client
+und Server gemeinsam benutzt, damit beide denselben Vertrag sehen:
 ```ts
 export const TokenMove = z.object({ token: z.string(), to: z.tuple([z.number(), z.number()]) })
 const move = TokenMove.parse(payload) // wirft bei ungültig → Event wird verworfen
 ```
 
-**Berechtigungen werden bei jedem Event geprüft, nicht beim Verbinden.** Ob ein Spieler
-diesen Token bewegen darf, entscheidet der Server pro Aktion — die Zuweisung kann sich
-mitten in der Session ändern.
-
 **Datenzugriff nur über Prisma**, kein rohes SQL ohne begründete Ausnahme. Mehrschrittige
 Schreibvorgänge in eine Transaktion klammern.
-
-**PixiJS bleibt im Adapter.** Der Spielzustand lebt in React/Domäne, nicht im Pixi-Szenengraph;
-der Adapter spiegelt Zustand auf Sprites. Pixi-Objekte werden beim Unmount zerstört
-(`app.destroy()`, `texture.destroy()`) — sonst leckt jede Kartenumschaltung GPU-Speicher.
 
 **Fehler sprudeln bis zum zentralen Handler**; kein stilles `catch {}`. Ein Socket-Event, das
 scheitert, meldet das dem Absender zurück, statt lautlos zu verpuffen.
 
+**PixiJS-Objekte werden beim Unmount zerstört** (`app.destroy()`, `texture.destroy()`) —
+sonst leckt jede Kartenumschaltung GPU-Speicher, was kein Test und kein Linter bemerkt.
+
+**Kein Eigenbau von Basis-Elementen** (Button, Eingabefelder, Dialoge), solange eine
+Bibliothek im Projekt sie mitbringt.
+
+> Die Vertrauensgrenze zwischen Client und Server — Server-Autorität, serverseitige Filterung
+> verdeckter Information, Berechtigungsprüfung pro Aktion — steht nicht hier, sondern in
+> `constitution.md` §9. Sie ist bindend, auch wenn eine Spezifikation sie nicht wiederholt.
+
 ## Tests
 - Pro GIVEN/WHEN/THEN-Szenario genau ein Test; Testname = Szenarioname.
 - Verhalten mit DB-Bezug → Integrationstest gegen die ephemere Wegwerf-DB.
-  Domänenlogik → Unit-Test. Das ist der Regelfall: je mehr Verhalten in `src/domain/` liegt,
-  desto mehr ist überhaupt aussagekräftig testbar.
+  Reine Logik → Unit-Test.
 - Rendering wird nicht per Test abgenommen, sondern im menschlichen App-Test
-  (constitution.md §3.4). Getestet wird, was der Adapter *bekommt*, nicht wie es aussieht.
+  (constitution.md §3.4). Getestet wird, was gerendert werden *soll*, nicht wie es aussieht.
 - Komponententests sind Unit-Tests (`tests/<name>.unit.test.tsx`) mit
   `/** @jest-environment jsdom */`-Docblock am Dateianfang statt globaler jsdom-Umgebung —
   sonst laufen die Server-Tests nicht mehr unter `node`. `@testing-library/react` für
   `render`/`screen`/`fireEvent`.
 - PixiJS läuft nicht in jsdom (WebGL). Komponenten, die den Adapter einbinden, mocken
   `pixi.js` über das Mapping in `jest.config.cjs`.
-- Socket-Verhalten wird gegen die Handler-Funktion getestet, nicht gegen einen echten
-  Server: Event rein, Domänenaufruf und ausgehende Nachrichten raus.
 - Der Test entsteht vor der Implementierung und wird rot bestätigt.
 - Harness-eigene Tests (Guard-Regeln etc.) liegen unter `.harness/tests/`, außerhalb der
   App-Testsuite, und laufen über `pnpm test:harness` — sie unterliegen nicht den

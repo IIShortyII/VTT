@@ -73,3 +73,22 @@
 8.1 Die harten Invarianten (Rundenzahl, Gate-Reihenfolge, Rot-Bestätigung, Eskalation) liegen im Orchestrierungs-Skript (Code), nicht im Ermessen eines Modells.
 8.2 Leitplanken: (G1) Delegationen getemplatet, nicht frei formuliert; (G2) Rollen-Summaries schema-gebunden; (G3) Fehler-Feedback aus geparster Gate-Ausgabe (Testname + vollständige Matcher-Ausgabe bis zur Codeframe-/Stacktrace-Grenze, kein Testquellcode; ein Leak-Wächter degradiert einzelne Failures notfalls auf eine Kurzform, statt den Run zu blockieren); (G4) Run-State auf Platte, Orchestrator liest nur kompakten Status; frische Session pro Feature.
 8.3 Vor jedem Rollenwechsel im Loop (`none → test-author → implementer → reviewer → ...`) prüft die Session zuerst, ob der `active-role`-Marker des laufenden Issues (`.harness/runs/<issue>/active-role`) zur für den anstehenden Schritt vorgesehenen Rolle passt — bevor irgendein Werkzeugaufruf für diesen Schritt erfolgt. Bei Abweichung: kein Arbeitsbeginn, sondern Rückfrage an den Menschen, der die Rolle manuell korrigiert; erst danach wird fortgesetzt. Ein Rollenfehler darf nicht erst dadurch auffallen, dass ein Datei-Edit oder Tool-Aufruf vom Guard abgelehnt wird.
+
+## 9. Vertrauensgrenze zwischen Client und Server
+Bindend für jeden Change, unabhängig von Feature und Architektur. Diese Regeln stehen hier
+und nicht in AGENTS.md, weil ihre Verletzung kein Stilfehler ist, sondern ein Defekt: sie
+entscheidet darüber, ob ein Mitspieler Informationen oder Kontrolle erlangt, die ihm nicht
+zustehen.
+
+9.1 Der Server ist autoritativ. Clients senden Absichten, niemals Zustand. Was tatsächlich
+    geschieht, entscheidet der Server und teilt es mit; eine Client-Nachricht ist ein Antrag,
+    kein Ergebnis.
+9.2 Verdeckte Information verlässt den Server nicht. Was ein Teilnehmer nicht sehen darf —
+    unaufgedeckte Kartenbereiche, verdeckte Werte, Vorbereitungen der Spielleitung — wird
+    pro Empfänger herausgefiltert, bevor gesendet wird. Clientseitiges Ausblenden ist keine
+    Umsetzung dieser Regel, sondern ihre Verletzung: die Daten liegen dann bereits im Browser.
+9.3 Berechtigungen werden pro Aktion geprüft, nicht beim Verbindungsaufbau. Zuweisungen
+    können sich mitten in einer Sitzung ändern; eine einmal erteilte Verbindung ist keine
+    dauerhafte Erlaubnis.
+9.4 Diese Regeln gelten auch dann, wenn eine Spezifikation sie nicht wiederholt. Ein Change,
+    der sie verletzt, ist unabhängig von seiner Spec fehlerhaft.

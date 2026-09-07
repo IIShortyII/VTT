@@ -14,6 +14,11 @@ Die `/opsx:*`-Commands rufen die OpenSpec-CLI als nacktes `openspec`-Kommando au
 
     pnpm add -g @fission-ai/openspec
 
+Meldet pnpm dabei, das globale bin-Verzeichnis liege nicht im PATH: einmalig
+`pnpm setup` ausführen. Das schreibt die Umgebungsvariablen, wirkt aber erst in
+neu gestarteten Prozessen — eine laufende Claude-Code-Session findet `openspec`
+danach weiterhin nicht und muss neu gestartet werden.
+
 Aktualisieren der Skills/Commands im Repo nach einem CLI-Update:
 
     openspec init --tools claude

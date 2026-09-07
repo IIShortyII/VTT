@@ -30,3 +30,20 @@ schema: spec-driven
 #     archive:
 #       guidance:
 #         - Summarize the archive outcome before finishing
+
+context: |
+  Virtual Tabletop für D&D-Sessions: der Spielleiter öffnet eine Session, Spieler treten
+  bei und steuern die ihnen zugewiesenen Tokens. Karten mit Fog of War, Status- und
+  Effektmarkierungen auf Tokens, ein Mess- und Zeichenwerkzeug, Healthbars für Spieler-
+  und NPC-Tokens.
+
+  Stack: TypeScript durchgehend (NodeNext). Client React 19 + Vite + PixiJS,
+  Server Fastify + Socket.IO, Persistenz SQLite über Prisma.
+
+  Verbindlich für jeden Change: constitution.md — insbesondere §9 (Vertrauensgrenze
+  zwischen Client und Server: Server autoritativ, verdeckte Information wird
+  serverseitig gefiltert, Berechtigungen pro Aktion) — und AGENTS.md.
+
+  Die Umsetzung läuft über den Harness-Loop (test-author → implementer → reviewer),
+  nicht über /opsx:apply. Ein Change braucht daher Szenarien im GIVEN/WHEN/THEN-Format:
+  aus jedem entsteht genau ein Test.

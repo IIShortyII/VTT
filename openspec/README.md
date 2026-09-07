@@ -1,18 +1,33 @@
 # openspec/
 
-Dieses Verzeichnis wird von OpenSpec verwaltet. Initialisieren mit:
+Intent-Ebene des Projekts: hier entstehen die Specs und Changes, aus denen der
+Harness-Loop arbeitet.
 
-    pnpm dlx @fission-ai/openspec init --tools claude
-    # danach das erweiterte Profil aktivieren:
-    pnpm dlx @fission-ai/openspec config profile   # -> workflows
-    pnpm dlx @fission-ai/openspec update
+- `specs/` — Spec-Baseline (Source of Truth)
+- `changes/` — aktive Changes (Eingabe für `pnpm harness start`)
+- `changes/archive/` — gemergte Changes (Audit-Historie)
 
-Danach liegen hier:
-- specs/            — die Spec-Baseline (Source of Truth)
-- changes/         — aktive Changes (Intent-Quelle für den feature-loop)
-- changes/archive/ — gemergte Changes (Audit-Historie)
+## Voraussetzung
 
-Naht zur Harness: OpenSpec macht die Intent-Ebene
-(/opsx:propose, /opsx:update), der feature-loop ersetzt /opsx:apply für die
-Umsetzung, /opsx:archive beim Merge. Beim Init den von OpenSpec erzeugten AGENTS.md-Block
-mit der bestehenden AGENTS.md abgleichen (OpenSpec nutzt verwaltete Marker).
+Die `/opsx:*`-Commands rufen die OpenSpec-CLI als nacktes `openspec`-Kommando auf
+(`allowed-tools: Bash(openspec:*)`), sie muss also global installiert sein:
+
+    pnpm add -g @fission-ai/openspec
+
+Aktualisieren der Skills/Commands im Repo nach einem CLI-Update:
+
+    openspec init --tools claude
+
+Das Profil-Preset `workflows` aus früheren Versionen gibt es nicht mehr; ab 1.12
+ist `core` das einzige Preset und der volle Command-Satz wird ohnehin installiert.
+
+## Naht zur Harness
+
+OpenSpec liefert die Intent-Ebene (`/opsx:propose`, `/opsx:update`, `/opsx:explore`),
+der Harness-Loop übernimmt die Umsetzung.
+
+**`/opsx:apply` wird nicht benutzt** — es würde den Code selbst schreiben und damit
+die Rollentrennung aus constitution.md §2 umgehen. Stattdessen:
+`pnpm harness start <issue> <change>` und dann dem `feature-loop`-Skill folgen.
+Archiviert wird im Feature-Branch vor dem PR (§3.6), nicht über einen separaten
+Archivierungslauf.

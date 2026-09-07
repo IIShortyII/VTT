@@ -5,7 +5,8 @@ dist/
 # Env
 .env
 .env.*
-!.env.example     # die Vorlage gehoert ins Repo, nur die ausgefuellten Dateien nicht
+# Die Vorlage gehoert ins Repo, nur die ausgefuellten Dateien nicht.
+!.env.example
 *.local
 
 # Claude Code: persoenliche lokale Overrides. Die Harness-Definitionen (agents/,

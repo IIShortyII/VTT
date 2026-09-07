@@ -12,6 +12,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate     # typecheck braucht die generierten Prisma-Typen
       - run: pnpm typecheck
 
   lint:
@@ -32,6 +33,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
       - run: pnpm test            # Unit + Integration
 
   # Die Harness setzt die Rollentrennung durch (guard.ts) und besitzt die harten Invarianten

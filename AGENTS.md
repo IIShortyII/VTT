@@ -68,8 +68,8 @@ Bibliothek im Projekt sie mitbringt.
   `/** @jest-environment jsdom */`-Docblock am Dateianfang statt globaler jsdom-Umgebung —
   sonst laufen die Server-Tests nicht mehr unter `node`. `@testing-library/react` für
   `render`/`screen`/`fireEvent`.
-- PixiJS läuft nicht in jsdom (WebGL). Komponenten, die den Adapter einbinden, mocken
-  `pixi.js` über das Mapping in `jest.config.cjs`.
+- PixiJS läuft nicht in jsdom (WebGL). Tests, die Pixi-Code einbinden, brauchen einen
+  Modul-Mock; das Mapping dafür entsteht mit dem Change, der PixiJS erstmals einbindet.
 - Der Test entsteht vor der Implementierung und wird rot bestätigt.
 - Harness-eigene Tests (Guard-Regeln etc.) liegen unter `.harness/tests/`, außerhalb der
   App-Testsuite, und laufen über `pnpm test:harness` — sie unterliegen nicht den

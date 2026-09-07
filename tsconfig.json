@@ -1,11 +1,13 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    // NodeNext gilt projektweit. Frontend-Code ergaenzt hier "jsx": "react-jsx" und
-    // "DOM"/"DOM.Iterable" in "lib" - beides bewusst nicht vorbelegt (stack-neutral).
+    // NodeNext gilt projektweit - auch fuer den Frontend-Code. Die ".js"-Suffixe in
+    // relativen Imports sind damit Pflicht; nicht auf "bundler" umstellen, ohne den
+    // Server-Code mitzudenken.
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

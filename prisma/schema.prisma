@@ -1,0 +1,14 @@
+// Nur Datenquelle und Generator. Die Modelle entstehen mit den Changes, die sie brauchen —
+// kein Schema auf Vorrat (constitution.md §1.1).
+//
+// SQLite: DATABASE_URL zeigt auf eine Datei. Die Entwicklungs-DB (dev.db) und die
+// Wegwerf-DB der Integrationstests (test.db) sind getrennte Dateien; guard.ts laesst
+// Migrationen des Agenten nur gegen letztere zu.
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}

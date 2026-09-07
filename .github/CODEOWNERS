@@ -1,20 +1,20 @@
 # Wer diese Pfade ändert, braucht Review durch den/die Owner.
 
 # Testdateien — schützt die Test-Sperre (Rollentrennung)
-/tests/                 @dennishof
-**/*.test.ts            @dennishof
+/tests/                 @IIShortyII
+**/*.test.ts            @IIShortyII
 
 # Harness-Kern & Verfassung — freigabepflichtig
-/constitution.md        @dennishof
-/AGENTS.md              @dennishof
-/.claude/               @dennishof
-/.harness/              @dennishof
+/constitution.md        @IIShortyII
+/AGENTS.md              @IIShortyII
+/.claude/               @IIShortyII
+/.harness/              @IIShortyII
 
 # CI & Ownership — Änderung an den Gates ist freigabepflichtig
-/.github/workflows/     @dennishof
-/.github/CODEOWNERS     @dennishof
+/.github/workflows/     @IIShortyII
+/.github/CODEOWNERS     @IIShortyII
 
 # Dependencies — menschliche Freigabe
-/package.json           @dennishof
-/pnpm-lock.yaml         @dennishof
-/pnpm-workspace.yaml    @dennishof
+/package.json           @IIShortyII
+/pnpm-lock.yaml         @IIShortyII
+/pnpm-workspace.yaml    @IIShortyII

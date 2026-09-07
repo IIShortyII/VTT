@@ -7,7 +7,8 @@ dist/
 .env.*
 *.local
 
-# Claude Code — nur die Secrets, nicht die Harness-Definitionen
+# Claude Code: persoenliche lokale Overrides. Die Harness-Definitionen (agents/,
+# skills/, commands/, settings.json) gehoeren dagegen ins Repo.
 .claude/settings.local.json
 
 # Harness-Laufzeitzustand (Run-State und Feature-Worktrees)

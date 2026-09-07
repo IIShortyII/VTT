@@ -1,7 +1,5 @@
 {
   "env": {
-    "ANTHROPIC_MODEL": "claude-sonnet-5[1m]",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4.5",
     "DISABLE_TELEMETRY": "1"
   },
   "permissions": {

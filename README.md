@@ -83,8 +83,11 @@ sondern fragt `next`.
 
 ## Aufsetzen
 
-1. `.claude/settings.local.json.example` nach `.claude/settings.local.json` kopieren und
-   Token/Endpunkt eintragen. Die Datei ist gitignored; `settings.json` enthält keine Secrets.
+1. Authentifizierung läuft über die Claude-Subscription — im Repo liegt kein API-Key und
+   keine Endpunkt-Konfiguration. Welches Modell eine Rolle benutzt, steht in der Frontmatter
+   der jeweiligen Definition unter `.claude/agents/` (`opus` für `test-author` und
+   `reviewer`, `sonnet` für den `implementer`); das Modell der orchestrierenden Session
+   wählt der Mensch per `/model`.
 2. In `package.json` die Skripte `dev` und `build` eintragen. `dev` braucht der Loop für den
    menschlichen App-Test — ohne bricht er in `app-review` ab.
 3. `AGENTS.md`: Abschnitte *Kommandos*, *Projektstruktur*, *Konventionen* und *Versionen*

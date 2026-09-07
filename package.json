@@ -13,9 +13,9 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "test": "jest",
-    "test:unit": "jest --testPathPattern unit.test",
-    "test:integration": "jest --testPathPattern integration.test",
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js",
+    "test:unit": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern unit.test",
+    "test:integration": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern integration.test",
     "test:harness": "jest -c .harness/jest.config.cjs",
     "harness": "tsx .harness/orchestrator.ts",
     "db:generate": "prisma generate"

@@ -154,6 +154,21 @@ sicherheitsnah und hat Randfälle (mehrere Cookies, kodierte Werte, Anführungsz
 der Precedent gegen `argon2`/`bcrypt` hatte einen anderen Grund als Dependency-Vermeidung
 (dort scheitert die native Toolchain unter Windows; `@fastify/cookie` ist reines JS).
 
+**Nachtrag aus dem ersten Gate-Lauf:** `@fastify/cookie@11` lädt sein `cookie`-Paket beim
+Registrieren des Plugins per `await import('cookie')` — unbedingt, ohne CJS-Rückfallweg
+(`index.js:11`, mit dem Kommentar „TODO: Use require(ESM) when Node.js 20 is no longer
+supported"). Jests CommonJS-VM kann einen dynamischen Import nicht bedienen und wirft
+`A dynamic import callback was invoked without --experimental-vm-modules`; sämtliche
+Integrationstests starben dadurch beim Aufbau der App, bevor eine Assertion lief.
+
+Die Testskripte rufen Jest deshalb über `node --experimental-vm-modules
+./node_modules/jest/bin/jest.js` auf — der von Jest selbst dokumentierte Weg, plattform-
+übergreifend und ohne zusätzliche Dependency (`cross-env` entfällt). Der ts-jest-Transform
+bleibt unverändert auf CommonJS. Verworfene Alternativen: `@fastify/cookie` auf v10
+herunterstufen (Rückschritt auf eine ältere Hauptversion eines sicherheitsnahen Bausteins)
+und das Paket wieder gegen Eigenbau tauschen (die ursprünglich verworfene Variante aus D6 —
+bleibt offen, falls das Flag weitere Probleme nach sich zieht).
+
 ### D7 — Client ohne Router
 
 `App.tsx` fragt beim Start `GET /api/auth/me`. Kein Nutzer → Auth-Ansicht mit Umschalter

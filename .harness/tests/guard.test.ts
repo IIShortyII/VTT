@@ -144,19 +144,29 @@ describe('Prisma-Migrationssperre', () => {
   }
 
   it('blockiert Migration gegen eine entfernte DB', () => {
-    withDbUrl('sqlserver://kunde.database.windows.net', () => {
+    withDbUrl('file:/var/lib/vtt/prod.db', () => {
       expect(evaluate(bash('prisma migrate deploy'), defaultDeps).blocked).toBe(true)
     })
   })
   it('erlaubt Migration gegen die ephemere Test-DB', () => {
-    withDbUrl('sqlserver://localhost:1433', () => {
+    withDbUrl('file:./prisma/test.db', () => {
       expect(evaluate(bash('prisma migrate deploy'), defaultDeps).blocked).toBe(false)
+    })
+    withDbUrl('file::memory:', () => {
+      expect(evaluate(bash('prisma migrate deploy'), defaultDeps).blocked).toBe(false)
+    })
+  })
+  // Die lokale Entwicklungs-DB ist keine Wegwerf-DB: Migrationen sind Menschensache
+  // (constitution.md 5.1), der Agent schreibt das Schema, fuehrt es aber nicht aus.
+  it('blockiert Migration gegen die lokale Entwicklungs-DB', () => {
+    withDbUrl('file:./prisma/dev.db', () => {
+      expect(evaluate(bash('pnpm prisma migrate dev --name init'), defaultDeps).blocked).toBe(true)
     })
   })
   // migrate dev/reset schreiben ebenso gegen das, was in DATABASE_URL steht - eine Sperre nur
   // auf `deploy`/`db push` liesse den lokal naheliegendsten Aufruf offen.
   it('blockiert auch die lokalen Migrations-Varianten gegen eine entfernte DB', () => {
-    withDbUrl('sqlserver://kunde.example.net', () => {
+    withDbUrl('file:/var/lib/vtt/prod.db', () => {
       expect(evaluate(bash('pnpm prisma migrate dev --name init'), defaultDeps).blocked).toBe(true)
       expect(evaluate(bash('pnpm prisma migrate reset --force'), defaultDeps).blocked).toBe(true)
       expect(evaluate(bash('prisma db push'), defaultDeps).blocked).toBe(true)

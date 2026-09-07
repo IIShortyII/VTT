@@ -3,57 +3,100 @@
 Kanonische Anweisungsdatei für Coding-Agenten. Gilt zusätzlich zur `constitution.md`
 (dort die bindenden Invarianten). Diese Datei beschreibt, *wie* in diesem Repo gearbeitet wird.
 
-> **Blaupause:** Die Abschnitte *Kommandos*, *Projektstruktur*, *Konventionen* und
-> *Versionen* sind projektspezifisch und beim Aufsetzen eines neuen Projekts zu füllen.
-> Alles darunter (*Tests*, *Harness-Gate*, *Kritische Grenzen*, *Commits & PRs*) beschreibt
-> das Verhalten der Harness selbst und wird unverändert übernommen.
+Das Produkt ist ein Virtual Tabletop für D&D-Sessions: der Spielleiter öffnet eine Session,
+Spieler treten bei und steuern die ihnen zugewiesenen Tokens. Karten mit Fog of War, Status-
+und Effektmarkierungen auf Tokens, ein Mess- und Zeichenwerkzeug, Healthbars für Spieler-
+und NPC-Tokens.
 
 ## Kommandos
 - Install: `pnpm install` (CI: `pnpm install --frozen-lockfile`)
-- Dev: `pnpm dev` — **noch nicht konfiguriert.** Die Harness startet damit die App für den
-  menschlichen App-Test (constitution.md §3.4); ohne dieses Skript bricht der Loop dort ab.
-- Build: `pnpm build` — **noch nicht konfiguriert.**
+- Dev: `pnpm dev` (Client auf Vite + Server parallel) · einzeln: `pnpm dev:client`, `pnpm dev:server`
+- Build: `pnpm build`
 - Typecheck: `pnpm typecheck` (tsc --noEmit)
 - Lint: `pnpm lint` · Autofix: `pnpm lint:fix`
 - Format: `pnpm format` (Prettier)
 - Unit-Tests: `pnpm test:unit`
-- Integrationstests (ephemere DB): `pnpm test:integration`
-  — muss eine ephemere Wegwerf-Instanz hochfahren, migrieren und danach aufräumen
-  (z. B. Testcontainers). Braucht Docker/WSL2.
+- Integrationstests: `pnpm test:integration` — gegen eine ephemere SQLite-Wegwerfdatei
+  (`test.db`), die pro Lauf angelegt, migriert und danach gelöscht wird. Kein Docker nötig.
 - Alle Tests: `pnpm test`
 - Harness-eigene Tests: `pnpm test:harness`
-- Migrationen laufen NUR gegen die ephemere Test-DB (über `test:integration`).
-  Niemals lokal gegen eine produktive Zielumgebung (siehe constitution.md §6).
+- Prisma-Client generieren: `pnpm db:generate`
+- Migrationen führt der Agent nicht aus. Er schreibt das Schema unter `prisma/`; das
+  Ausführen ist menschlich (constitution.md §5.1) bzw. Sache der CI (§6.1).
 
 ## Projektstruktur
-- `src/` — Anwendungscode
+- `src/domain/` — Spiellogik, framework-frei: kein PixiJS, kein Socket, kein Prisma, kein React.
+  Sichtbarkeit, Berechtigungen, Distanzen, Status-/Effektstapel, Healthbar-Übergänge.
+- `src/shared/` — Wire-Protokoll: Event-Typen und zod-Schemas, von Client **und** Server genutzt.
+- `src/server/` — Fastify, Socket.IO, Prisma-Zugriff. Dünn: übersetzt Events in Domänenaufrufe.
+- `src/client/` — React-Komponenten und der PixiJS-Adapter. Dünn: rendert, sendet Absichten.
+- `prisma/` — Schema + Migrationen
 - `tests/` — Tests (`*.unit.test.ts(x)`, `*.integration.test.ts`)
 - `openspec/` — Specs & Changes (Intent-Quelle)
 - `.claude/agents/` — Subagent-Definitionen
 - `.harness/` — Orchestrierungs-Skill/Skript & Run-State (`runs/`, `wt/` sind gitignored)
 
-## Konventionen (projektspezifisch — beim Aufsetzen füllen)
-Hier gehören die Stack-Entscheidungen hin, die ein Agent nicht aus dem Code ableiten kann.
-Format: **eine Regel, ein Codebeispiel** — knapp genug, dass die Datei in jeden Prompt passt.
-Erfahrungsgemäß lohnen sich Einträge zu:
+## Konventionen (je ein Beispiel)
 
-- Server-State / Datenabruf (welche Bibliothek, welches Muster)
-- Datenzugriff (ORM/Query-Layer; ob rohes SQL zulässig ist)
-- Eingabe-Validierung an den Systemgrenzen (welche Bibliothek, wo sie greift)
-- Fehler-Handling (zentraler Handler; kein stilles `catch {}`)
-- HTTP-Mocking in Tests (Bibliothek statt Patchen von `fetch`)
-- UI-/Komponenten-Bibliothek und ob Basis-Elemente selbst gebaut werden dürfen
-- Bekannte Import-/Resolver-Stolpersteine des Stacks samt Workaround
-- Testumgebung pro Testart (z. B. Docblock statt globaler Umgebung, damit Backend-Tests
-  weiter unter `node` laufen)
+**Der Server ist autoritativ.** Clients senden Absichten, nie Zustand. Der Server prüft,
+entscheidet und broadcastet das Ergebnis. Ein Client, der `{ token: 'x', position: [4,7] }`
+als Tatsache schickt, ist ein Fehler — richtig ist `{ type: 'token:move', token: 'x', to: [4,7] }`,
+und der Server antwortet mit dem, was tatsächlich passiert ist.
 
-Was hier steht, ist für den `implementer` die einzige Quelle für Stilfragen — er sieht die
-Tests nicht und kann sich nicht an ihnen orientieren.
+**Fog of War wird serverseitig gefiltert, nie clientseitig maskiert.** Was ein Spieler nicht
+sehen darf, verlässt den Server nicht — eine im Client ausgeblendete Karte steht in der
+DevTools-Konsole. Jeder Broadcast wird pro Empfänger auf dessen Sicht reduziert:
+```ts
+for (const [socketId, viewer] of session.viewers)
+  io.to(socketId).emit('state:patch', visibleTo(state, viewer)) // nie io.emit(state)
+```
+
+**Spiellogik gehört nach `src/domain/` und ist eine pure Funktion.** Kein I/O, keine Zeit,
+kein Zufall aus der Umgebung — Würfel und Uhr kommen als Parameter herein:
+```ts
+export function applyDamage(token: Token, amount: number): Token   // ja
+export async function applyDamage(id: string): Promise<void>       // nein: lädt und schreibt selbst
+```
+
+**Socket-Handler sind Übersetzer, keine Logik.** Ein Handler validiert, ruft die Domäne und
+verteilt das Ergebnis. Steht Spiellogik im Handler, ist sie nicht mehr ohne Transport testbar.
+
+**Jedes eingehende Event wird an der Grenze mit zod validiert.** Das Schema liegt in
+`src/shared/`, damit Client und Server denselben Vertrag benutzen:
+```ts
+export const TokenMove = z.object({ token: z.string(), to: z.tuple([z.number(), z.number()]) })
+const move = TokenMove.parse(payload) // wirft bei ungültig → Event wird verworfen
+```
+
+**Berechtigungen werden bei jedem Event geprüft, nicht beim Verbinden.** Ob ein Spieler
+diesen Token bewegen darf, entscheidet der Server pro Aktion — die Zuweisung kann sich
+mitten in der Session ändern.
+
+**Datenzugriff nur über Prisma**, kein rohes SQL ohne begründete Ausnahme. Mehrschrittige
+Schreibvorgänge in eine Transaktion klammern.
+
+**PixiJS bleibt im Adapter.** Der Spielzustand lebt in React/Domäne, nicht im Pixi-Szenengraph;
+der Adapter spiegelt Zustand auf Sprites. Pixi-Objekte werden beim Unmount zerstört
+(`app.destroy()`, `texture.destroy()`) — sonst leckt jede Kartenumschaltung GPU-Speicher.
+
+**Fehler sprudeln bis zum zentralen Handler**; kein stilles `catch {}`. Ein Socket-Event, das
+scheitert, meldet das dem Absender zurück, statt lautlos zu verpuffen.
 
 ## Tests
 - Pro GIVEN/WHEN/THEN-Szenario genau ein Test; Testname = Szenarioname.
-- Verhalten mit DB-Bezug → Integrationstest gegen die ephemere DB.
-  Reine Logik/Komponenten → Unit-Test.
+- Verhalten mit DB-Bezug → Integrationstest gegen die ephemere Wegwerf-DB.
+  Domänenlogik → Unit-Test. Das ist der Regelfall: je mehr Verhalten in `src/domain/` liegt,
+  desto mehr ist überhaupt aussagekräftig testbar.
+- Rendering wird nicht per Test abgenommen, sondern im menschlichen App-Test
+  (constitution.md §3.4). Getestet wird, was der Adapter *bekommt*, nicht wie es aussieht.
+- Komponententests sind Unit-Tests (`tests/<name>.unit.test.tsx`) mit
+  `/** @jest-environment jsdom */`-Docblock am Dateianfang statt globaler jsdom-Umgebung —
+  sonst laufen die Server-Tests nicht mehr unter `node`. `@testing-library/react` für
+  `render`/`screen`/`fireEvent`.
+- PixiJS läuft nicht in jsdom (WebGL). Komponenten, die den Adapter einbinden, mocken
+  `pixi.js` über das Mapping in `jest.config.cjs`.
+- Socket-Verhalten wird gegen die Handler-Funktion getestet, nicht gegen einen echten
+  Server: Event rein, Domänenaufruf und ausgehende Nachrichten raus.
 - Der Test entsteht vor der Implementierung und wird rot bestätigt.
 - Harness-eigene Tests (Guard-Regeln etc.) liegen unter `.harness/tests/`, außerhalb der
   App-Testsuite, und laufen über `pnpm test:harness` — sie unterliegen nicht den
@@ -100,3 +143,4 @@ Tests nicht und kann sich nicht an ihnen orientieren.
 
 ## Versionen
 - Es gelten die Versionen aus `package.json`. Keine Major-Upgrades ohne Freigabe.
+- React 19, Vite 7, PixiJS 8, Fastify 5, Socket.IO 4, Prisma 6.

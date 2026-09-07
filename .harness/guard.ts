@@ -19,9 +19,14 @@ const SRC_DIRS = ['src', 'prisma']
 // Bewusst inklusive der lokalen Entwicklungs-Varianten (migrate dev/reset) - auch sie
 // schreiben gegen das, was in DATABASE_URL steht.
 const MIGRATION_COMMANDS = /prisma\s+(migrate\s+(deploy|dev|reset)|db\s+push)/
-// Hostnamen/Muster, die eine ephemere Wegwerf-DB kennzeichnen. Alles andere gilt als
-// produktiv und wird geblockt (fail-closed: ein leeres DATABASE_URL matcht nichts).
-const EPHEMERAL_DB = /localhost|127\.0\.0\.1|-test/
+// Muster, die eine ephemere Wegwerf-DB kennzeichnen. Alles andere gilt als produktiv und
+// wird geblockt (fail-closed: ein leeres DATABASE_URL matcht nichts).
+// SQLite adressiert ueber Dateipfade statt Hostnamen - die Wegwerf-DB der Integrationstests
+// heisst daher per Konvention "test.db" (bzw. laeuft in-memory). Die lokale Entwicklungs-DB
+// (dev.db) matcht bewusst NICHT: Migrationen sind Menschensache (constitution.md 5.1), der
+// Agent schreibt das Schema, fuehrt es aber nicht aus. localhost bleibt fuer einen spaeteren
+// Umzug auf eine Server-DB enthalten.
+const EPHEMERAL_DB = /:memory:|test\.db|localhost|127\.0\.0\.1/
 // Kommandos, die die Testsuite ausfuehren. Fuer den implementer tabu: Jest & Co. geben bei
 // Matcher-Fehlern Codeframes aus den Testdateien aus und umgehen damit die Pfadsperre aus
 // (1) vollstaendig (constitution.md 2.2). Das Gate ruft die Suite als Subprozess des

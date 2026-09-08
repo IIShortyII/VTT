@@ -317,7 +317,7 @@ describe('Kein Werkzeugaufruf unter einer Rolle darf pausieren', () => {
     'pnpm harness pause 23 "jest.config kaputt"',
     'pnpm harness resume 23',
     'tsx .harness/orchestrator.ts pause 23 "x"',
-    'tsx .harness/orchestrator.ts resume 23 --runde-zurueck',
+    'tsx .harness/orchestrator.ts resume 23',
   ]
 
   it('Unter jeder Rolle wird das Pausieren verweigert', () => {
@@ -390,6 +390,25 @@ describe('Ein Lauf ohne Worktree beansprucht keine Rolle', () => {
     const deps = makeDeps(tmpRunsDir, tmpWtDir)
     expect(evaluate(write('tests/x.test.ts'), deps).blocked).toBe(true)
     expect(evaluate(write('src/x.ts'), deps).blocked).toBe(false)
+  })
+
+  it('Eine Rolle darf den Worktree nicht entfernen', () => {
+    // Der Worktree ist seit der Lebenszeichen-Pruefung Teil der Rollensteuerung: wer ihn
+    // entfernt, erklaert seinen eigenen Lauf fuer tot und ist danach ungeprueft.
+    for (const rolle of ['implementer', 'test-author', 'reviewer']) {
+      for (const cmd of [
+        'rm -rf .harness/wt/12',
+        'mv .harness/wt/12 /tmp/weg',
+        'git worktree remove --force .harness/wt/12',
+        'git worktree prune',
+      ]) {
+        const result = evaluate(bash(cmd), { readRole: () => rolle })
+        expect([rolle, cmd, result.blocked]).toEqual([rolle, cmd, true])
+      }
+    }
+    // Der Arbeitsbereich selbst bleibt erreichbar - `.harness/wt/` steht in fast jedem
+    // legitimen Aufruf einer Rolle.
+    expect(evaluate(bash('cat .harness/wt/12/src/x.ts'), { readRole: () => 'implementer' }).blocked).toBe(false)
   })
 
   it('Ein direkt adressierter Lauf bleibt von der Prüfung unberührt', () => {

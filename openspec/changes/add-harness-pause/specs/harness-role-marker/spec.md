@@ -32,6 +32,14 @@ Handkorrektur wie bisher, nur mit einem Verb davor.
 - **THEN** bleiben Rollenmarker, Phase, Rundenzähler und Pausenzustand unverändert, und der
   Harness meldet den fehlenden Grund mit einem Fehlschlag
 
+#### Scenario: Pausieren oder Fortsetzen eines unbekannten Laufs wird sauber abgelehnt
+
+- **GIVEN** eine Laufkennung, zu der kein Run-State existiert — nach der neuen Arbeitsteilung
+  tippt der Mensch diese Kennung regelmäßig von Hand, ein Vertippen ist damit der Regelfall
+- **WHEN** dieser Lauf pausiert oder fortgesetzt werden soll
+- **THEN** meldet der Harness, dass es diesen Lauf nicht gibt, und bricht ab — ohne Absturz und
+  ohne einen Run-State oder Rollenmarker anzulegen
+
 #### Scenario: Ein pausierter Lauf beansprucht keine Rolle mehr
 
 - **GIVEN** der einzige laufende Lauf ist pausiert
@@ -79,8 +87,7 @@ Zwei Stellen, die dieselbe Zuordnung unabhängig voneinander treffen, driften au
 fordert aber, dass der Marker zum anstehenden Schritt passt, bevor irgendein Werkzeugaufruf
 erfolgt. Die Übereinstimmung MUST deshalb mechanisch geprüft werden, nicht durch Sorgfalt.
 
-Ein Fortsetzen MUST NOT Phase oder Rundenzähler verändern — abgesehen von der ausdrücklich
-angeforderten Rundenrückgabe.
+Ein Fortsetzen MUST NOT Phase oder Rundenzähler verändern.
 
 #### Scenario: Fortsetzen setzt die Rolle des aktuellen Schritts
 
@@ -114,37 +121,27 @@ angeforderten Rundenrückgabe.
 - **THEN** bleibt der Lauf pausiert, Rollenmarker, Phase und Rundenzähler bleiben unverändert,
   und der Harness meldet die unbekannte Phase mit einem Fehlschlag statt mit einem Absturz
 
-### Requirement: Eine Runde, die nur die Umgebung gemessen hat, darf zurückgegeben werden
+### Requirement: Kein Verb senkt den Rundenzähler
 
-Das Fortsetzen MUST auf ausdrückliche Anforderung den Rundenzähler um **genau eins**
-verringern. Es MUST NOT unter null zählen und MUST NOT ohne diese Anforderung am Zähler
-rühren. Die Rückgabe MUST im Run-State festgehalten werden, zusammen mit dem Grund der Pause,
-gegen den sie gefällt wurde.
+Weder das Pausieren noch das Fortsetzen MUST den Rundenzähler verringern — und kein anderes
+Verb darf es an ihrer Stelle tun.
 
-Der Zähler bleibt damit eine Leitplanke im Code (`constitution.md` §3.5/§8.1): Schrittweite
-und Untergrenze sind festgelegt, menschlich ist allein das Urteil, dass die betroffene Runde
-eine kaputte Umgebung gemessen hat statt einer Implementierung. Ohne diesen Weg verbraucht
-Umgebungsrauschen das Eskalationsbudget — im Lauf zu #12 zweimal.
+Der naheliegende Wunsch, eine Runde zurückzugeben, die nur eine kaputte Umgebung gemessen hat
+statt einer Implementierung, bleibt bewusst unerfüllt. Er wäre nur über ein Verb einlösbar, und
+ein Verb ist von einem Agenten aufrufbar: der Guard sieht einen Werkzeugaufruf und einen
+Rollenmarker, sonst nichts, und in den Phasen ohne Rolle (`gate`, `app-review`, `done`,
+`archived`, `escalated`) gilt für die orchestrierende Sitzung keine Sperre. Eine Rundenrückgabe
+läge damit im Ermessen eines Modells — genau das, was `constitution.md` §8.1 für die Rundenzahl
+ausschließt.
 
-#### Scenario: Die Rückgabe zählt genau eine Runde zurück
+Der Verzicht kostet wenig: Wer pausiert, ist bereits im Loop. Eine Eskalation eine Runde
+früher übergibt an einen Menschen, der ohnehin schon danebensteht.
 
-- **GIVEN** ein pausierter Lauf, dessen Rundenzähler über null steht
-- **WHEN** er mit angeforderter Rundenrückgabe fortgesetzt wird
-- **THEN** ist der Rundenzähler um genau eins kleiner, die Phase unverändert, und die Rückgabe
-  steht mit Zeitpunkt und dem Grund der Pause im Run-State
+#### Scenario: Pausieren und Fortsetzen lassen den Rundenzähler unangetastet
 
-#### Scenario: Fortsetzen ohne Anforderung lässt den Zähler unangetastet
-
-- **GIVEN** ein pausierter Lauf, dessen Rundenzähler über null steht
-- **WHEN** er ohne angeforderte Rundenrückgabe fortgesetzt wird
-- **THEN** ist der Rundenzähler unverändert und es steht keine Rückgabe im Run-State
-
-#### Scenario: Bei Rundenzähler null wird die Rückgabe abgelehnt
-
-- **GIVEN** ein pausierter Lauf, dessen Rundenzähler auf null steht
-- **WHEN** er mit angeforderter Rundenrückgabe fortgesetzt wird
-- **THEN** bleibt der Rundenzähler auf null, der Lauf bleibt pausiert, der Rollenmarker
-  unverändert, und der Harness meldet die abgelehnte Rückgabe mit einem Fehlschlag
+- **GIVEN** ein Lauf mit einem Rundenzähler über null
+- **WHEN** er pausiert und anschließend fortgesetzt wird
+- **THEN** ist der Rundenzähler danach unverändert
 
 ### Requirement: Kein Werkzeugaufruf unter einer Rolle darf pausieren
 
@@ -189,8 +186,18 @@ Für einen Aufruf, dessen Issue sich aus Pfad oder Kommando ergibt, ändert sich
 belegt der Pfad die Existenz des Worktrees bereits.
 
 Diese Regel schafft eine Richtung, in die der Guard fail-**open** kippen kann: ein Marker ohne
-Worktree entzieht sich der Prüfung. Ein Lauf MUST deshalb gar nicht erst mit einem Rollenmarker
-entstehen, wenn sein Worktree nicht angelegt werden konnte.
+Worktree entzieht sich der Prüfung. Beide Wege dorthin MUST verschlossen sein. Ein Lauf MUST
+gar nicht erst mit einem Rollenmarker entstehen, wenn sein Worktree nicht angelegt werden
+konnte. Und der Worktree MUST für eine Rolle ebenso unantastbar sein wie der Rollenmarker
+selbst: er ist seit dieser Regel Teil der Rollensteuerung, und wer ihn entfernt, entwaffnet
+sich.
+
+#### Scenario: Eine Rolle darf den Worktree nicht entfernen
+
+- **GIVEN** ein Werkzeugaufruf, für den eine Rolle gilt
+- **WHEN** er ein Kommando ausführen will, das einen Worktree entfernt
+- **THEN** wird der Aufruf geblockt — der Worktree ist Teil der Rollensteuerung, sein Verlust
+  machte den Lauf für die Rollenermittlung tot und den Aufrufer damit ungeprüft
 
 #### Scenario: Ein Lauf entsteht nicht, wenn sein Worktree nicht angelegt werden konnte
 

@@ -27,10 +27,21 @@ function gespiegelt(issue: string) {
 }
 
 let counter = 0
+// Aufgeraeumt wird in afterEach, nicht am Ende des Testkoerpers (Review-Befund): die Fixtures
+// legen echte Laeufe unter .harness/runs UND .harness/wt an, und das ist seit der
+// Lebenszeichen-Pruefung per Definition ein AKTIVER Lauf. Bliebe einer nach einer
+// fehlgeschlagenen Assertion liegen, zwaenge er danach jedem Aufruf ohne zuordenbares Issue
+// seine Rolle auf - genau die 999001-Pathologie, die dieser Change beseitigt.
+const angelegt: string[] = []
 function freshIssue(): string {
   counter += 1
-  return `__pause_test_${counter}__`
+  const issue = `__pause_test_${counter}__`
+  angelegt.push(issue)
+  return issue
 }
+afterEach(() => {
+  while (angelegt.length > 0) cleanup(angelegt.pop()!)
+})
 function makeStatus(issue: string, overrides: Partial<Status> = {}): Status {
   const status: Status = { issue, branch: `feat/${issue}`, round: 0, phase: 'implement', rounds: [], ...overrides }
   writeStatus(status)
@@ -95,7 +106,6 @@ describe('Ein Lauf lässt sich für einen Eingriff außerhalb der Rollen pausier
     expect(s.round).toBe(2)
     expect(s.paused?.grund).toBe('jest.config.cjs ist kaputt')
     expect(s.paused?.seit).toEqual(expect.any(String))
-    cleanup(issue)
   })
 
   it('Pausieren ohne Grund wird abgelehnt', () => {
@@ -111,7 +121,18 @@ describe('Ein Lauf lässt sich für einen Eingriff außerhalb der Rollen pausier
     expect(s.phase).toBe('implement')
     expect(s.round).toBe(2)
     expect(s.paused).toBeUndefined()
-    cleanup(issue)
+  })
+
+  it('Pausieren oder Fortsetzen eines unbekannten Laufs wird sauber abgelehnt', () => {
+    // Der Mensch tippt diese Kennung nach der neuen Arbeitsteilung von Hand (design.md D6);
+    // ohne Huelle stuerbe readStatus mit rohem ENOENT-Stacktrace samt vollem Pfad ab.
+    const issue = freshIssue() // absichtlich kein makeStatus: der Lauf existiert nicht
+
+    expect(captureFail(() => pause(issue, 'Grund'))).toMatch(/Kein Lauf/)
+    expect(captureFail(() => resume(issue))).toMatch(/Kein Lauf/)
+
+    expect(existsSync(join(runDir(issue), 'status.json'))).toBe(false)
+    expect(existsSync(markerPath(issue))).toBe(false)
   })
 
   it('Ein pausierter Lauf beansprucht keine Rolle mehr', () => {
@@ -138,7 +159,6 @@ describe('Ein Lauf lässt sich für einen Eingriff außerhalb der Rollen pausier
     try {
       expect(evaluate(write('tests/x.test.ts'), nachher.deps).blocked).toBe(false)
     } finally { nachher.aufraeumen() }
-    cleanup(issue)
   })
 })
 
@@ -176,7 +196,6 @@ describe('Ein pausierter Lauf steht still', () => {
       expect(statusRaw(issue)).toBe(zustandVorher)
       expect(existsSync(boardLogPath(issue))).toBe(false)
     }
-    cleanup(issue)
   })
 })
 
@@ -194,7 +213,6 @@ describe('Ein Lauf ohne Worktree beansprucht keine Rolle', () => {
     // tot haelt - die einzige Richtung, in die die Lebenszeichen-Pruefung fail-open kippt.
     expect(existsSync(markerPath(issue))).toBe(false)
     expect(existsSync(join(runDir(issue), 'status.json'))).toBe(false)
-    cleanup(issue)
   })
 })
 
@@ -212,7 +230,6 @@ describe('Fortsetzen stellt die Rolle des aktuellen Schritts wieder her', () => 
     expect(s.paused).toBeUndefined()
     expect(s.phase).toBe('review')
     expect(s.round).toBe(2)
-    cleanup(issue)
   })
 
   it('Die wiederhergestellte Rolle stimmt mit dem Automaten überein', () => {
@@ -225,6 +242,12 @@ describe('Fortsetzen stellt die Rolle des aktuellen Schritts wieder her', () => 
       { name: 'gate/grün, nichts offen', status: { phase: 'gate', lastGate: { green: true } } },
       { name: 'gate/grün, Test-Findings offen', status: { phase: 'gate', lastGate: { green: true }, pendingTestFindings: [{ ort: 'tests/x.test.ts' }] } },
       { name: 'gate/rot', status: { phase: 'gate', lastGate: { green: false } } },
+      // 'review' verzweigt ebenso am uebrigen Run-State - dieselbe Driftklasse, eine Phase
+      // weiter (Review-Befund Runde 2).
+      { name: 'review/Ergebnis ok', status: { phase: 'review', lastReview: { recommendation: 'ok' as const, findings: [] } } },
+      { name: 'review/Ergebnis nacharbeit', status: { phase: 'review', lastReview: { recommendation: 'nacharbeit' as const, findings: [{ schwere: 'block', ort: 'src/x.ts', problem: 'x' }] } } },
+      { name: 'app-review/freigegeben', status: { phase: 'app-review', lastAppReview: { freigegeben: true } } },
+      { name: 'app-review/abgelehnt', status: { phase: 'app-review', lastAppReview: { freigegeben: false, feedback: 'x' } } },
     ]
 
     for (const { name, status } of runStates) {
@@ -266,7 +289,6 @@ describe('Fortsetzen stellt die Rolle des aktuellen Schritts wieder her', () => 
     expect(statusRaw(issue)).toBe(zustandVorher)
     expect(readStatus(issue).paused?.grund).toBe('Eingriff')
     expect(readMarker(issue)).toBe('none')
-    cleanup(issue)
   })
 
   it('Fortsetzen eines Laufs, der nicht pausiert ist, wird abgelehnt', () => {
@@ -281,58 +303,17 @@ describe('Fortsetzen stellt die Rolle des aktuellen Schritts wieder her', () => 
     expect(readMarker(issue)).toBe('implementer')
     expect(s.phase).toBe('implement')
     expect(s.round).toBe(1)
-    cleanup(issue)
   })
 })
 
-describe('Eine Runde, die nur die Umgebung gemessen hat, darf zurückgegeben werden', () => {
-  it('Die Rückgabe zählt genau eine Runde zurück', () => {
+describe('Kein Verb senkt den Rundenzähler', () => {
+  it('Pausieren und Fortsetzen lassen den Rundenzähler unangetastet', () => {
     const issue = freshIssue()
     makeStatus(issue, { phase: 'implement', round: 2 })
+
     silenced(() => pause(issue, 'Zwei Gate-Läufe maßen eine kaputte Umgebung'))
-
-    silenced(() => resume(issue, { rundeZurueck: true }))
-
-    const s = readStatus(issue)
-    expect(s.round).toBe(1)
-    expect(s.phase).toBe('implement')
-    expect(s.rundenRueckgaben).toEqual([
-      expect.objectContaining({
-        grund: 'Zwei Gate-Läufe maßen eine kaputte Umgebung',
-        von: 2,
-        auf: 1,
-        zeitpunkt: expect.any(String),
-      }),
-    ])
-    cleanup(issue)
-  })
-
-  it('Fortsetzen ohne Anforderung lässt den Zähler unangetastet', () => {
-    const issue = freshIssue()
-    makeStatus(issue, { phase: 'implement', round: 2 })
-    silenced(() => pause(issue, 'Eingriff'))
-
     silenced(() => resume(issue))
 
-    const s = readStatus(issue)
-    expect(s.round).toBe(2)
-    expect(s.rundenRueckgaben ?? []).toEqual([])
-    cleanup(issue)
-  })
-
-  it('Bei Rundenzähler null wird die Rückgabe abgelehnt', () => {
-    const issue = freshIssue()
-    makeStatus(issue, { phase: 'implement', round: 0 })
-    silenced(() => pause(issue, 'Eingriff'))
-
-    const meldung = captureFail(() => resume(issue, { rundeZurueck: true }))
-
-    const s = readStatus(issue)
-    expect(meldung).toMatch(/Runde/i)
-    expect(s.round).toBe(0)
-    expect(s.paused?.grund).toBe('Eingriff')
-    expect(readMarker(issue)).toBe('none')
-    expect(s.rundenRueckgaben ?? []).toEqual([])
-    cleanup(issue)
+    expect(readStatus(issue).round).toBe(2)
   })
 })

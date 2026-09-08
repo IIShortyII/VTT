@@ -22,9 +22,6 @@ export type RoundRecord = {
 // Datei. Der Rollenmarker traegt waehrenddessen `none` - der Guard braucht keine eigene Kenntnis
 // der Pause, sie faellt bei ihm in eine bestehende Regel.
 export type Pause = { grund: string; seit: string }
-// Die Rueckgabe ueberlebt das Fortsetzen bewusst (D4): der Pausenzustand endet, die Rueckgabe
-// bleibt als dauerhafter Beleg stehen - sie ist der einzige Weg, den Rundenzaehler zu senken.
-export type RundenRueckgabe = { zeitpunkt: string; grund: string; von: number; auf: number }
 export type Status = {
   issue: string; branch: string; round: number; change?: string
   phase: 'red' | 'implement' | 'gate' | 'review' | 'rework-tests' | 'app-review' | 'done' | 'archived' | 'escalated'
@@ -34,7 +31,6 @@ export type Status = {
   rounds?: RoundRecord[]
   pendingTestFindings?: unknown[]
   paused?: Pause
-  rundenRueckgaben?: RundenRueckgabe[]
 }
 // Welche Rolle zu welcher Phase gehoert. Zweite Stelle neben next() (add-harness-pause/design.md
 // D3): next() taugt nicht als Quelle, weil es Zustandsuebergaenge als Seiteneffekt hat, die ein
@@ -55,17 +51,29 @@ export const ROLE_FOR_PHASE: Record<Status['phase'], Role> = {
   archived: 'none',
   escalated: 'none',
 }
-// Die Phase allein genuegt nicht (Review-Befund): nach einem gruenen Gate laeuft der gesamte
-// Reviewer-Schritt, waehrend die Phase auf 'gate' stehen BLEIBT - next() emittiert dort
-// 'invoke-reviewer' ohne Phasenwechsel, und der Marker steht die ganze Zeit auf 'reviewer'.
-// Eine Ableitung nur ueber die Tabelle setzte dort rollenlos und widerspraeche §8.3, sobald
-// jemand mitten im Review pausiert. Die uebrigen 'gate'-Zweige verlangen einen Uebergang
-// (Nacharbeit-Runde bzw. Test-Nacharbeit) und bleiben deshalb rollenlos.
+// Die Phase allein genuegt nicht (Review-Befund): next() verzweigt in 'gate' UND in 'review'
+// zusaetzlich am uebrigen Run-State.
+//
+// Die Leitregel dahinter: verlangt der naechste Schritt einen Zustandsuebergang - eine
+// Nacharbeit-Runde mit erhoehtem Zaehler, ein Phasenwechsel -, bleibt resume rollenlos. Den
+// Uebergang vollzieht allein next(); resume stellt einen Zustand her, es bewegt ihn nicht.
+// Kommt der naechste Schritt ohne Uebergang aus, traegt resume genau die Rolle nach, die next()
+// setzen wuerde (§8.3).
+//
+// Der eine Fall, in dem das ueber die Tabelle hinausgeht, ist kein Randfall, sondern der
+// Normalbetrieb: nach einem gruenen Gate emittiert next() 'invoke-reviewer' OHNE Phasenwechsel -
+// die Phase bleibt auf 'gate', waehrend der gesamte Reviewer-Schritt laeuft, und der Marker
+// steht die ganze Zeit auf 'reviewer'.
 export function roleForStatus(s: Status): Role {
-  if (s.phase !== 'gate') return ROLE_FOR_PHASE[s.phase]
-  const gruenUndNichtsOffen = s.lastGate?.green === true
-    && !(s.pendingTestFindings && s.pendingTestFindings.length > 0)
-  return gruenUndNichtsOffen ? 'reviewer' : 'none'
+  if (s.phase === 'gate') {
+    const gruenUndNichtsOffen = s.lastGate?.green === true
+      && !(s.pendingTestFindings && s.pendingTestFindings.length > 0)
+    return gruenUndNichtsOffen ? 'reviewer' : 'none'
+  }
+  // Liegt bereits ein Review-Ergebnis vor, geht der naechste Schritt in den App-Test oder in
+  // eine Nacharbeit-Runde - beides Uebergaenge. Ohne Ergebnis steht der Reviewer-Schritt an.
+  if (s.phase === 'review') return s.lastReview ? 'none' : 'reviewer'
+  return ROLE_FOR_PHASE[s.phase]
 }
 
 export const runDir = (i: string) => join('.harness', 'runs', i)
@@ -572,12 +580,20 @@ export function cleanup(i: string, run?: GhRunner) {
 // Der Zustand zwischen den Rollen: der naechste sinnvolle Schritt gehoert keiner. Ohne dieses
 // Verb blieb dem Menschen nur, den Rollenmarker von Hand zu schreiben - einer aktiven Rolle
 // verboten (guard.ts, Steuerdatei-Tabu) und nirgends festgehalten.
+// Beide Verben tippt der Mensch nach der neuen Arbeitsteilung (design.md D6) regelmaessig von
+// Hand - eine vertippte Laufkennung ist damit der Regelfall, nicht die Ausnahme. Ohne diese
+// Huelle liefe readStatus in ein readFileSync und stuerbe mit rohem ENOENT-Stacktrace samt
+// vollem Pfad (Review-Befund).
+function readRunOrFail(i: string, was: string): Status {
+  if (!existsSync(statusPath(i))) fail(`Kein Lauf "${i}" — nichts ${was}.`)
+  return readStatus(i)
+}
 export function pause(i: string, grund?: string) {
   // Der Grund wird VOR dem Run-State geprueft: eine Pause ohne festgehaltenen Anlass waere
   // dieselbe undokumentierte Handkorrektur wie bisher, nur mit einem Verb davor.
   const text = (grund ?? '').trim()
   if (text === '') fail(`Pausieren verlangt einen Grund: pnpm harness pause ${i} "<grund>"`)
-  const s = readStatus(i)
+  const s = readRunOrFail(i, 'zu pausieren')
   if (s.paused)
     fail(`Lauf ${i} ist bereits pausiert seit ${s.paused.seit}: ${s.paused.grund}`)
   s.paused = { grund: text, seit: new Date().toISOString() }
@@ -590,29 +606,19 @@ export function pause(i: string, grund?: string) {
 // Die Rolle stammt aus der PHASE, nicht aus einem bei pause gesicherten Wert (design.md D3):
 // waehrend der Pause korrigiert der Mensch den Lauf - genau dafuer ist sie da -, und ein
 // gesicherter Wert waere danach womoeglich die Rolle des falschen Schritts.
-export function resume(i: string, opts: { rundeZurueck?: boolean } = {}) {
-  const s = readStatus(i)
+export function resume(i: string) {
+  const s = readRunOrFail(i, 'fortzusetzen')
   if (!s.paused)
     fail(`Lauf ${i} ist nicht pausiert — kein Pausenzustand, der fortzusetzen wäre.`)
-  // Ablehnen statt still ignorieren: ein wirkungslos geschlucktes Flag liesse den Menschen
-  // glauben, er habe eine Runde zurueck, die er nicht hat - der Lauf eskalierte dann eine Runde
-  // frueher als erwartet.
   // Vor dem ersten Schreibzugriff (Review-Befund): waehrend der Pause korrigiert der Mensch den
   // Run-State von Hand - ein Vertippen in `phase` ist dort der Regelfall. Ohne diese Pruefung
   // liefe resume in ein writeFileSync(path, undefined) und stuerbe mit rohem Stacktrace, NACHDEM
   // es den Pausenzustand schon geloescht hat: zurueck bliebe ein Lauf, der nicht mehr pausiert
   // ist, dessen Marker noch den alten Wert traegt und dessen Abbruch nichts erklaert.
-  if (!(s.phase in ROLE_FOR_PHASE))
+  // hasOwnProperty statt `in`: `in` trifft auch die Prototypenkette, ein handgeschriebenes
+  // phase: "constructor" oder "toString" kaeme sonst durch (Review-Befund).
+  if (!Object.prototype.hasOwnProperty.call(ROLE_FOR_PHASE, s.phase))
     fail(`Unbekannte Phase "${s.phase}" in ${i}. Zulässig: ${Object.keys(ROLE_FOR_PHASE).join(', ')}`)
-  if (opts.rundeZurueck && s.round <= 0)
-    fail(`Rundenrückgabe abgelehnt: der Rundenzähler von ${i} steht bereits auf 0.`)
-  const p = s.paused
-  if (opts.rundeZurueck) {
-    const von = s.round
-    s.round = von - 1
-    s.rundenRueckgaben = [...(s.rundenRueckgaben ?? []),
-      { zeitpunkt: new Date().toISOString(), grund: p.grund, von, auf: s.round }]
-  }
   s.paused = undefined
   writeStatus(s)
   const rolle = roleForStatus(s)
@@ -692,7 +698,7 @@ if (isMain) {
     case 'preflight-archive': preflightArchive(a[0]); break
     case 'board': boardVerb(a[0], a[1]); break
     case 'pause': pause(a[0], a[1]); break
-    case 'resume': resume(a[0], { rundeZurueck: a.includes('--runde-zurueck') }); break
+    case 'resume': resume(a[0]); break
     case 'next': console.log(next(a[0])); break
     case 'escalate': escalate(a[0]); break
     case 'cleanup': cleanup(a[0]); break

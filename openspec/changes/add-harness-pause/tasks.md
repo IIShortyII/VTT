@@ -19,10 +19,8 @@ die Sitzung arbeitet direkt, test-first, mit `pnpm test:harness` als Gate.
 - [x] 1.6 Die von `resume` gesetzte Rolle stimmt für **jede** Phase mit der überein, die
       `next()` aus demselben Run-State setzt (Drift-Sicherung zu design.md D3)
 - [x] 1.7 `resume` auf einem nicht pausierten Lauf wird abgelehnt, ohne Zustand zu verändern
-- [x] 1.8 `--runde-zurueck` verringert den Zähler um genau eins und hält die Rückgabe mit
-      Zeitpunkt und dem Grund der Pause im Run-State fest
-- [x] 1.9 `resume` ohne das Flag lässt den Rundenzähler unangetastet und schreibt keine Rückgabe
-- [x] 1.10 `--runde-zurueck` bei Zähler null wird abgelehnt; der Lauf bleibt pausiert
+- [x] 1.8 Pausieren und Fortsetzen lassen den Rundenzähler unangetastet (die ursprünglich
+      geplante Rundenrückgabe ist in Runde 2 gestrichen worden, siehe 7.1)
 - [x] 1.11 Der Guard blockt `pause` und `resume` unter aktiver Rolle
 - [x] 1.12 Der Guard lässt `pause` und `resume` ohne aktive Rolle durch
 - [x] 1.13 Ein Lauf ohne Worktree wird bei der Rollenermittlung ohne zuordenbares Issue
@@ -35,10 +33,10 @@ die Sitzung arbeitet direkt, test-first, mit `pnpm test:harness` als Gate.
 
 ## 2. Orchestrator
 
-- [x] 2.1 `Status` um das Feld `paused` erweitern (Grund, Zeitpunkt, erfolgte Rundenrückgabe)
+- [x] 2.1 `Status` um das Feld `paused` erweitern (Grund, Zeitpunkt)
 - [x] 2.2 Phase→Rolle-Tabelle für `resume` (design.md D3)
 - [x] 2.3 Verb `pause <issue> "<grund>"`
-- [x] 2.4 Verb `resume <issue> [--runde-zurueck]`
+- [x] 2.4 Verb `resume <issue>`
 - [x] 2.5 Sperrklausel in den Automatenverben (design.md D2)
 - [x] 2.6 Dispatch um beide Verben erweitern
 
@@ -50,8 +48,8 @@ die Sitzung arbeitet direkt, test-first, mit `pnpm test:harness` als Gate.
 
 ## 4. Dokumentation
 
-- [x] 4.1 `AGENTS.md`: beide Verben unter „Kommandos", Rundenrückgabe und die Grenze für
-      aktive Rollen
+- [x] 4.1 `AGENTS.md`: beide Verben unter „Kommandos", der menschliche Kanal, die
+      Schrittgrenze und der unantastbare Rundenzähler
 - [x] 4.2 `.claude/skills/feature-loop/SKILL.md`: wann die Sitzung pausiert, und dass nach
       einem Eingriff `resume` vor dem nächsten `next` steht
 
@@ -91,3 +89,28 @@ die Sitzung arbeitet direkt, test-first, mit `pnpm test:harness` als Gate.
       Annahme, unter der der Selbstblock unentdeckt blieb
 - [x] 6.9 Gate erneut grün: `pnpm test:harness` (106/106), `pnpm typecheck`, `pnpm lint`
 - [ ] 6.10 Zweiter Reviewer-Durchgang
+
+## 7. Nacharbeit-Runde 2 (Reviewer-Befund)
+
+- [x] 7.1 **Block:** Die Rundenrückgabe hing am agentischen Verb `resume` — die Sitzung hätte
+      sich selbst eine Runde zurückgeben können, gesichert nur durch Prosa. Verschieben auf
+      `pause` half nicht: der Guard sperrt nur, solange eine Rolle gilt, und in `gate`,
+      `app-review`, `done`, `archived` und `escalated` ist die Sitzung regulär rollenlos. Es
+      gibt keinen Kanal, den nur ein Mensch erreicht. **Die Rundenrückgabe ist gestrichen**
+      (menschliche Entscheidung), `constitution.md` §8.1 bleibt damit unberührt
+- [x] 7.2 `roleForStatus()` deckt jetzt auch `review` ab — `next()` verzweigt dort ebenso am
+      übrigen Run-State; Drift-Test um `review`- und `app-review`-Zweige erweitert
+- [x] 7.3 `SKILL.md` widersprach sich („verboten" vs. „darfst du selbst"): jetzt getrennt nach
+      `pause` (immer verboten) und `resume` (nur unter einer Rolle)
+- [x] 7.4 Pausiert wird an einer Schrittgrenze — die Pause entwaffnet jeden laufenden Aufruf,
+      nicht nur die Sitzung. In `AGENTS.md`, `SKILL.md` und design.md D6 festgehalten
+- [x] 7.5 `hasOwnProperty` statt `in` bei der Phasenprüfung (die Prototypenkette ließ
+      `phase: "constructor"` durch)
+- [x] 7.6 Testfixtures räumen in `afterEach` auf — sie legten echte, seit der
+      Lebenszeichen-Prüfung *aktive* Läufe an und hätten bei einer fehlgeschlagenen Assertion
+      selbst 999001-Zombies hinterlassen
+- [x] 7.7 `pause`/`resume` auf einem unbekannten Lauf melden sauber statt mit ENOENT-Stacktrace
+- [x] 7.8 Der Worktree ist für jede Rolle tabu (`rm`/`mv`/`git worktree remove|prune`) — er ist
+      seit der Lebenszeichen-Prüfung Teil der Rollensteuerung
+- [x] 7.9 Gate erneut grün: `pnpm test:harness` (106/106), `pnpm typecheck`, `pnpm lint`
+- [ ] 7.10 Dritter Reviewer-Durchgang

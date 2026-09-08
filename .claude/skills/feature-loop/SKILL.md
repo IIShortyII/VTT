@@ -58,25 +58,29 @@ nächsten Schritt raten:
 Steht ein Eingriff an, der außerhalb von `src/`, `prisma/` und `tests/` liegt — eine kaputte
 Werkzeugkonfiguration, eine fehlende `.gitignore`-Regel, ein Befund ohne Rollenzuordnung nach
 `constitution.md` §3.3 —, dann **nicht** den Rollenmarker von Hand schreiben und auch nicht
-selbst pausieren: `pause` und `resume` sind dir verboten (`guard.ts`), und zwar mit Absicht.
-Der Guard kann dich nicht von einem Subagenten unterscheiden; dürftest du pausieren, dürfte
-der `implementer` es auch — und damit die Sperre abschalten, unter der er steht.
+selbst pausieren. `pause` ist dir immer verboten (`guard.ts`), und zwar mit Absicht: der Guard
+kann dich nicht von einem Subagenten unterscheiden; dürftest du pausieren, dürfte der
+`implementer` es auch — und damit die Sperre abschalten, unter der er steht. `resume` ist dir
+nur verboten, solange der Marker eine Rolle trägt; während einer Pause trägt er `none`, und
+dann darfst du.
 
 Stattdessen:
 
-1. **Bitte den Menschen**, in seiner eigenen Shell `pnpm harness pause <issue> "<grund>"`
-   auszuführen (im Chat mit `!` davor). Nenne den Grund, den er einsetzen soll. Das gibt den
-   Marker frei; Phase und Rundenzähler bleiben stehen, und jedes Automatenverb verweigert, bis
-   fortgesetzt wird.
-2. Den Eingriff durchführen — jetzt bist du rollenlos und kommst an die Datei.
-3. `pnpm harness resume <issue>` — das darfst du selbst, weil der Marker während der Pause auf
-   `none` steht: `resume` stellt eine Rolle wieder her, statt eine abzuschalten. Erst danach
-   wieder `pnpm harness next <issue>`.
+1. **Warte, bis die laufende Rolle geantwortet hat.** Pausiert wird an einer Schrittgrenze, nie
+   mitten in einem Rollenschritt: die Pause gibt den Marker für *jeden* laufenden Aufruf frei,
+   ein noch arbeitender Subagent verlöre dabei seine Sperren.
+2. **Bitte den Menschen**, in seiner eigenen Shell `pnpm harness pause <issue> "<grund>"`
+   auszuführen (im Chat mit `!` davor) — seine Eingabe läuft nicht durch den Guard. Nenne den
+   Grund, den er einsetzen soll. Das gibt den Marker frei; Phase und Rundenzähler bleiben
+   stehen, und jedes Automatenverb verweigert, bis fortgesetzt wird.
+3. Den Eingriff durchführen — jetzt bist du rollenlos und kommst an die Datei.
+4. `pnpm harness resume <issue>` — das darfst du selbst. Erst danach wieder
+   `pnpm harness next <issue>`.
 
-Hat eine Runde nachweislich nur eine kaputte Umgebung gemessen und keine Implementierung, kann
-der Mensch sie mit `pnpm harness resume <issue> --runde-zurueck` zurückgeben — genau eine, nie
-unter null, dauerhaft im Run-State protokolliert. Das ist eine **menschliche** Entscheidung:
-frag danach, nimm sie nicht selbst an.
+Eine Runde, die nur eine kaputte Umgebung gemessen hat, lässt sich **nicht** zurückgeben: der
+Rundenzähler ist eine harte Invariante im Code (`constitution.md` §8.1), und jedes Verb, das
+ihn senken könnte, wäre von dir aufrufbar. Der Lauf eskaliert dann eben eine Runde früher an
+den Menschen — der ohnehin schon danebensteht, weil er die Pause gesetzt hat.
 
 Reiche zwischen Rollen nur strukturierte Rückgaben weiter, nie Rohprosa oder Testcode.
 Der Rundenzähler (max 3, Implementer-, test-author- und App-Test-Nacharbeit zusammengezählt)

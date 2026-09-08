@@ -25,7 +25,7 @@ und NPC-Tokens.
 - Board-Status setzen: `pnpm harness board <issue> <status>` — den übrigen Status setzt der
   Loop selbst (siehe Board-Status)
 - Lauf pausieren: `pnpm harness pause <issue> "<grund>"` · fortsetzen:
-  `pnpm harness resume <issue> [--runde-zurueck]` (siehe Pause & Fortsetzen)
+  `pnpm harness resume <issue>` (siehe Pause & Fortsetzen)
 - Prisma-Client generieren: `pnpm db:generate`
 - Migrationen führt der Agent nicht aus. Er schreibt das Schema unter `prisma/`; das
   Ausführen ist menschlich (constitution.md §5.1) bzw. Sache der CI (§6.1).
@@ -143,11 +143,14 @@ Sitzung, solange der Marker auf einer Rolle steht.
   her, in dem der Lauf **jetzt** steht — abgeleitet aus der Phase, nicht aus einem bei `pause`
   gesicherten Wert. Während der Pause korrigiert der Mensch den Lauf; ein gesicherter Wert
   wäre danach womöglich die Rolle des falschen Schritts (§8.3).
-- `--runde-zurueck` zählt den Rundenzähler um **genau eins** herunter, nie unter null. Für den
-  Fall, dass eine Runde eine kaputte Umgebung gemessen hat statt einer Implementierung — im
-  ersten Feature-Run zweimal passiert. Die Rückgabe wird mit Zeitpunkt, dem Grund der Pause
-  und beiden Zählerständen dauerhaft im Run-State festgehalten; sie überlebt das Fortsetzen
-  bewusst, denn sie ist der einzige Weg, den Zähler zu senken.
+- **Der Rundenzähler bleibt unantastbar.** Kein Verb senkt ihn — auch nicht für eine Runde, die
+  nachweislich nur eine kaputte Umgebung gemessen hat. Ein solches Verb wäre von einem Agenten
+  aufrufbar (der Guard sperrt nur, solange eine Rolle gilt; in `gate`, `app-review`, `done`,
+  `archived` und `escalated` ist die Sitzung regulär rollenlos), und die Rundenzahl läge damit
+  im Ermessen eines Modells — genau das schließt `constitution.md` §8.1 aus.
+- **Pausiert wird an einer Schrittgrenze**, nie während ein Rollenschritt läuft: die Pause gibt
+  den Marker für *jeden* laufenden Aufruf frei, ein noch arbeitender Subagent verlöre dabei
+  seine Pfad- und Lesesperren.
 - **Pausieren ist Sache des Menschen.** Beide Verben sind jedem Werkzeugaufruf verboten, für
   den eine Rolle gilt (`guard.ts`, Steuerdatei-Tabu) — und weil der Guard die orchestrierende
   Sitzung nicht von einem Subagenten unterscheiden kann, gilt das notwendig für beide: dürfte

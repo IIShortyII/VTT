@@ -78,25 +78,31 @@ Die Drift wird mechanisch gesichert statt durch Sorgfalt: ein Test durchläuft j
 vollzieht, wird `none` erwartet, sonst Gleichheit. Die erste Fassung dieses Tests verglich nur
 Phasen und übersah die `gate`-Divergenz genau deshalb.
 
-## D4 — Rundenrückgabe: eine, nie unter null, und die Grenze ergibt sich von selbst
+## D4 — Keine Rundenrückgabe, weil sie sich nicht agentensicher bauen lässt
 
-`--runde-zurueck` verringert den Zähler um genau eins. „Höchstens einmal je Pause" braucht keine
-eigene Mechanik: `resume` beendet die Pause, es gibt also kein zweites `resume` innerhalb
-derselben. Bei Zähler null wird die Rückgabe abgelehnt statt still ignoriert — ein still
-ignoriertes Flag ließe den Menschen glauben, er habe eine Runde zurück, die er nicht hat, und
-der Lauf eskalierte eine Runde früher als erwartet.
+Der Entwurf sah zunächst ein `--runde-zurueck` vor: eine Runde, die nachweislich nur eine
+kaputte Umgebung gemessen hat statt einer Implementierung, sollte zurückgegeben werden können —
+im Lauf zu #12 wäre das zweimal fällig gewesen. Die Rückgabe ist gestrichen, und der Grund
+folgt zwingend aus D6.
 
-Der Grund der Rückgabe ist der Grund der Pause. Ein zweiter Pflichttext an dieser Stelle wäre
-Doppelung: die Pause wird ja gerade deshalb eingelegt, weil etwas außerhalb der
-Implementierung kaputt war, und genau dieser Text rechtfertigt die Rückgabe.
+Sobald `pause` menschlich und `resume` agentisch wurde, hing die Rückgabe am agentischen Verb.
+Sie auf `pause` zu verschieben hilft nicht: der Guard blockt `pause` nur, solange eine Rolle
+gilt, und in den Phasen `gate`, `app-review`, `done`, `archived` und `escalated` ist die
+orchestrierende Sitzung regulär rollenlos. **Es gibt in dieser Architektur keinen Kanal, den
+nur ein Mensch erreicht.** Der Hook sieht einen Werkzeugaufruf und einen Rollenmarker, sonst
+nichts; die Eingabe des Menschen ist allein deshalb privilegiert, weil sie den Hook gar nicht
+erst durchläuft — keine Eigenschaft, die Code prüfen kann.
 
-**Bekannte Grenze:** wiederholte `pause`/`resume`-Zyklen könnten Runden nachfüllen. Das ist
-bewusst nicht weiter verriegelt. Der Pausenzustand selbst endet mit dem Fortsetzen und bleibt
-nicht liegen — jede **Rückgabe** dagegen wird dauerhaft festgehalten, mit Zeitpunkt, Grund und
-den beiden Zählerständen. Genau das ist der Missbrauchsvektor: Runden nachfüllen geht nur über
-Rückgaben, und die stehen alle im Run-State. `constitution.md` §7.3 legt die Verantwortung
-ohnehin beim freigebenden Menschen. Eine Verriegelung dagegen (etwa ein Gesamtbudget an
-Rückgaben) würde eine Zahl erfinden, für die es keinen Anhaltspunkt gibt.
+Damit läge die Rundenzahl im Ermessen eines Modells, gesichert nur durch einen Satz Prosa in
+der Skill-Datei. `constitution.md` §8.1 nennt die Rundenzahl namentlich als harte Invariante,
+die im Orchestrierungs-Skript liegen muss. Eine Rückgabe wäre also nicht ein Feature mit
+Restrisiko, sondern ein Verfassungsbruch mit Bedienkomfort.
+
+Der Verzicht kostet wenig, und das ist keine Beschönigung: Wer pausiert, ist bereits im Loop.
+Eine Eskalation eine Runde früher übergibt an einen Menschen, der ohnehin schon danebensteht.
+Was der Change einlöst, bleibt davon unberührt — ein Verb mit Pflichtgrund statt einer
+handgeschriebenen Steuerdatei, ein nachweislich eingefrorener Automat und ein `resume`, das die
+richtige Rolle kennt.
 
 ## D5 — Der Worktree als Lebenszeichen, nur im Fallback
 
@@ -148,6 +154,14 @@ eine Steuerdatei von Hand, undokumentiert und ohne dass der Automat davon wusste
 er ein Verb mit Pflichtgrund, der Lauf friert nachweislich ein, die Rückgabe einer Runde wird
 protokolliert, und `resume` stellt die richtige Rolle wieder her, ohne dass er wissen muss,
 welche. Genau das hat Issue #23 verlangt.
+
+**Bewusst akzeptierte Grenze:** die Pause entwaffnet nicht nur die Sitzung, sondern jeden
+gerade laufenden Aufruf — der Marker steht auf `none`, damit greift für niemanden mehr eine
+Pfad- oder Lesesperre. Wird pausiert, während ein `implementer`-Subagent noch arbeitet, verliert
+dieser für den Rest seines Schritts seine Sperren. Mechanisch lässt sich das nicht schließen
+(der Marker ist pro Lauf, nicht pro Aufruf), organisatorisch schon: **pausiert wird an einer
+Schrittgrenze, nie während ein Rollenschritt läuft.** Die Sitzung fordert die Pause erst an,
+nachdem die laufende Rolle geantwortet hat; so steht es in `AGENTS.md` und in der Skill-Datei.
 
 Mechanik: erfasst wird das Verb, nicht der Pfad
 (`\b(?:harness|orchestrator\.ts)\s+(?:pause|resume)\b`), und die Regel steht **vor** allen

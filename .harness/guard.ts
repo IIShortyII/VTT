@@ -60,6 +60,12 @@ const SRC_ONLY_TYPECHECK = /\btypecheck:src\b|tsconfig\.src\.json/
 // getrennt gehalten, weil das eine auf Pfade zielt und das andere auf Kommandos.
 const CONTROL_FILE_TABOO = /\.harness\/(runs\/[^/\s'"]+\/active-role|guard\.ts)\b/
 const CONTROL_VERB_TABOO = /\b(?:harness|orchestrator\.ts)\s+(?:pause|resume)\b/
+// Der Worktree ist seit add-harness-pause Teil der Rollensteuerung: die Rollenermittlung nimmt
+// seine Existenz als Lebenszeichen. Wer ihn entfernt, erklaert seinen eigenen Lauf fuer tot und
+// macht damit jeden Aufruf ohne ableitbares Issue rollenlos - also ungeprueft. Deshalb dasselbe
+// Tabu wie fuer den Rollenmarker. Bewusst nur die zerstoerenden Kommandos: `.harness/wt/` steht
+// in fast jedem legitimen Aufruf einer Rolle, dort liegt ihr Arbeitsbereich.
+const WORKTREE_TABOO = /\b(?:rm|rmdir|mv)\b[^|;&]*\.harness\/wt\/|\bgit\s+worktree\s+(?:remove|prune)\b/
 // ---------------------------------------------------------------------------------------------
 
 const norm = (p: string): string => p.replace(/\\/g, '/')
@@ -188,8 +194,14 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
   //    `resume` bleibt trotzdem erreichbar: waehrend einer Pause traegt der Marker `none`, fuer
   //    den Aufruf gilt also keine Rolle. Kein Loch, sondern die Gegenrichtung - resume stellt
   //    eine Rolle wieder her, statt eine abzuschalten.
-  if (cmd && role !== '' && role !== 'none' && CONTROL_VERB_TABOO.test(norm(cmd)))
-    return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu — pausieren und fortsetzen ist Sache des Menschen (`pnpm harness pause <issue> "<grund>"` in seiner eigenen Shell).' }
+  //    Der Worktree steht in derselben Regel, aus demselben Grund und ebenfalls fuer jede Rolle:
+  //    seit die Rollenermittlung ihn als Lebenszeichen liest, entwaffnet sich, wer ihn entfernt.
+  if (cmd && role !== '' && role !== 'none') {
+    if (CONTROL_VERB_TABOO.test(norm(cmd)))
+      return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu — pausieren und fortsetzen ist Sache des Menschen (`pnpm harness pause <issue> "<grund>"` in seiner eigenen Shell).' }
+    if (WORKTREE_TABOO.test(norm(cmd)))
+      return { blocked: true, message: 'Blockiert: der Worktree ist für diese Rolle tabu — die Rollenermittlung liest seine Existenz als Lebenszeichen des Laufs.' }
+  }
 
   // 1) Write/Edit/Read ueber file_path.
   if (path) {

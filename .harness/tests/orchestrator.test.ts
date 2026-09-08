@@ -942,9 +942,11 @@ describe('start richtet den frischen Worktree ein (harness-worktree-setup)', () 
   it('start installiert die Abhängigkeiten im neuen Worktree', () => {
     const calls: Aufruf[] = []
     start(issue, FIXTURE, aufzeichnendesRun(calls))
-    const install = calls.find(c => c.cmd === 'pnpm install')
-    expect(install).toBeDefined()
-    expect(install!.cwd).toBe(worktreeDir(issue))
+    const installIdx = calls.findIndex(c => c.cmd === 'pnpm install')
+    const addIdx = calls.findIndex(c => c.cmd.startsWith('git worktree add'))
+    expect(installIdx).toBeGreaterThan(-1)
+    expect(calls[installIdx].cwd).toBe(worktreeDir(issue))
+    expect(installIdx).toBeGreaterThan(addIdx) // erst nach dem (existenzgeprueften) Worktree
   })
 
   it('Fehlende .env wird als Vorbedingung gemeldet, ohne sie anzulegen', () => {

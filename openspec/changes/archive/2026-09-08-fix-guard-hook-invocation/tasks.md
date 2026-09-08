@@ -34,6 +34,10 @@ liegen außerhalb der Schreibbereiche von test-author (`tests/`) und implementer
       Variable ergäbe `node /.harness/guard.ts` und damit dieselbe stille Wirkungslosigkeit,
       die dieser Change beseitigt. Stattdessen als bewusst akzeptierte Grenze in
       `README.md` festgehalten.
-- [ ] 3.3 Menschlicher Test: in einer frischen Sitzung greift der Guard nachweislich — ein
-      Aufruf, der geblockt gehört, wird geblockt
-- [ ] 3.4 Change nach `openspec/changes/archive/` verschieben (gleicher Branch), PR öffnen
+- [x] 3.3 Menschlicher Test: freigegeben. Drei Proben, alle bestanden — (1) unzulässiger
+      Aufruf: `exit=2` mit „Migration nur gegen die ephemere Test-DB"; (2) zulässiger Aufruf:
+      `exit=0`, keine Ausgabe; (3) Rollenblock im Sitzungsbetrieb: derselbe `Read` auf
+      `.harness/tests/guard.test.ts`, der in derselben Sitzung vor dem Fix noch Quellzeilen
+      geliefert hatte, wurde danach mit „implementer darf Testdateien nicht lesen/ändern"
+      abgelehnt
+- [x] 3.4 Change nach `openspec/changes/archive/` verschieben (gleicher Branch), PR öffnen

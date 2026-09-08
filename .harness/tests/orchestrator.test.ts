@@ -850,19 +850,51 @@ describe('Pfadvergleiche unabhängig von der Schreibweise', () => {
     } finally { cleanup(issue) }
   })
 
+  it('Ein Szenarioname, der eine Testdatei nennt, hält den Lauf nicht an', () => {
+    const issue = freshIssue()
+    try {
+      makeLauf(issue, 'D10 - keine Nennung hier.')
+      // Der Name geht als "## <name>" in den Auftrag, genau wie die Ausgabe. Bliebe er
+      // ungeprueft, traefe ihn erst assertNoTestLeak - und das beendet den ganzen Lauf, statt
+      // diesen einen Failure zu degradieren (§8.2 G3).
+      writeFileSync(join(runDir(issue), 'jest.json'), JSON.stringify({
+        testResults: [{ assertionResults: [{ status: 'failed', title: `Szenario aus ${TESTDATEI}`, failureMessages: ['harmlose Meldung ohne jede Nennung'] }] }],
+      }))
+      const failures = parseJestFailures(issue)
+      expect(failures).toHaveLength(1)
+      expect(failures[0].name).not.toContain(TESTDATEI)
+      expect(failures[0].message).not.toContain(TESTDATEI)
+      expect(readFileSync(join(runDir(issue), 'leak-degradations.log'), 'utf8')).toContain('zurückgehalten')
+    } finally { cleanup(issue) }
+  })
+
   it('Getrackte Propose-Originale bleiben erhalten', () => {
-    // Der Pfad wird LITERAL mit Backslashes uebergeben, nicht ueber join(): auf einem
-    // Nicht-Windows-Laeufer lieferte join() ohnehin Forward-Slashes, und der Defekt aus #21
-    // waere dort gar nicht nachstellbar. So prueft der Test dieselbe Sache auf jeder Plattform.
-    // Im getrackten Zweig folgt kein Dateisystemzugriff, das Verzeichnis muss also nicht
-    // existieren - und es entsteht kein Rauschen im Arbeitsbaum.
-    const src = 'openspec\\changes\\__pfadtest_getrackt__'
+    const getrackt: Sh = () => ({ ok: true, out: '' }) // ok = git kennt den Pfad
+
+    // Erstens die Sache selbst: an einem WIRKLICH vorhandenen Verzeichnis, sonst sagt der Test
+    // ueber die Loeschverhinderung nichts aus - rmSync mit force:true wirft auf einem nicht
+    // existierenden Pfad ebenfalls nicht, und der Test bliebe gruen, wenn die Schutzabfrage
+    // entfiele (Review-Befund Runde 2).
+    const issue = freshIssue()
+    const src = join(runDir(issue), 'propose-original')
+    try {
+      mkdirSync(src, { recursive: true })
+      writeFileSync(join(src, 'proposal.md'), 'x')
+      removeUntrackedSourceDocs(src, getrackt)
+      expect(existsSync(src)).toBe(true)
+    } finally { cleanup(issue) }
+
+    // Zweitens die Form der Pfadspezifikation - hier mit einem LITERALEN Backslash-Pfad, denn
+    // auf einem Nicht-Windows-Laeufer lieferte join() ohnehin Forward-Slashes und der Defekt
+    // aus #21 waere dort nicht nachstellbar. Im getrackten Zweig folgt kein
+    // Dateisystemzugriff, das Verzeichnis muss also nicht existieren.
     const kommandos: string[] = []
-    const run: Sh = cmd => { kommandos.push(cmd); return { ok: true, out: '' } } // ok = git kennt den Pfad
-    removeUntrackedSourceDocs(src, run)
+    removeUntrackedSourceDocs('openspec\\changes\\__pfadtest__', cmd => {
+      kommandos.push(cmd); return getrackt(cmd)
+    })
     const lsFiles = kommandos.find(c => c.includes('ls-files'))
     // Ohne Forward-Slashes antwortet git immer "kein Treffer" - die Abfrage waere keine mehr.
-    expect(lsFiles).toContain('openspec/changes/__pfadtest_getrackt__')
+    expect(lsFiles).toContain('openspec/changes/__pfadtest__')
     expect(lsFiles).not.toContain('\\')
   })
 

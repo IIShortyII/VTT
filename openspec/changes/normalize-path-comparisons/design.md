@@ -139,7 +139,28 @@ Verzeichnis: der bloße Dateiname aus `Cannot find module './x' from 'auth-ui.un
 Das Abschneiden erfasst sie nicht, weil sie kein Trennzeichen enthält. `spec.md` prüft beide
 Formen in je einem Szenario.
 
-### D6 — Die Konventions-Ausnahme aus #22 bleibt unangetastet
+### D6 — Die Sperre des Run-State liegt im Guard, nicht im Orchestrator
+
+`.harness/runs/<issue>/` ist die Quelle, aus der der Orchestrator seine gefilterten Ausgaben
+baut. Wer sie lesen darf, braucht das Gefilterte nicht — die Wächter über Auftrag und
+Gate-Ausgabe schützten dann eine Tür, neben der ein offenes Fenster steht.
+
+Die Regel gehört in `guard.ts`, weil sie einen **Werkzeugaufruf** betrifft und nicht das, was
+der Orchestrator selbst weitergibt. `isTest()` deckt sie nicht ab: der Pfad heißt `runs`, nicht
+`tests`, und eine Erweiterung von `isTest` wäre irreführend — das Run-Verzeichnis enthält keine
+Tests, sondern deren Ausgabe. Deshalb ein eigenes Prädikat `isRunState` und eine eigene Regel.
+
+Sie gilt für **beide** Rollen und lesend wie schreibend, und sie steht vor der
+Rollenverzweigung: die Begründung ist für implementer und test-author dieselbe, und der
+Run-State gehört keiner von beiden. Ohne aktive Rolle bleibt er lesbar — die orchestrierende
+Sitzung arbeitet mit ihm, und der Mensch muss ihn einsehen können.
+
+Die Umwege waren bereits zu (Grep/Glob über das Whitelisting der Quellpfade, Bash über
+`CONTROL_FILE_TABOO` und die Schreibziel-Erkennung); offen war allein der direkte `Read`. Ein
+Test hält jeden dieser Wege fest, damit die Sperre nicht an einer Stelle repariert und an der
+nächsten vergessen wird.
+
+### D7 — Die Konventions-Ausnahme aus #22 bleibt unangetastet
 
 Sie beantwortet eine andere Frage: nicht „ist das eine Testdatei", sondern „ist dieser Inhalt
 geheim". Sie greift auf dem Inhalts-Zweig und bleibt dort.

@@ -215,7 +215,11 @@ export function reviewRework(s: Status): string {
 export function scopeOfFinding(f: unknown): Scope {
   const ort = fwd(String((f as Record<string, unknown>).ort ?? ''))
   if (/(^|\/)(src|prisma)\//.test(ort)) return 'impl'
-  if (/(^|\/)tests\//.test(ort) || /\.test\.tsx?$/.test(ort)) return 'test'
+  // Dieselbe Antwort auf "ist das eine Testdatei" wie im Leak-Waechter, nicht eine zweite
+  // (Review-Befund Runde 2, dieselbe Bewegung wie bei fwd): die alte Regex hier kannte nur
+  // .test.ts(x), sodass ein Finding zu x.test.js ausserhalb von tests/ als 'human' eskaliert
+  // waere, statt an den test-author zu gehen.
+  if (/(^|\/)tests\//.test(ort) || IST_TESTDATEI.test(ort)) return 'test'
   return 'human'
 }
 
@@ -396,6 +400,15 @@ export function parseJestFailures(i: string): Failure[] {
           // (Review-Befund Runde 1). Eine Pruefung, an der eine spaetere Ersetzung vorbeilaeuft,
           // schuetzt die Ausgabe nicht, die beim implementer ankommt.
           const kandidat = trimmed || firstErrorLine(raw)
+          // Auch der NAME geht in den Auftrag ("## ${f.name}" in buildImplPrompt), nicht nur
+          // die Ausgabe. Bliebe er ungeprueft, traefe ihn erst assertNoTestLeak - und das
+          // beendet den ganzen Lauf, statt diesen einen Failure zu degradieren. Kein Leak, aber
+          // die falsche Wirkung: G3 sieht hier die Degradierung vor (Review-Befund Runde 2).
+          if (leakt(t.title)) {
+            protokolliere(i, t.title, 'zurückgehalten (Szenarioname)')
+            out.push({ name: 'Szenario zurückgehalten', message: RUECKHALT_HINWEIS })
+            continue
+          }
           out.push({ name: t.title, message: leakt(kandidat) ? degradeToFirstLine(i, t.title, raw, leakt) : kandidat })
         }
     return out
@@ -423,20 +436,21 @@ export function truncateAtTestReference(m: string): string {
 // dass zurueckgehalten wurde. Der implementer verliert damit dieses eine Feedback - der Preis
 // ist niedriger als eine Preisgabe (constitution.md §2.2 vor §8.2 G3), und der Mensch findet
 // den Vorgang im Protokoll.
+const RUECKHALT_HINWEIS = 'Ausgabe zurückgehalten: sie nennt eine Testdatei (siehe leak-degradations.log).'
+// Ein zurueckgehaltener Failure kostet den implementer sein Feedback, waehrend der
+// Rundenzaehler nach §3.5 weiterlaeuft. Trifft es alle Failures einer Runde, liefe der Lauf bis
+// zur Eskalation, ohne dass der Mensch den Grund saehe - das Protokoll liest niemand von
+// allein. Deshalb zusaetzlich auf stderr, wie beim Board-Beiwerk (Review-Befund Runde 1).
+function protokolliere(i: string, testName: string, was: string) {
+  appendFileSync(join(runDir(i), 'leak-degradations.log'), `[${new Date().toISOString()}] ${was}: ${testName}\n`)
+  if (was.startsWith('zurückgehalten'))
+    console.error(`[gate] Ausgabe zu "${testName}" zurückgehalten: sie nennt eine Testdatei.`)
+}
 function degradeToFirstLine(i: string, testName: string, raw: string, leakt: (t: string) => boolean): string {
   const kurz = firstErrorLine(raw)
   const zurueckgehalten = leakt(kurz)
-  appendFileSync(join(runDir(i), 'leak-degradations.log'),
-    `[${new Date().toISOString()}] ${zurueckgehalten ? 'zurückgehalten' : 'degradiert'}: ${testName}\n`)
-  // Ein zurueckgehaltener Failure kostet den implementer sein Feedback, waehrend der
-  // Rundenzaehler nach §3.5 weiterlaeuft. Trifft es alle Failures einer Runde, liefe der Lauf
-  // bis zur Eskalation, ohne dass der Mensch den Grund saehe - das Protokoll liest niemand von
-  // allein. Deshalb zusaetzlich auf stderr, wie beim Board-Beiwerk (Review-Befund Runde 1).
-  if (zurueckgehalten)
-    console.error(`[gate] Ausgabe zu "${testName}" zurückgehalten: sie nennt eine Testdatei.`)
-  return zurueckgehalten
-    ? 'Ausgabe zurückgehalten: sie nennt eine Testdatei (siehe leak-degradations.log).'
-    : kurz
+  protokolliere(i, testName, zurueckgehalten ? 'zurückgehalten' : 'degradiert')
+  return zurueckgehalten ? RUECKHALT_HINWEIS : kurz
 }
 function firstErrorLine(m: string): string {
   return (m.split('\n').find(l => l.trim().length > 0) ?? '').trim().slice(0, 300)

@@ -26,9 +26,10 @@ Spezifikation steht eher der Name als der Pfad, und er verrät dasselbe: welche 
 existiert und wie das Verhalten geschnitten ist.
 
 Für die übrigen Dateien unter `tests/` — Fixtures, Mocks, Platzhalter — MUST der Harness eine
-Nennung mit Pfadanteil verlangen. Ihre Namen sind generisch und kommen in gewöhnlicher Prosa
-vor; sie als Nennung zu werten hieße, jeden Auftrag anzuhalten, der zufällig dasselbe Wort
-benutzt.
+Nennung verlangen, die den **worktree-relativen Pfad** enthält. Ihre Namen sind generisch und
+kommen in gewöhnlicher Prosa vor; sie als Nennung zu werten hieße, jeden Auftrag anzuhalten,
+der zufällig dasselbe Wort benutzt. Ein Pfadanteil unterhalb des Testverzeichnisses genügt
+dafür nicht — er ist genauso generisch wie der Name selbst.
 
 Der Harness MUST NOT die Groß-/Kleinschreibung angleichen. Sie zu ignorieren wäre eine Annahme
 über das Dateisystem, die auf einem anderen Läufer falsch ist.
@@ -83,6 +84,20 @@ Trägt auch die Kurzform die Nennung noch, MUST der Harness weiter zurückhalten
 Preisgebendes übrig ist, und stattdessen benennen, dass zurückgehalten wurde. Eine
 Degradierung, die den Leak mitnimmt, ist keine.
 
+Die Prüfung MUST den **Namen** des fehlgeschlagenen Szenarios einschließen, nicht nur seine
+Ausgabe. Beide gehen in den Auftrag ein. Bliebe der Name ungeprüft, träfe ihn erst der Wächter
+über dem fertigen Auftrag — und der hält den ganzen Lauf an, statt einen einzelnen Failure zu
+degradieren. Das ist zwar kein Leak, aber die falsche Wirkung: G3 sieht für diesen Fall die
+Degradierung vor.
+
+#### Scenario: Ein Szenarioname, der eine Testdatei nennt, hält den Lauf nicht an
+
+- **GIVEN** der Name eines fehlgeschlagenen Szenarios enthält den Namen einer existierenden
+  Testdatei
+- **WHEN** der Harness die Gate-Ausgabe für die Weitergabe aufbereitet
+- **THEN** wird dieser Failure zurückgehalten und der Vorgang protokolliert — weitergegeben
+  wird weder der Name noch die Ausgabe, und der übrige Lauf läuft weiter
+
 #### Scenario: Auch die Rückfallform nach vollständigem Kürzen wird geprüft
 
 - **GIVEN** die Ausgabe eines fehlgeschlagenen Szenarios nennt eine existierende Testdatei
@@ -100,6 +115,46 @@ Degradierung, die den Leak mitnimmt, ist keine.
 - **WHEN** der Harness die Gate-Ausgabe für die Weitergabe aufbereitet
 - **THEN** enthält die weitergegebene Ausgabe dieses Failure den Dateinamen nicht mehr, der
   Vorgang ist protokolliert, und der übrige Lauf läuft weiter
+
+### Requirement: Der Run-State ist für die Rollen nicht lesbar
+
+Der Harness MUST den Rollen `implementer` und `test-author` den Lesezugriff auf das
+Run-Verzeichnis eines Laufs verwehren. Dort liegt die **ungefilterte** Gate-Ausgabe: `jest.json`
+enthält Codeframes, absolute Testpfade und vollständige Matcher-Meldungen, `status.json` die
+geparsten Failures.
+
+Ohne diese Sperre ist jede Filterung an der Ausgabe wirkungslos — wer die Quelle lesen darf,
+braucht das Aufbereitete nicht. Die Wächter über Auftrag und Gate-Ausgabe schützen dann eine
+Tür, neben der ein offenes Fenster steht.
+
+#### Scenario: Der implementer darf die rohe Gate-Ausgabe nicht lesen
+
+- **GIVEN** ein Lauf steht in einem Implementierungsschritt, und im Run-Verzeichnis liegt die
+  rohe Ausgabe des letzten Gate-Laufs
+- **WHEN** der implementer versucht, eine Datei aus dem Run-Verzeichnis zu lesen
+- **THEN** wird der Zugriff abgelehnt
+
+#### Scenario: Auch der test-author bleibt draußen
+
+- **GIVEN** ein Lauf steht in einem Test-Nacharbeit-Schritt
+- **WHEN** der test-author versucht, eine Datei aus dem Run-Verzeichnis zu lesen
+- **THEN** wird der Zugriff abgelehnt — die Rundenhistorie und die Reviewer-Findings anderer
+  Rollen gehören ihm so wenig wie dem implementer
+
+#### Scenario: Auch die Umwege sind gesperrt
+
+- **GIVEN** ein Lauf steht in einem Implementierungsschritt
+- **WHEN** der implementer das Run-Verzeichnis nicht über einen Dateizugriff, sondern über ein
+  Shell-Kommando oder ein Suchwerkzeug zu lesen versucht
+- **THEN** wird auch dieser Zugriff abgelehnt — eine Sperre, die nur den direkten Weg kennt,
+  verlagert den Zugriff, statt ihn zu verhindern
+
+#### Scenario: Ohne aktive Rolle bleibt das Run-Verzeichnis lesbar
+
+- **GIVEN** kein Lauf beansprucht eine aktive Rolle
+- **WHEN** eine Datei aus dem Run-Verzeichnis gelesen wird
+- **THEN** wird der Zugriff erlaubt — die orchestrierende Sitzung arbeitet mit dem Run-State,
+  und der Mensch muss ihn einsehen können
 
 ### Requirement: Pfadspezifikationen an Git tragen Forward-Slashes
 

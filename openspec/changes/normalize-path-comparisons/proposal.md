@@ -54,6 +54,15 @@ Siehe Issue #21 samt Kommentar zur zweiten Fundstelle.
   sonst nicht vorkommen.
 - **`removeUntrackedSourceDocs` bildet die Pfadspezifikation mit Forward-Slashes** — wie es
   `sh('git add openspec/changes/…')` zwei Zeilen darüber schon tut.
+- **Der Run-State wird für die Rollen lesegesperrt.** Im Review dieses Change aufgefallen und
+  hierher gezogen, weil es dieselbe Naht ist: `.harness/runs/<issue>/jest.json` trägt die
+  **ungefilterte** Gate-Ausgabe — Codeframes, absolute Testpfade, vollständige
+  Matcher-Meldungen. `isTest()` greift dort nicht (der Pfad heißt `runs`, nicht `tests`), und
+  ein `Read` darauf ging bisher durch. Damit war jede Filterung an der Ausgabe wirkungslos:
+  wer die Quelle lesen darf, braucht das Aufbereitete nicht. Nachgestellt und behoben.
+- **Auch der Name eines fehlgeschlagenen Szenarios wird geprüft**, nicht nur seine Ausgabe.
+  Beide gehen in den Auftrag; ein ungeprüfter Name träfe erst den Wächter über dem fertigen
+  Auftrag — und der hält den ganzen Lauf an, statt den einzelnen Failure zu degradieren.
 
 **Unverändert:** Zustandsautomat, Rundenzähler, Gate-Reihenfolge, Rollenrouting. Der Erkenner
 ist strenger als der bisherige Zustand, nie nachsichtiger: was heute als Leak gilt, gilt auch
@@ -86,7 +95,8 @@ Das Requirement bleibt wörtlich gültig; es wird nur nicht mehr falsch umgesetz
 ## Impact
 
 - `.harness/orchestrator.ts` (`removeUntrackedSourceDocs`, `assertNoTestLeak`,
-  `parseJestFailures`, neuer Erkenner), `.harness/tests/orchestrator.test.ts`
+  `parseJestFailures`, `scopeOfFinding`, neuer Erkenner), `.harness/guard.ts` (`isRunState`
+  und die Regel dazu), `.harness/tests/orchestrator.test.ts`, `.harness/tests/guard.test.ts`
 - Kein Anwendungscode (`constitution.md` §1.4)
 - Keine neuen Dependencies
 - **Wirkung auf laufende Feature-Läufe:** Der Leak-Wächter wird schärfer. Eine `design.md`, die

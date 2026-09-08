@@ -469,6 +469,146 @@ describe('Rollenmarker pro Issue', () => {
   })
 })
 
+// --- block-run-state-access (Issue #34) ----------------------------------------------------
+// Der Run-State ist die Rohform dessen, was der Orchestrator gefiltert weiterreicht: jest.json
+// mit Codeframes und absoluten Testpfaden, status.json mit den geparsten Failures, den
+// geaenderten Dateien jeder Runde und den Review-Findings samt test-scoped Fundstellen.
+//
+// PRUEFVORSCHRIFT (design.md, Context): jeder Block-Test prueft die MELDUNG, nicht nur
+// `blocked`. Die erste Fassung dieser Sperre (#21) war nur deshalb gruen, weil
+// TEST_RUNNER_COMMANDS zufaellig auf den Dateinamen `jest.json` matchte - geblockt wurde nicht
+// der Run-State, sondern ein Testrunner-Aufruf. Beispieldatei ist deshalb `status.json`, ein
+// Name ohne "jest"; `jest.json` kommt nur dort vor, wo gerade die Begruendung geprueft wird.
+describe('Run-State ist fuer jede geltende Rolle gesperrt', () => {
+  const ROLLEN = ['implementer', 'test-author', 'reviewer']
+  const grep = (tool_input: Record<string, unknown>) => ({ tool_name: 'Grep', tool_input })
+  const glob = (tool_input: Record<string, unknown>) => ({ tool_name: 'Glob', tool_input })
+  // Die Meldung muss den Run-State benennen, nicht bloss irgendetwas ablehnen.
+  const NENNT_RUN_STATE = /Run-State/
+
+  it('Ein Dateizugriff auf den Run-State wird abgelehnt', () => {
+    for (const rolle of ROLLEN) {
+      const deps = { readRole: () => rolle }
+      for (const pfad of [
+        '.harness/runs/12/status.json',
+        '.harness/runs/12/leak-degradations.log',
+        '.harness/runs/12/rejected-review.json',
+        // Schreibweise darf keine Rolle spielen (Lehre aus #21).
+        '.harness\\runs\\12\\status.json',
+        // Auch das Verzeichnis selbst, ohne nachfolgende Datei.
+        '.harness/runs/12',
+        // Der Weg aus einem Worktree heraus (cwd = .harness/wt/<issue>) kommt ohne das Wort
+        // ".harness" aus - die natuerliche Schreibweise am Arbeitsort der Rollen.
+        '../../runs/12/status.json',
+      ]) {
+        const result = evaluate(read(pfad), deps)
+        expect([rolle, pfad, result.blocked]).toEqual([rolle, pfad, true])
+        expect([rolle, pfad, result.message]).toEqual([rolle, pfad, expect.stringMatching(NENNT_RUN_STATE)])
+      }
+      // Schreiben ebenso - die Sperre ist keine reine Leseschranke.
+      expect([rolle, evaluate(write('.harness/runs/12/status.json'), deps).blocked]).toEqual([rolle, true])
+    }
+  })
+
+  it('Ein Kommando, das den Run-State nennt, wird abgelehnt', () => {
+    for (const rolle of ROLLEN) {
+      const deps = { readRole: () => rolle }
+      for (const cmd of [
+        'cat .harness/runs/12/status.json',
+        // In Anfuehrungszeichen: eine tokenweise Pruefung wie extractTestReferences wuerde
+        // hier vorbeilaufen, weil das Anfuehrungszeichen die Verankerung bricht (design.md D2).
+        'cat ".harness/runs/12/status.json"',
+        'cd .harness/runs/12 && cat status.json',
+        'grep -r tests .harness/runs',
+        'cat .harness\\runs\\12\\status.json',
+        // Aus dem Worktree heraus, ohne das Wort ".harness" - an der Gegenprobe aufgefallen.
+        'cd .harness/wt/34 && cat ../../runs/12/status.json',
+      ]) {
+        const result = evaluate(bash(cmd), deps)
+        expect([rolle, cmd, result.blocked]).toEqual([rolle, cmd, true])
+        expect([rolle, cmd, result.message]).toEqual([rolle, cmd, expect.stringMatching(NENNT_RUN_STATE)])
+      }
+    }
+    // Der Zufallstreffer aus #21: `jest.json` war schon vorher geblockt - aber als
+    // Testrunner-Aufruf. Geprueft wird hier ausschliesslich die Begruendung.
+    const result = evaluate(bash('cat .harness/runs/12/jest.json'), { readRole: () => 'implementer' })
+    expect(result.blocked).toBe(true)
+    expect(result.message).toMatch(NENNT_RUN_STATE)
+    expect(result.message).not.toMatch(/Testsuite/)
+  })
+
+  it('Ein Suchwerkzeug auf den Run-State wird abgelehnt', () => {
+    for (const rolle of ROLLEN) {
+      const deps = { readRole: () => rolle }
+      for (const call of [
+        grep({ pattern: 'tests/', path: '.harness/runs/12' }),
+        grep({ pattern: 'tests/', path: '.harness/runs' }),
+        // Suchwurzel unverfaenglich, Dateifilter nicht.
+        grep({ pattern: 'tests/', path: '.', glob: '.harness/runs/**/*.json' }),
+        glob({ pattern: '.harness/runs/**/*.json' }),
+        // Suchwurzel aus dem Worktree heraus, ohne das Wort ".harness".
+        grep({ pattern: 'tests/', path: '../../runs/12' }),
+      ]) {
+        const result = evaluate(call, deps)
+        const wo = JSON.stringify(call.tool_input)
+        expect([rolle, wo, result.blocked]).toEqual([rolle, wo, true])
+        expect([rolle, wo, result.message]).toEqual([rolle, wo, expect.stringMatching(NENNT_RUN_STATE)])
+      }
+    }
+  })
+
+  it('Die Pruefung des Rollenmarkers bleibt moeglich', () => {
+    // constitution.md 8.3: die Sitzung prueft den Marker VOR jedem Werkzeugaufruf des naechsten
+    // Schritts - zu dem Zeitpunkt traegt er noch die Rolle des vorigen, und der
+    // soleActiveRole-Fallback wendet sie auf die Sitzung selbst an. Eine pauschale Sperre
+    // blockte genau diese Pruefung (design.md D3).
+    for (const rolle of ROLLEN) {
+      const deps = { readRole: () => rolle }
+      for (const pfad of ['.harness/runs/12/active-role', '.harness\\runs\\12\\active-role']) {
+        expect([rolle, pfad, evaluate(read(pfad), deps).blocked]).toEqual([rolle, pfad, false])
+      }
+    }
+  })
+
+  it('Die Ausnahme gilt nur dem Lesen', () => {
+    // Wer den Marker setzen kann, schaltet die Sperre ab, unter der er steht. Ueber Bash gibt es
+    // die Ausnahme gar nicht: einem Kommandotext ist nicht anzusehen, ob er liest oder schreibt.
+    //
+    // Geprueft wird die MELDUNG, nicht nur das Blockiertsein - und beide Schreibungen des Weges.
+    // Die Ausnahme kennt seit der Gegenprobe die worktree-relative Form; ihre Gegensicherung muss
+    // dieselbe Reichweite haben, sonst ist die Ausnahme breiter als die Sperre, die sie traegt.
+    // Genau das war der Fall (Review-Befund, blockierend): fuer den reviewer war
+    // `Write ../../runs/12/active-role` offen, fuer die beiden anderen Rollen blockte nur
+    // zufaellig die Schreib-Whitelist - mit einer Meldung, die den Marker nicht nennt.
+    for (const rolle of ROLLEN) {
+      const deps = { readRole: () => rolle }
+      for (const call of [
+        write('.harness/runs/12/active-role'),
+        write('../../runs/12/active-role'),
+        bash('cat .harness/runs/12/active-role'),
+        bash('cd .harness/wt/34 && cat ../../runs/12/active-role'),
+        bash('echo none > .harness/runs/12/active-role'),
+        bash('cd .harness/wt/34 && echo none > ../../runs/12/active-role'),
+      ]) {
+        const wo = JSON.stringify(call.tool_input)
+        const result = evaluate(call, deps)
+        expect([rolle, wo, result.blocked]).toEqual([rolle, wo, true])
+        expect([rolle, wo, result.message]).toEqual([rolle, wo, expect.stringMatching(/Steuerdateien/)])
+      }
+    }
+  })
+
+  it('Ein rollenloser Aufruf erreicht den Run-State', () => {
+    // Die orchestrierende Sitzung arbeitet mit dem Run-State, und der Mensch muss ihn einsehen
+    // koennen - in den rollenlosen Phasen liegt dort die ESCALATION.md.
+    for (const deps of [{ readRole: () => '' }, { readRole: () => 'none' }]) {
+      expect(evaluate(read('.harness/runs/12/status.json'), deps).blocked).toBe(false)
+      expect(evaluate(bash('cat .harness/runs/12/ESCALATION.md'), deps).blocked).toBe(false)
+      expect(evaluate({ tool_name: 'Grep', tool_input: { pattern: 'phase', path: '.harness/runs/12' } }, deps).blocked).toBe(false)
+    }
+  })
+})
+
 describe('Issue-Ermittlung', () => {
   it('liest das Issue aus einem file_path', () => {
     expect(issueFromPath('.harness/wt/42/src/foo.ts')).toBe('42')

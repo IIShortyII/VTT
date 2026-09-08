@@ -74,6 +74,42 @@ const CONTROL_VERB_TABOO = /\b(?:harness|orchestrator\.ts)\s+(?:pause|resume)\b/
 // (Review-Befund Runde 3). Auch `\n` gehoert aus der Luecke heraus, sonst verbindet ein
 // mehrzeiliges Kommando ein beliebiges `rm` mit einer spaeteren Zeile, die den Worktree nennt.
 const WORKTREE_TABOO = /\b(?:rm|rmdir|mv)\b[^|;&\n]*\.harness\/wt\/[^/\s'"]+\/?(?=[\s'"]|$)|\bgit\s+worktree\s+(?:remove|prune)\b/
+// Der Run-State eines Laufs (Issue #34). `.harness/runs/<issue>/` traegt die Rohform dessen, was
+// der Orchestrator gefiltert weiterreicht: jest.json mit Codeframes und absoluten Testpfaden,
+// status.json mit den geparsten Failures, den geaenderten Dateien jeder Runde und den
+// Review-Findings samt test-scoped Fundstellen. constitution.md 8.2 G4 haelt diese Rohform
+// bewusst beim Orchestrator - wer die Quelle lesen darf, umgeht assertNoTestLeak,
+// parseJestFailures und formatRoundsHistory auf einmal und braucht das Aufbereitete nicht mehr.
+// Gesperrt fuer JEDE geltende Rolle, wie Steuerdatei- und Worktree-Tabu: der reviewer faende
+// dort die Urteile der vorherigen Runden (lastReview.findings, rejected-review.json), die sein
+// eigenes vorpraegen, und der test-author die Implementierung, gegen die er seine Tests nach 2.1
+// gerade nicht korrigieren soll.
+//
+// Zwei Formen, aus demselben Grund getrennt wie CONTROL_FILE_TABOO/CONTROL_VERB_TABOO - die eine
+// zielt auf Pfade, die andere auf Kommandos:
+// - Pfad-Form: verankert, trifft auch das Verzeichnis selbst ohne nachfolgende Datei ("(/|$)"),
+//   denn Grep/Glob bekommen eine Suchwurzel uebergeben, keinen Dateipfad.
+// - Kommando-Form: unverankert gegen die ganze Zeile. Ein Pfad steht dort in Anfuehrungszeichen,
+//   hinter einem `cd`, mit einem Glob oder in einem `node -e`-Schnipsel; eine tokenweise Pruefung
+//   (wie extractTestReferences) liefe an `cat ".harness/runs/12/status.json"` vorbei, weil das
+//   Anfuehrungszeichen die Verankerung bricht.
+//
+// Beide Formen kennen zwei Schreibungen des Weges dorthin. Vom Repo-Wurzelverzeichnis aus heisst
+// er ".harness/runs/<issue>/…"; aus einem Worktree heraus (cwd = .harness/wt/<issue>) heisst er
+// "../../runs/<issue>/…" und kommt ohne das Wort ".harness" aus. Die zweite Form ist keine
+// Verschleierung, sondern die natuerliche Schreibweise am Arbeitsort der Rollen - an der
+// Gegenprobe zu diesem Change aufgefallen, nachdem die erste Fassung nur die erste Form kannte.
+const RUN_STATE_PATH = /(^|\/)(?:\.harness\/|(?:\.\.\/)+)runs(\/|$)/
+const RUN_STATE_TABOO = /\.harness\/runs\b|(?:^|[\s'"(;&|=])(?:\.\.\/)+runs\b/
+// Ausnahme fuer den Rollenmarker, und nur fuer die Pfad-Form: constitution.md 8.3 verlangt seine
+// Pruefung, BEVOR irgendein Werkzeugaufruf fuer den anstehenden Schritt erfolgt - zu dem
+// Zeitpunkt traegt er noch die Rolle des vorigen Schritts, und der soleActiveRole-Fallback wendet
+// sie auf die Sitzung selbst an. Eine pauschale Sperre blockte also genau die Pruefung, die den
+// Rollenfehler auffangen soll. Preisgeben kann der Marker nichts: ein Wort aus einer festen
+// Rollenmenge. Geschrieben bleibt er durch CONTROL_FILE_TABOO gesperrt - deshalb keine Ausnahme
+// in der Kommando-Form: einem Kommandotext ist nicht anzusehen, ob er liest oder schreibt
+// (`sed -i`, `>`, `truncate`, `chmod`).
+const ROLE_MARKER_PATH = /(^|\/)(?:\.harness\/|(?:\.\.\/)+)runs\/[^/]+\/active-role$/
 // ---------------------------------------------------------------------------------------------
 
 const norm = (p: string): string => p.replace(/\\/g, '/')
@@ -81,6 +117,18 @@ const norm = (p: string): string => p.replace(/\\/g, '/')
 // Verzeichnis als Suchwurzel uebergeben ("path": "src"), nicht nur Dateipfade.
 export const isTest = (p: string): boolean => { const n = norm(p); return /(^|\/)tests(\/|$)/.test(n) || /\.test\.tsx?$/.test(n) }
 export const isSrc = (p: string): boolean => { const n = norm(p); return SRC_DIRS.some(d => new RegExp(`(^|/)${d}(/|$)`).test(n)) }
+// Bewusst kein Anbau an isTest(): das Run-Verzeichnis enthaelt keine Tests, sondern deren
+// Ausgabe, und es ist aus einem anderen Grund gesperrt. Eine gemeinsame Funktion haette auch die
+// Meldungen mitverdorben - "darf Testdateien nicht lesen/aendern" fuer ein status.json schickt
+// den Aufrufer an die falsche Stelle. Genau daran ist die erste Fassung dieser Sperre (#21)
+// gescheitert: sie blockte jest.json, aber als Testrunner-Aufruf.
+export const isRunState = (p: string): boolean => { const n = norm(p); return RUN_STATE_PATH.test(n) && !ROLE_MARKER_PATH.test(n) }
+// Eine Meldung fuer alle drei Wege; `wo` benennt die Herkunft der Angabe (Suchziel,
+// Bash-Referenz), wie bei den uebrigen Meldungen des Guards.
+const runStateBlock = (wo?: string): GuardResult => ({
+  blocked: true,
+  message: `Blockiert: der Run-State (.harness/runs/) ist für diese Rolle tabu${wo ? ` (${wo})` : ''} — er trägt die ungefilterte Gate-Ausgabe samt Testpfaden und die Findings der vorherigen Runden. Was eine Rolle davon braucht, reicht der Orchestrator gefiltert weiter.`,
+})
 
 // D7: das Issue wird aus dem Worktree-Pfad des Tool-Calls ermittelt (.harness/wt/<issue>/...).
 // Tool-Calls ausserhalb eines Worktrees (Orchestrator-Arbeit im Hauptrepo) liefern kein Issue
@@ -216,6 +264,14 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
       return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu — pausieren und fortsetzen ist Sache des Menschen (`pnpm harness pause <issue> "<grund>"` in seiner eigenen Shell).' }
     if (WORKTREE_TABOO.test(norm(cmd)))
       return { blocked: true, message: 'Blockiert: der Worktree ist für diese Rolle tabu — die Rollenermittlung liest seine Existenz als Lebenszeichen des Laufs.' }
+    // Der Run-State steht hier und nicht im Block fuer implementer/test-author, aus zwei
+    // Gruenden. Erstens gilt er fuer jede Rolle (siehe RUN_STATE_TABOO). Zweitens die
+    // Reihenfolge: stuende er weiter unten, behielte `cat .harness/runs/<i>/jest.json` seine
+    // alte Begruendung "implementer fuehrt die Testsuite nicht selbst aus" - TEST_RUNNER_COMMANDS
+    // matcht zufaellig auf den Dateinamen. Genau dieser Zufall trug den Test der ersten Fassung
+    // (#21) und liess die Luecke als geschlossen erscheinen. Hinter den beiden Tabus darueber
+    // bleibt sie, damit Rollenmarker und Pause-Verben ihre genaueren Meldungen behalten.
+    if (RUN_STATE_TABOO.test(norm(cmd))) return runStateBlock('Bash-Referenz')
   }
 
   // 1) Write/Edit/Read ueber file_path.
@@ -225,6 +281,10 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
     // ein Write darauf ist derselbe Selbstentwaffnungsschritt wie `echo none > ...` (Regel 0).
     if (isWrite && role !== '' && role !== 'none' && CONTROL_FILE_TABOO.test(norm(path)))
       return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu.' }
+    // Fuer jede Rolle und fuer Lesen wie Schreiben - der Weg ueber file_path war der einzige, den
+    // die erste Fassung (#21) geschlossen hat. Der Rollenmarker faellt ueber isRunState heraus
+    // (constitution.md 8.3); die Zeile darueber haelt ihn weiterhin gegen Schreiben.
+    if (role !== '' && role !== 'none' && isRunState(path)) return runStateBlock()
     if (role === 'implementer') {
       if (isTest(path)) return { blocked: true, message: 'Blockiert: implementer darf Testdateien nicht lesen/ändern.' }
       if (isWrite && !isSrc(path)) return { blocked: true, message: 'Blockiert: implementer schreibt nur in src/ oder prisma/.' }
@@ -239,6 +299,19 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
   //    "path" laeuft ueber das gesamte Worktree und schliesst tests/ mit ein; sie zu erlauben
   //    hiesse, die Sperre an der breitesten Stelle offen zu lassen (fail-closed, siehe 2.2).
   //    Der test-author darf uneingeschraenkt lesen - fuer ihn ist tests/ der eigene Bereich.
+  // 2a) Dieselbe Frage fuer den Run-State, aber fuer JEDE Rolle: die Pruefung unten gilt nur dem
+  //     implementer, und fuer test-author und reviewer war das Suchwerkzeug damit der offene
+  //     dritte Weg. Bekannte Grenze (design.md D5): eine Suche OHNE einschraenkenden Pfad erfasst
+  //     den Run-State, ohne ihn zu nennen. Fuer den implementer ist sie durch die Whitelist unten
+  //     bereits ausgeschlossen; fuer die beiden anderen Rollen liesse sie sich nur durch eine
+  //     eigene Whitelist schliessen, und die des reviewers - er beurteilt den gesamten Diff -
+  //     waere "alles". Eine Whitelist, die alles enthaelt, schraenkt nichts ein.
+  if ((tool === 'Grep' || tool === 'Glob') && role !== '' && role !== 'none') {
+    // Bei Glob ist "pattern" der Pfad-Glob, bei Grep der Regex-Suchbegriff (dort filtert "glob").
+    const pathLike = [searchPath, searchGlob, tool === 'Glob' ? searchPattern : ''].filter(Boolean)
+    if (pathLike.some(isRunState)) return runStateBlock('Suchziel')
+  }
+
   if ((tool === 'Grep' || tool === 'Glob') && role === 'implementer') {
     // Bei Glob ist "pattern" der Pfad-Glob, bei Grep der Regex-Suchbegriff (dort filtert "glob").
     const pathLike = [searchGlob, tool === 'Glob' ? searchPattern : ''].filter(Boolean)

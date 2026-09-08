@@ -92,7 +92,7 @@
 - [x] 5.5 Beide neuen Zusicherungen per Mutationsprobe geprüft: ein Fundstellen-Fallback auf
       den ersten Block und ein Rückfall auf die Hauptrepo-Konventionen machen je genau einen
       Test rot
-- [ ] 5.6 **Offen, eigenes Issue:** `readChangeParts` liefert bei fehlendem Change-Verzeichnis
+- [x] 5.6 **Als eigenes Issue angelegt (Kind von #27):** `readChangeParts` liefert bei fehlendem Change-Verzeichnis
       still `[]`; der Auftrag entsteht dann mit leerem `# Spec`-Abschnitt und der implementer
       arbeitet gegen nichts. Vorbestehend und nicht von diesem Change verursacht, aber gegen
       die `AGENTS.md`-Konvention „kein stilles catch". Gehört als eigener Befund in Epic #27
@@ -105,7 +105,7 @@
       Design-Entscheidungen mit Quellenzeile darin stehen und die Reihenfolge stimmt —
       **mit den echten Testdateien daneben**, damit der Leak-Wächter tatsächlich läuft (in
       dieser Konstellation ist der Fehlalarm aus D6 aufgefallen)
-- [ ] 6.3 Menschliche Freigabe einholen (`constitution.md` §3.4 — kein App-Test, der Change
+- [x] 6.3 Menschliche Freigabe einholen (`constitution.md` §3.4 — kein App-Test, der Change
       berührt keinen Anwendungscode; geprüft wird die Ausgabe aus 6.2)
-- [ ] 6.4 Change nach `openspec/changes/archive/` verschieben (gleicher Branch/Commit-Bereich)
+- [x] 6.4 Change nach `openspec/changes/archive/` verschieben (gleicher Branch/Commit-Bereich)
       und PR mit `Closes #22` öffnen; menschlicher Merge

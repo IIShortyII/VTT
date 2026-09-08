@@ -261,8 +261,8 @@ function seedChangeDocs(i: string, change: string) {
 // wenn sie im Hauptrepo untracked sind -
 // sind sie getrackt (z.B. versehentlich committet), koennte noch etwas darauf verweisen, dann
 // nichts loeschen.
-function removeUntrackedSourceDocs(src: string) {
-  const tracked = sh(`git ls-files --error-unmatch -- "${src}"`)
+export function removeUntrackedSourceDocs(src: string, run: Sh = sh) {
+  const tracked = run(`git ls-files --error-unmatch -- "${src}"`)
   if (tracked.ok) return
   rmSync(src, { recursive: true, force: true })
 }

@@ -5,7 +5,7 @@ import {
   scopeOfFinding, parseJestFailures, recordRoundSummary, recordReview, runDir, worktreeDir,
   cleanup as cleanupRun,
   confirmRed, gate, boardVerb,
-  buildImplPrompt, buildTestReworkPrompt, readChangeSpec,
+  buildImplPrompt, buildTestReworkPrompt, readChangeSpec, removeUntrackedSourceDocs,
   MAX_ROUNDS,
 } from '../orchestrator.js'
 import type { Status, Sh } from '../orchestrator.js'
@@ -703,5 +703,118 @@ describe('Material aus dem OpenSpec-Change', () => {
       expect(meldung).toContain('auth.integration.test.ts')
       expect(meldung).not.toContain('Fundstelle')
     } finally { exitSpy.mockRestore(); errorSpy.mockRestore(); cleanup(issue) }
+  })
+})
+
+// Pfadvergleiche unabhaengig von der Schreibweise (spec.md "harness-path-matching").
+//
+// Zwei Stellen, an denen ein Pfad seine Form wechselt: er entsteht als Betriebssystempfad und
+// wird als Text weiterverwendet - einmal als Git-Pathspec, einmal als Suchmuster im Auftrag.
+// Beide sollen etwas VERHINDERN (eine Loeschung, eine Preisgabe); faellt der Vergleich aus,
+// faellt es deshalb nicht auf, solange nichts zu verhindern war.
+describe('Pfadvergleiche unabhängig von der Schreibweise', () => {
+  const CHANGE = 'ein-change'
+  const TESTDATEI = 'user-auth.integration.test.ts'
+
+  // Minimale Fixture: ein Worktree mit Change-Ordner und einer echten Testdatei. Die design.md
+  // wird je Szenario anders bestueckt - sie ist die Stelle, an der eine Nennung real auftritt.
+  function makeLauf(issue: string, design: string) {
+    const dir = join(worktreeDir(issue), 'openspec', 'changes', CHANGE)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'proposal.md'), 'Warum dieser Change existiert.')
+    writeFileSync(join(dir, 'design.md'), design)
+    const testDir = join(worktreeDir(issue), 'tests')
+    mkdirSync(testDir, { recursive: true })
+    writeFileSync(join(testDir, TESTDATEI), 'const x = 1\n')
+    return makeStatus(issue, { change: CHANGE, phase: 'implement' })
+  }
+  function bauenMitAbfangen(issue: string): { warf: boolean; meldung: string } {
+    const meldungen: string[] = []
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation((() => { throw new Error('process.exit') }) as never)
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation((...a: unknown[]) => { meldungen.push(a.map(String).join(' ')) })
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined)
+    let warf = false
+    try { buildImplPrompt(issue) } catch { warf = true } finally {
+      exitSpy.mockRestore(); errorSpy.mockRestore(); logSpy.mockRestore()
+    }
+    return { warf, meldung: meldungen.join('\n') }
+  }
+
+  it('Eine Nennung mit Forward-Slashes wird erkannt', () => {
+    const issue = freshIssue()
+    try {
+      // Der Harness fuehrt den Pfad intern mit den Trennzeichen des Betriebssystems; die
+      // design.md schreibt ihn so, wie ein Mensch ihn schreibt.
+      makeLauf(issue, `D10 - Der Ablauf ist in tests/${TESTDATEI} festgehalten.`)
+      const { warf, meldung } = bauenMitAbfangen(issue)
+      expect(warf).toBe(true)
+      expect(meldung).toContain(TESTDATEI)
+    } finally { cleanup(issue) }
+  })
+
+  it('Der bloße Dateiname gilt als Nennung', () => {
+    const issue = freshIssue()
+    try {
+      makeLauf(issue, `D10 - Siehe ${TESTDATEI} fuer den erwarteten Ablauf.`)
+      const { warf, meldung } = bauenMitAbfangen(issue)
+      expect(warf).toBe(true)
+      expect(meldung).toContain(TESTDATEI)
+    } finally { cleanup(issue) }
+  })
+
+  it('Ein Name, der auf keine Testdatei des Laufs passt, hält den Lauf nicht an', () => {
+    const issue = freshIssue()
+    try {
+      // Gegenprobe zur Breite des Erkenners: er darf nicht auf jede Zeichenkette anschlagen,
+      // die nach einem Testdateinamen aussieht - nur auf Dateien, die es wirklich gibt.
+      makeLauf(issue, 'D10 - Vorbild ist tests/gibt-es-nicht.unit.test.ts aus einem anderen Repo.')
+      const { warf } = bauenMitAbfangen(issue)
+      expect(warf).toBe(false)
+    } finally { cleanup(issue) }
+  })
+
+  it('Eine Gate-Ausgabe, die eine Testdatei beim Namen nennt, wird degradiert', () => {
+    const issue = freshIssue()
+    try {
+      makeLauf(issue, 'D10 - keine Nennung hier.')
+      // Ohne Verzeichnisanteil: truncateAtTestReference schneidet nur an tests/ bzw. tests\ ab
+      // und laesst diese Form stehen - erst der Erkenner faengt sie.
+      const message = `Cannot find module './fehlt' from '${TESTDATEI}'\nweitere Zeile zur Laenge`
+      writeFileSync(join(runDir(issue), 'jest.json'), JSON.stringify({
+        testResults: [{ assertionResults: [{ status: 'failed', title: 'ein Szenario', failureMessages: [message] }] }],
+      }))
+      const failures = parseJestFailures(issue)
+      expect(failures).toHaveLength(1)
+      expect(failures[0].message).not.toContain(TESTDATEI)
+      expect(readFileSync(join(runDir(issue), 'leak-degradations.log'), 'utf8')).toContain('ein Szenario')
+    } finally { cleanup(issue) }
+  })
+
+  it('Getrackte Propose-Originale bleiben erhalten', () => {
+    const src = join('openspec', 'changes', '__pfadtest_getrackt__')
+    try {
+      mkdirSync(src, { recursive: true })
+      writeFileSync(join(src, 'proposal.md'), 'x')
+      const kommandos: string[] = []
+      // ok: true = git kennt den Pfad, die Dateien sind getrackt.
+      const run: Sh = cmd => { kommandos.push(cmd); return { ok: true, out: '' } }
+      removeUntrackedSourceDocs(src, run)
+      expect(existsSync(src)).toBe(true)
+      // Die Pfadspezifikation muss Forward-Slashes tragen, sonst antwortet git immer
+      // "kein Treffer" und die Abfrage ist keine mehr.
+      const lsFiles = kommandos.find(c => c.includes('ls-files'))
+      expect(lsFiles).toContain('openspec/changes/__pfadtest_getrackt__')
+    } finally { rmSync(src, { recursive: true, force: true }) }
+  })
+
+  it('Untrackte Propose-Originale werden aufgeräumt', () => {
+    const src = join('openspec', 'changes', '__pfadtest_untracked__')
+    try {
+      mkdirSync(src, { recursive: true })
+      writeFileSync(join(src, 'proposal.md'), 'x')
+      const run: Sh = () => ({ ok: false, out: 'did not match any file(s) known to git' })
+      removeUntrackedSourceDocs(src, run)
+      expect(existsSync(src)).toBe(false)
+    } finally { rmSync(src, { recursive: true, force: true }) }
   })
 })

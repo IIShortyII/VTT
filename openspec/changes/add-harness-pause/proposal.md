@@ -48,9 +48,12 @@ Siehe Issue #23.
   im Code (Schrittweite, Untergrenze), während nur das Urteil „das war die Umgebung, nicht die
   Implementierung" menschlich bleibt — aktenkundig statt handgeschrieben. Im Lauf zu #12 hat
   der Mensch genau dieses Urteil zweimal gefällt, ohne dass es irgendwo stünde.
-- **`guard.ts`: die neuen Verben ins Steuerdatei-Tabu.** Die bestehende Regex sperrt aktiven
-  Rollen den *Pfad* `.harness/runs/*/active-role`, aber kein *Kommando* — ohne Erweiterung
-  könnte der implementer sich per `pnpm harness pause` selbst entwaffnen.
+- **`guard.ts`: die neuen Verben ins Steuerdatei-Tabu, für jede Rolle.** Die bestehende Regex
+  sperrt den *Pfad* `.harness/runs/*/active-role`, aber kein *Kommando* — ohne Erweiterung
+  könnte ein Subagent sich per `pnpm harness pause` selbst entwaffnen. Weil der Guard Sitzung
+  und Subagent nicht unterscheiden kann, gilt die Sperre notwendig für beide: **pausieren und
+  fortsetzen sind Kommandos des Menschen**, abgesetzt in seiner eigenen Shell, die den Hook
+  nicht durchläuft. Die Sitzung fordert das Pausieren an, statt es auszuführen (design.md D6).
 - **`guard.ts`: der Worktree als Lebenszeichen.** Ein Lauf zählt bei der Rollenermittlung im
   Fallback nur dann als aktiv, wenn `.harness/wt/<issue>/` existiert — zusätzlich zur
   bestehenden Phasenprüfung. `start` legt den Worktree an, `cleanup` entfernt ihn; ein Marker
@@ -75,10 +78,12 @@ Schritt, sie hält ihn an.
 Kein Anwendungscode. Harness-Change nach `constitution.md` §1.4: eigener Branch, eigener PR,
 nie im selben PR wie ein Feature.
 
-## Nicht in diesem Change
+## Voraussetzung
 
-Der Guard läuft in der aktuellen Umgebung faktisch nicht: `settings.json` ruft
-`tsx .harness/guard.ts`, `tsx` ist im PATH der Hook-Shell nicht auflösbar (Exit 127), und ein
-Hook, der nicht mit Exit 2 endet, blockt nicht — der Guard ist damit still fail-open, obwohl
-seine Logik fail-closed gebaut ist. Das ist ein eigener Defekt mit eigener Ursache und gehört
-nach §1.4 in ein eigenes Issue, nicht hierher.
+Der PreToolUse-Guard war bis Issue #29 wirkungslos: `settings.json` startete ihn als
+`tsx .harness/guard.ts`, `tsx` war im PATH der Hook-Shell nicht auflösbar, und ein Hook, der
+nicht mit Exit 2 endet, blockt nicht. Das ist behoben (`node .harness/guard.ts`, abgesichert
+durch `openspec/specs/harness-guard-hook/spec.md`) und **hier vorausgesetzt**: sämtliche
+Guard-Aussagen dieses Change gelten unter einem tatsächlich laufenden Hook. Beim ersten Entwurf
+war das nicht der Fall, und genau deshalb fiel nicht auf, dass das Verb-Tabu die Sitzung selbst
+aussperrt (siehe design.md D6).

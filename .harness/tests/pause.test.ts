@@ -1,14 +1,30 @@
 // Tests zum Change add-harness-pause (Issue #23), Capability harness-role-marker.
 // Ein Test je GIVEN/WHEN/THEN-Szenario, Testname = Szenarioname (constitution.md §4.1).
-import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, cpSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import {
-  readStatus, writeStatus, next, pause, resume, gate, confirmRed, confirmTestRework,
+  readStatus, writeStatus, next, pause, resume, start, gate, confirmRed, confirmTestRework,
   confirmAppReview, recordReview, recordRoundSummary, runDir, worktreeDir,
   cleanup as cleanupRun, ROLE_FOR_PHASE,
 } from '../orchestrator.js'
 import type { Status, Role, Sh } from '../orchestrator.js'
-import { makeDeps } from '../guard.js'
+import { makeDeps, evaluate } from '../guard.js'
+
+const write = (file_path: string) => ({ tool_name: 'Write', tool_input: { file_path } })
+// Spiegelt EINEN Lauf in frische tmp-Verzeichnisse und baut den Guard-Fallback darauf. Ohne das
+// liefe die Rollenermittlung gegen die echten .harness/runs und .harness/wt, in denen parallel
+// andere Laeufe liegen (Review-Befund zur Testisolation).
+function gespiegelt(issue: string) {
+  const runs = mkdtempSync(join(tmpdir(), 'pause-test-runs-'))
+  const wt = mkdtempSync(join(tmpdir(), 'pause-test-wt-'))
+  cpSync(runDir(issue), join(runs, issue), { recursive: true })
+  if (existsSync(worktreeDir(issue))) mkdirSync(join(wt, issue), { recursive: true })
+  return {
+    deps: makeDeps(runs, wt),
+    aufraeumen: () => { rmSync(runs, { recursive: true, force: true }); rmSync(wt, { recursive: true, force: true }) },
+  }
+}
 
 let counter = 0
 function freshIssue(): string {
@@ -105,12 +121,23 @@ describe('Ein Lauf lässt sich für einen Eingriff außerhalb der Rollen pausier
     makeStatus(issue, { phase: 'implement' })
     mkdirSync(worktreeDir(issue), { recursive: true })
     writeMarker(issue, 'implementer')
-    const deps = makeDeps(join('.harness', 'runs'), join('.harness', 'wt'))
-    expect(deps.readRole(undefined)).toBe('implementer')
+
+    // Gegen eine Spiegelung in tmp pruefen, nicht gegen die echten .harness/runs und
+    // .harness/wt (Review-Befund): dort liegen parallel echte Laeufe, und mit einem zweiten
+    // aktiven Marker liefert soleActiveRole() '' - der Test waere dann aus dem falschen Grund
+    // rot oder gruen. Geprueft wird der Aufruf selbst, nicht der Zwischenwert der Rolle: die
+    // Zusicherung lautet "wird nicht wegen einer Rollengrenze geblockt".
+    const vorher = gespiegelt(issue)
+    try {
+      expect(evaluate(write('tests/x.test.ts'), vorher.deps).blocked).toBe(true)
+    } finally { vorher.aufraeumen() }
 
     silenced(() => pause(issue, 'Umgebungsfehler'))
 
-    expect(deps.readRole(undefined)).toBe('')
+    const nachher = gespiegelt(issue)
+    try {
+      expect(evaluate(write('tests/x.test.ts'), nachher.deps).blocked).toBe(false)
+    } finally { nachher.aufraeumen() }
     cleanup(issue)
   })
 })
@@ -128,6 +155,7 @@ describe('Ein pausierter Lauf steht still', () => {
     const keinUnterprozess: Sh = () => { throw new Error('Unterprozess während der Pause gestartet') }
 
     const verben: (() => void)[] = [
+      () => start(issue, undefined, keinUnterprozess),
       () => next(issue),
       () => gate(issue, keinUnterprozess),
       () => confirmRed(issue, keinUnterprozess),
@@ -152,6 +180,24 @@ describe('Ein pausierter Lauf steht still', () => {
   })
 })
 
+describe('Ein Lauf ohne Worktree beansprucht keine Rolle', () => {
+  it('Ein Lauf entsteht nicht, wenn sein Worktree nicht angelegt werden konnte', () => {
+    const issue = freshIssue()
+    // Stellvertreter, der jedes Kommando meldet, ohne etwas zu tun: `git worktree add` laeuft
+    // ins Leere, der Worktree entsteht nicht.
+    const ohneWirkung: Sh = () => ({ ok: true, out: '' })
+
+    const meldung = captureFail(() => start(issue, undefined, ohneWirkung))
+
+    expect(meldung).toMatch(/Worktree/)
+    // Weder Marker noch Run-State: sonst bliebe ein Lauf zurueck, den die Rollenermittlung fuer
+    // tot haelt - die einzige Richtung, in die die Lebenszeichen-Pruefung fail-open kippt.
+    expect(existsSync(markerPath(issue))).toBe(false)
+    expect(existsSync(join(runDir(issue), 'status.json'))).toBe(false)
+    cleanup(issue)
+  })
+})
+
 describe('Fortsetzen stellt die Rolle des aktuellen Schritts wieder her', () => {
   it('Fortsetzen setzt die Rolle des aktuellen Schritts', () => {
     const issue = freshIssue()
@@ -169,29 +215,58 @@ describe('Fortsetzen stellt die Rolle des aktuellen Schritts wieder her', () => 
     cleanup(issue)
   })
 
-  it('Die wiederhergestellte Rolle stimmt in jeder Phase mit dem Automaten überein', () => {
-    // Drift-Sicherung zu design.md D3: ROLE_FOR_PHASE ist eine zweite Stelle, die dieselbe
-    // Zuordnung trifft wie next(). Kommt eine Phase hinzu oder aendert sich eine Zuordnung,
-    // faellt dieser Test um.
-    const phasen = Object.keys(ROLE_FOR_PHASE) as Status['phase'][]
-    expect(phasen.length).toBeGreaterThan(0)
+  it('Die wiederhergestellte Rolle stimmt mit dem Automaten überein', () => {
+    // Drift-Sicherung zu design.md D3. Verglichen werden RUN-STATES, nicht bloss Phasen: der
+    // Automat entscheidet in 'gate' feiner als die Phase, und genau dort war die Abweichung
+    // (nach gruenem Gate bleibt die Phase auf 'gate', waehrend der Reviewer-Schritt laeuft).
+    // Ein Test ueber Phasen allein konnte das nicht sehen (Review-Befund).
+    const runStates: { name: string; status: Partial<Status> }[] = [
+      ...(Object.keys(ROLE_FOR_PHASE) as Status['phase'][]).map(phase => ({ name: phase, status: { phase } })),
+      { name: 'gate/grün, nichts offen', status: { phase: 'gate', lastGate: { green: true } } },
+      { name: 'gate/grün, Test-Findings offen', status: { phase: 'gate', lastGate: { green: true }, pendingTestFindings: [{ ort: 'tests/x.test.ts' }] } },
+      { name: 'gate/rot', status: { phase: 'gate', lastGate: { green: false } } },
+    ]
 
-    for (const phase of phasen) {
+    for (const { name, status } of runStates) {
       const issueAutomat = freshIssue()
-      makeStatus(issueAutomat, { phase })
+      const vorher = makeStatus(issueAutomat, status)
       silenced(() => next(issueAutomat))
+      const nachAutomat = readStatus(issueAutomat)
       const rolleLautAutomat = readMarker(issueAutomat)
+      // Verlangt der naechste Schritt einen Zustandsuebergang (Nacharbeit-Runde, Test-Nacharbeit),
+      // bleibt resume rollenlos: den Uebergang samt Rundenzaehler vollzieht allein der Automat.
+      const uebergang = nachAutomat.phase !== vorher.phase || nachAutomat.round !== vorher.round
 
       const issuePause = freshIssue()
-      makeStatus(issuePause, { phase })
+      makeStatus(issuePause, status)
       silenced(() => pause(issuePause, 'Eingriff'))
       silenced(() => resume(issuePause))
+      const nachResume = readStatus(issuePause)
 
-      // Phase mit in die Erwartung: eine Abweichung soll sagen, WELCHE Phase gedriftet ist.
-      expect([phase, readMarker(issuePause)]).toEqual([phase, rolleLautAutomat])
+      // Name mit in die Erwartung: eine Abweichung soll sagen, WELCHER Run-State gedriftet ist.
+      expect([name, readMarker(issuePause)]).toEqual([name, uebergang ? 'none' : rolleLautAutomat])
+      expect([name, nachResume.phase, nachResume.round]).toEqual([name, vorher.phase, vorher.round])
       cleanup(issueAutomat)
       cleanup(issuePause)
     }
+  })
+
+  it('Fortsetzen bei unbekannter Phase wird abgelehnt, bevor etwas geschrieben ist', () => {
+    const issue = freshIssue()
+    makeStatus(issue, { phase: 'implement', round: 1 })
+    silenced(() => pause(issue, 'Eingriff'))
+    // Handkorrektur mit Tippfehler - waehrend der Pause der Regelfall, nicht die Ausnahme.
+    const s = readStatus(issue)
+    writeStatus({ ...s, phase: 'reviw' as Status['phase'] })
+    const zustandVorher = statusRaw(issue)
+
+    const meldung = captureFail(() => resume(issue))
+
+    expect(meldung).toMatch(/Phase/i)
+    expect(statusRaw(issue)).toBe(zustandVorher)
+    expect(readStatus(issue).paused?.grund).toBe('Eingriff')
+    expect(readMarker(issue)).toBe('none')
+    cleanup(issue)
   })
 
   it('Fortsetzen eines Laufs, der nicht pausiert ist, wird abgelehnt', () => {

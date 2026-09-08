@@ -148,8 +148,16 @@ Sitzung, solange der Marker auf einer Rolle steht.
   ersten Feature-Run zweimal passiert. Die Rückgabe wird mit Zeitpunkt, dem Grund der Pause
   und beiden Zählerständen dauerhaft im Run-State festgehalten; sie überlebt das Fortsetzen
   bewusst, denn sie ist der einzige Weg, den Zähler zu senken.
-- **Aktiven Rollen sind beide Verben verboten** (`guard.ts`, Steuerdatei-Tabu) — sonst könnte
-  eine Rolle die Sperre abschalten, unter der sie gerade steht.
+- **Pausieren ist Sache des Menschen.** Beide Verben sind jedem Werkzeugaufruf verboten, für
+  den eine Rolle gilt (`guard.ts`, Steuerdatei-Tabu) — und weil der Guard die orchestrierende
+  Sitzung nicht von einem Subagenten unterscheiden kann, gilt das notwendig für beide: dürfte
+  die Sitzung pausieren, dürfte der `implementer` es auch und hätte damit die Sperre
+  abgeschaltet, unter der er steht. Der Mensch setzt das Kommando in seiner eigenen Shell ab
+  (im Chat mit `!` davor); die läuft nicht durch den Hook. Die Sitzung *fordert* das Pausieren
+  an, statt es auszuführen.
+- `resume` kann die Sitzung selbst aufrufen: während der Pause trägt der Marker `none`, für den
+  Aufruf gilt also keine Rolle. Das ist die Gegenrichtung — eine Rolle wiederherstellen, nicht
+  eine abschalten.
 
 ## Kritische Grenzen (immer)
 - Niemals Secrets/Credentials committen oder ausgeben.

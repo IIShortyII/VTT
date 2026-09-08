@@ -173,6 +173,24 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
   const issue = (path && issueFromPath(path)) || (cmd && issueFromCommand(cmd)) || (searchPath && issueFromCommand(searchPath))
   const role = deps.readRole(issue)
 
+  // 0) Die Verben, die den Rollenmarker setzen (add-harness-pause/design.md D6). Steht VOR allen
+  //    uebrigen Regeln: `pnpm harness pause 12 "jest.config kaputt"` traefe sonst zuerst die
+  //    Sperre fuer Testsuite-Aufrufe (\bjest\b matcht auch in einem Begruendungstext) und wuerde
+  //    mit einer Begruendung abgelehnt, die den Aufrufer in die Irre schickt.
+  //    Bewusst fuer JEDE Rolle, auch den reviewer - wer pausieren kann, schaltet die Sperre ab,
+  //    unter der er selbst steht: `pause` schreibt `none` in den Marker, danach gilt fuer ihn
+  //    keine Regel mehr.
+  //    Der Guard kann nicht unterscheiden, ob ein Aufruf von der orchestrierenden Sitzung oder
+  //    von einem Subagenten kommt. Die Regel trifft deshalb notwendig beide: entweder darf kein
+  //    Agent pausieren oder jeder. Der vorgesehene Kanal ist die Eingabe des Menschen, die den
+  //    Guard nicht durchlaeuft (an Issue #23 nachgemessen); die Sitzung fordert das Pausieren an,
+  //    statt es auszufuehren - so steht es in AGENTS.md und in der Skill-Datei.
+  //    `resume` bleibt trotzdem erreichbar: waehrend einer Pause traegt der Marker `none`, fuer
+  //    den Aufruf gilt also keine Rolle. Kein Loch, sondern die Gegenrichtung - resume stellt
+  //    eine Rolle wieder her, statt eine abzuschalten.
+  if (cmd && role !== '' && role !== 'none' && CONTROL_VERB_TABOO.test(norm(cmd)))
+    return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu — pausieren und fortsetzen ist Sache des Menschen (`pnpm harness pause <issue> "<grund>"` in seiner eigenen Shell).' }
+
   // 1) Write/Edit/Read ueber file_path.
   if (path) {
     const isWrite = /Write|Edit/.test(tool)
@@ -208,11 +226,7 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
     // Die Rollen-Markerdatei darf von einer aktiven Rolle weder umgeschrieben noch
     // entfernt/geleert werden (rm, sed -i, truncate, chmod, ...) - sonst faellt der
     // Guard fuer alle Folgeaufrufe Fail-Open statt Fail-Closed zurueck.
-    // Dasselbe gilt fuer die VERBEN, die denselben Marker setzen (add-harness-pause/design.md
-    // D6): `pause` schreibt `none` und wuerde die Sperre, unter der die Rolle gerade steht,
-    // ohne diese Zeile per Kommando abschalten. Es ist dieselbe Frage - darf dieser Aufrufer
-    // die Rollensteuerung anfassen? -, deshalb dieselbe Regel und dieselbe Begruendung.
-    if (CONTROL_FILE_TABOO.test(norm(cmd)) || CONTROL_VERB_TABOO.test(norm(cmd)))
+    if (CONTROL_FILE_TABOO.test(norm(cmd)))
       return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu.' }
 
     for (const t of extractWriteTargets(cmd)) {

@@ -48,9 +48,10 @@ Pause damit unbemerkt beenden — der Eingriff liefe dann unter einer Rolle, die
 #### Scenario: Der Automat rückt während der Pause nicht vor
 
 - **GIVEN** ein pausierter Lauf
-- **WHEN** ein Verb aufgerufen wird, das den Automaten bewegt — die Bestimmung des nächsten
-  Schritts, das Gate, die Rot-Bestätigung, die Aufnahme eines Review-Ergebnisses oder einer
-  Runden-Zusammenfassung, die Bestätigung des App-Tests
+- **WHEN** ein Verb aufgerufen wird, das den Automaten bewegt — das Starten eines Laufs, die
+  Bestimmung des nächsten Schritts, das Gate, die Rot-Bestätigung, die Aufnahme eines
+  Review-Ergebnisses oder einer Runden-Zusammenfassung, die Bestätigung des App-Tests, das
+  Aufräumen
 - **THEN** wird keine Aktion emittiert, kein Rollenmarker gesetzt, kein Board-Zugriff
   ausgelöst, kein Unterprozess gestartet und der Run-State nicht verändert; der Harness meldet
   stattdessen den Pausenzustand samt Grund und verweist auf das Fortsetzen
@@ -63,10 +64,20 @@ abgeleitet werden und MUST NOT der bei der Pause vorgefundene Wert sein: währen
 korrigiert der Mensch den Lauf — genau dafür ist sie da —, und ein gesicherter Wert wäre danach
 womöglich die Rolle des falschen Schritts.
 
-Die wiederhergestellte Rolle MUST für jede Phase dieselbe sein, die der Zustandsautomat beim
-regulären Schrittwechsel setzen würde. Zwei Stellen, die dieselbe Zuordnung unabhängig
-voneinander treffen, driften auseinander; §8.3 fordert aber, dass der Marker zum anstehenden
-Schritt passt, bevor irgendein Werkzeugaufruf erfolgt.
+Die wiederhergestellte Rolle MUST dieselbe sein, die der Zustandsautomat aus demselben
+Run-State setzen würde — sofern der nächste Schritt **ohne Zustandsübergang** auskommt.
+Verlangt er einen (etwa eine Nacharbeit-Runde nach rotem Gate), MUST der Marker rollenlos
+bleiben: den Übergang samt Rundenzähler vollzieht allein der Automat, und ein Fortsetzen darf
+ihn weder vorwegnehmen noch auslösen.
+
+Die Ableitung MUST den vollständigen Run-State berücksichtigen, nicht allein die Phase. Der
+Automat entscheidet an einer Stelle feiner: nach einem grünen Gate bleibt die Phase auf `gate`
+stehen, während der Reviewer-Schritt läuft — eine Ableitung, die nur die Phase liest, setzte
+dort rollenlos, wo der Automat den Reviewer gesetzt hätte.
+
+Zwei Stellen, die dieselbe Zuordnung unabhängig voneinander treffen, driften auseinander; §8.3
+fordert aber, dass der Marker zum anstehenden Schritt passt, bevor irgendein Werkzeugaufruf
+erfolgt. Die Übereinstimmung MUST deshalb mechanisch geprüft werden, nicht durch Sorgfalt.
 
 Ein Fortsetzen MUST NOT Phase oder Rundenzähler verändern — abgesehen von der ausdrücklich
 angeforderten Rundenrückgabe.
@@ -78,12 +89,14 @@ angeforderten Rundenrückgabe.
 - **THEN** steht der Rollenmarker auf der Rolle dieser Phase, der Pausenzustand ist beendet,
   und Phase wie Rundenzähler sind unverändert
 
-#### Scenario: Die wiederhergestellte Rolle stimmt in jeder Phase mit dem Automaten überein
+#### Scenario: Die wiederhergestellte Rolle stimmt mit dem Automaten überein
 
-- **GIVEN** ein pausierter Lauf, für jede Phase, die der Zustandsautomat kennt
+- **GIVEN** ein pausierter Lauf, für jeden Run-State, den der Zustandsautomat unterscheidet —
+  jede Phase, und für die Phase `gate` zusätzlich jeden Zweig, den der Automat dort kennt
 - **WHEN** der Lauf fortgesetzt wird
-- **THEN** entspricht der gesetzte Rollenmarker in jeder dieser Phasen genau der Rolle, die der
-  Zustandsautomat für den nächsten Schritt aus derselben Phase setzen würde
+- **THEN** entspricht der gesetzte Rollenmarker in jedem Run-State, dessen nächster Schritt
+  ohne Zustandsübergang auskommt, genau der Rolle, die der Zustandsautomat setzen würde — und
+  bleibt in jedem übrigen rollenlos, ohne dass Phase oder Rundenzähler sich ändern
 
 #### Scenario: Fortsetzen eines Laufs, der nicht pausiert ist, wird abgelehnt
 
@@ -91,6 +104,15 @@ angeforderten Rundenrückgabe.
 - **WHEN** er fortgesetzt werden soll
 - **THEN** bleiben Rollenmarker, Phase und Rundenzähler unverändert, und der Harness meldet mit
   einem Fehlschlag, dass kein Pausenzustand vorliegt
+
+#### Scenario: Fortsetzen bei unbekannter Phase wird abgelehnt, bevor etwas geschrieben ist
+
+- **GIVEN** ein pausierter Lauf, dessen Phase der Zustandsautomat nicht kennt — während der
+  Pause korrigiert der Mensch den Run-State von Hand, ein Vertippen ist dort der Regelfall,
+  nicht die Ausnahme
+- **WHEN** er fortgesetzt werden soll
+- **THEN** bleibt der Lauf pausiert, Rollenmarker, Phase und Rundenzähler bleiben unverändert,
+  und der Harness meldet die unbekannte Phase mit einem Fehlschlag statt mit einem Absturz
 
 ### Requirement: Eine Runde, die nur die Umgebung gemessen hat, darf zurückgegeben werden
 
@@ -124,22 +146,33 @@ Umgebungsrauschen das Eskalationsbudget — im Lauf zu #12 zweimal.
 - **THEN** bleibt der Rundenzähler auf null, der Lauf bleibt pausiert, der Rollenmarker
   unverändert, und der Harness meldet die abgelehnte Rückgabe mit einem Fehlschlag
 
-### Requirement: Eine aktive Rolle kann sich nicht selbst entpausieren
+### Requirement: Kein Werkzeugaufruf unter einer Rolle darf pausieren
 
-Der Guard MUST einer aktiven Rolle die Verben zum Pausieren und Fortsetzen verweigern, wie er
-ihr heute schon den direkten Zugriff auf die Steuerdateien verweigert. Andernfalls wäre die
-Rollentrennung nur noch Konvention: eine Rolle könnte die Sperre abschalten, die für sie gilt.
+Der Guard MUST jedem Werkzeugaufruf, für den eine Rolle gilt, die Verben zum Pausieren und
+Fortsetzen verweigern — **jeder** Rolle, nicht nur denen mit einem Schreibbereich. Andernfalls
+wäre die Rollentrennung an dieser Stelle nur noch Konvention: wer pausieren kann, schaltet die
+Sperre ab, unter der er selbst steht.
 
-#### Scenario: Eine aktive Rolle darf das Pausieren nicht aufrufen
+Der Guard kann nicht unterscheiden, ob ein Werkzeugaufruf von der orchestrierenden Sitzung
+oder von einem Subagenten stammt. Diese Regel gilt deshalb notwendig für beide: entweder darf
+kein Agent pausieren oder jeder. Der vorgesehene Kanal ist damit die Eingabe des Menschen, die
+den Guard nicht durchläuft; die Sitzung fordert das Pausieren an, statt es auszuführen.
 
-- **GIVEN** ein Werkzeugaufruf unter einer aktiven Rolle
+Ein Aufruf **ohne** geltende Rolle MUST NOT geblockt werden. Während einer Pause trägt der
+Marker `none` — das Fortsetzen bleibt dadurch möglich, ohne die Sperre aufzuweichen: es stellt
+eine Rolle wieder her, statt eine abzuschalten.
+
+#### Scenario: Unter jeder Rolle wird das Pausieren verweigert
+
+- **GIVEN** ein Werkzeugaufruf, für den eine Rolle gilt — gleich welche der drei
 - **WHEN** er das Verb zum Pausieren oder das zum Fortsetzen ausführen will
 - **THEN** wird der Aufruf geblockt, mit derselben Begründung wie beim Zugriff auf die
   Steuerdateien
 
-#### Scenario: Ohne aktive Rolle sind die Verben erlaubt
+#### Scenario: Ohne geltende Rolle sind die Verben erlaubt
 
-- **GIVEN** ein Werkzeugaufruf ohne aktive Rolle
+- **GIVEN** ein Werkzeugaufruf, für den keine Rolle gilt — etwa weil der einzige laufende Lauf
+  pausiert ist
 - **WHEN** er das Verb zum Pausieren oder das zum Fortsetzen ausführen will
 - **THEN** wird der Aufruf nicht geblockt
 
@@ -154,6 +187,17 @@ arbeiten könnte — er darf keinem fremden Aufruf eine Rolle aufzwingen.
 
 Für einen Aufruf, dessen Issue sich aus Pfad oder Kommando ergibt, ändert sich nichts: dort
 belegt der Pfad die Existenz des Worktrees bereits.
+
+Diese Regel schafft eine Richtung, in die der Guard fail-**open** kippen kann: ein Marker ohne
+Worktree entzieht sich der Prüfung. Ein Lauf MUST deshalb gar nicht erst mit einem Rollenmarker
+entstehen, wenn sein Worktree nicht angelegt werden konnte.
+
+#### Scenario: Ein Lauf entsteht nicht, wenn sein Worktree nicht angelegt werden konnte
+
+- **GIVEN** das Anlegen des Worktrees für einen neuen Lauf schlägt fehl
+- **WHEN** der Lauf gestartet wird
+- **THEN** entsteht weder ein Rollenmarker noch ein Run-State, und der Harness meldet den
+  Fehlschlag — statt einen Lauf zu hinterlassen, den die Rollenermittlung für tot hält
 
 #### Scenario: Ein Lauf ohne Worktree wird bei der Rollenermittlung übergangen
 

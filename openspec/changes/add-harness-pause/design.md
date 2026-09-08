@@ -28,11 +28,13 @@ Die Sperre sitzt deshalb in den Verben, nicht in `emit()`: `emit()` ist der Tric
 der Entscheidung, die Verben sind die Einstiegspunkte davor. Eine Sperre in `emit()` würde
 zudem `pause`/`resume` selbst treffen, sobald sie je eine Aktion emittieren wollten.
 
-Betroffen sind alle Verben, die Zustand fortschreiben oder Unterprozesse starten: `next`,
-`gate`, `confirm-red`, `confirm-test-rework`, `confirm-app-review`, `record-review`,
-`record-round-summary`, `cleanup`. Nicht betroffen: `pause`, `resume`, `board`, `escalate`,
-`preflight-archive`, `build-impl-prompt`, `build-test-rework-prompt` — sie lesen nur bzw. sind
-ausdrücklich die Werkzeuge des Menschen im Eingriff.
+Betroffen sind alle Verben, die Zustand fortschreiben oder Unterprozesse starten: `start`,
+`next`, `gate`, `confirm-red`, `confirm-test-rework`, `confirm-app-review`, `record-review`,
+`record-round-summary`, `cleanup`. `start` gehört ausdrücklich dazu: es überschriebe den
+Run-State samt Pausengrund und riefe `next()`, setzte also den Marker neu — derselbe stumme
+Pausenabbruch. Nicht betroffen: `pause`, `resume`, `board`, `escalate`, `preflight-archive`,
+`build-impl-prompt`, `build-test-rework-prompt` — sie lesen nur bzw. sind ausdrücklich die
+Werkzeuge des Menschen im Eingriff.
 
 ## D3 — `resume` leitet die Rolle aus der Phase ab, statt sie bei `pause` zu sichern
 
@@ -42,7 +44,7 @@ dabei die Phase berichtigt (etwa nach einer Eskalation), wäre die gesicherte Ro
 des falschen Schritts, und `constitution.md` §8.3 verlangt ausdrücklich das Gegenteil: der
 Marker muss zum *anstehenden* Schritt passen.
 
-`resume` liest daher die Phase und schlägt die Rolle in einer Tabelle nach:
+`resume` liest daher den Run-State und schlägt die Rolle nach — im Regelfall über die Phase:
 
 | Phase | Rolle |
 |---|---|
@@ -54,15 +56,27 @@ Marker muss zum *anstehenden* Schritt passen.
 | `app-review` | `none` |
 | `done`, `archived`, `escalated` | `none` |
 
-Diese Tabelle ist eine zweite Stelle, die dieselbe Zuordnung trifft wie `next()` — sie kann von
-`next()` wegdriften, ohne dass es jemandem auffällt. `next()` selbst taugt nicht als Quelle:
-es entscheidet nicht nach Phase allein (in `gate` hängt die Rolle zusätzlich an `lastGate` und
-`pendingTestFindings`) und hat Zustandsübergänge als Seiteneffekt, die ein `resume` gerade
-nicht auslösen darf.
+**Die Phase allein genügt aber nicht.** In `gate` entscheidet der Automat feiner, und ein Zweig
+davon ist kein Randfall, sondern der Normalbetrieb: nach einem grünen Gate emittiert `next()`
+`invoke-reviewer` **ohne Phasenwechsel** — die Phase bleibt auf `gate`, während der gesamte
+Reviewer-Schritt läuft, und der Marker steht die ganze Zeit auf `reviewer`. Wer dort pausiert,
+bekäme von einer reinen Phasentabelle `none` zurück, wo der Automat `reviewer` gesetzt hätte.
+`roleForStatus()` liest deshalb den Run-State: für `gate` gilt `reviewer`, wenn das Gate grün
+war und keine Test-Findings offen sind, sonst `none`.
 
-Die Drift wird deshalb mechanisch gesichert statt durch Sorgfalt: ein Test durchläuft **jede**
-Phase und vergleicht die von `resume` gesetzte Rolle mit der, die `next()` aus demselben
-Run-State setzt. Kommt eine Phase hinzu oder ändert sich eine Zuordnung, fällt der Test um.
+Die übrigen `gate`-Zweige (rotes Gate, offene Test-Findings) verlangen einen
+**Zustandsübergang** — eine Nacharbeit-Runde mit erhöhtem Rundenzähler. Den vollzieht allein
+`next()`. `resume` bleibt dort rollenlos und nimmt ihn weder vorweg noch löst er ihn aus; das
+ist keine Lücke, sondern die Arbeitsteilung: `resume` stellt einen Zustand her, es bewegt ihn
+nicht.
+
+`next()` selbst taugt nicht als Quelle, denn genau diese Übergänge sind sein Seiteneffekt.
+
+Die Drift wird mechanisch gesichert statt durch Sorgfalt: ein Test durchläuft jeden
+**Run-State**, den der Automat unterscheidet — jede Phase plus alle `gate`-Zweige —, lässt
+`next()` und `resume` getrennt darauf laufen und vergleicht. Wo `next()` einen Übergang
+vollzieht, wird `none` erwartet, sonst Gleichheit. Die erste Fassung dieses Tests verglich nur
+Phasen und übersah die `gate`-Divergenz genau deshalb.
 
 ## D4 — Rundenrückgabe: eine, nie unter null, und die Grenze ergibt sich von selbst
 
@@ -100,18 +114,48 @@ angelegte Datei im Worktree zum Fail-Open machen.
 Der Worktree-Pfad wird wie `runsDir` injizierbar (`makeDeps(runsDir, wtDir)`), aus demselben
 Grund: Tests dürfen nicht gegen das echte `.harness/wt/` prüfen.
 
-## D6 — Das Verb-Tabu erweitert die bestehende Regex, statt eine Regel danebenzustellen
+**Die Gegenrichtung muss mitgeschlossen werden.** Die Regel schafft einen Weg, auf dem der
+Guard fail-*open* kippt: ein Marker ohne Worktree entzieht sich der Prüfung. Bisher verschluckte
+`start` den Rückgabewert von `git worktree add` — schlug das Anlegen fehl, entstand ein Lauf mit
+Marker, aber ohne Worktree, und jeder Aufruf ohne ableitbares Issue wäre danach rollenlos, also
+ungeprüft. `start` bricht deshalb ab, bevor Marker und Run-State entstehen, wenn der Worktree
+nicht da ist. Zwischen `start` und dem ersten `next` gibt es kein Fenster: der Worktree entsteht
+vor `writeStatus` und vor dem Setzen des Markers.
 
-Die Sperre für aktive Rollen sitzt heute in einer Regex auf dem Kommandotext
-(`.harness/runs/*/active-role`, `guard.ts`). Die neuen Verben gehören in dieselbe Regex: es ist
-dieselbe Frage (*darf dieser Aufrufer die Rollensteuerung anfassen?*), dieselbe Begründung und
-dieselbe Fehlermeldung. Eine zweite Regel daneben würde nur die Wahrscheinlichkeit erhöhen,
-dass später eine von beiden nachgezogen wird und die andere nicht.
+## D6 — Pausieren ist ein Menschen-Kommando, und zwar notwendigerweise
 
-Erfasst wird das Verb, nicht der Pfad: `harness\s+(pause|resume)\b`. Der Aufruf über das
-`pnpm`-Skript ist der einzige vorgesehene Weg; ein direkter `tsx .harness/orchestrator.ts
-pause`-Aufruf trifft dieselbe Regex, weil auch dort das Wort `pause` hinter `orchestrator.ts`
-steht — deshalb matcht die Regex zusätzlich auf `orchestrator\.ts\s+(pause|resume)\b`.
+Der erste Entwurf sperrte die Verben „aktiven Rollen" und ließ sie der Sitzung. Das ging nicht
+auf, und der Grund ist grundsätzlich: **der Guard kann Sitzung und Subagent nicht
+unterscheiden.** Er sieht einen Werkzeugaufruf und einen Rollenmarker, sonst nichts. Ein
+`pnpm harness pause 12 "…"` der Sitzung enthält keinen `.harness/wt/<issue>/`-Pfad, das Issue
+ist also nicht ableitbar, und `soleActiveRole()` liefert die Rolle des laufenden Issues — genau
+`implementer`, wenn man pausieren will. Der Entwurf blockte damit den Fall, der eintreten
+*muss*, und schützte den, der nicht eintreten *kann*: während einer Pause trägt der Marker
+ohnehin `none`, `resume` war für jeden frei.
+
+Also gilt: entweder darf kein Agent pausieren oder jeder. „Jeder" hieße, dass ein
+`implementer`-Subagent die Sperre abschalten kann, unter der er steht — danach lägen ihm die
+Testdateien offen, und `constitution.md` §2.2 wäre an dieser Stelle nur noch Konvention.
+
+Deshalb: **kein Agent.** Der vorgesehene Kanal ist die Eingabe des Menschen. Nachgemessen an
+diesem Repo: ein im Chat mit `!` abgesetztes Kommando durchläuft den PreToolUse-Hook nicht,
+während derselbe Aufruf als Werkzeugaufruf der Sitzung blockiert wird. Der Mensch kann also
+immer pausieren, der Agent nie. Die Sitzung *fordert* das Pausieren an, statt es auszuführen —
+so steht es in `AGENTS.md` und in der Skill-Datei.
+
+Das entwertet den Change nicht, es verschiebt nur, was er einlöst. Vorher schrieb der Mensch
+eine Steuerdatei von Hand, undokumentiert und ohne dass der Automat davon wusste. Jetzt tippt
+er ein Verb mit Pflichtgrund, der Lauf friert nachweislich ein, die Rückgabe einer Runde wird
+protokolliert, und `resume` stellt die richtige Rolle wieder her, ohne dass er wissen muss,
+welche. Genau das hat Issue #23 verlangt.
+
+Mechanik: erfasst wird das Verb, nicht der Pfad
+(`\b(?:harness|orchestrator\.ts)\s+(?:pause|resume)\b`), und die Regel steht **vor** allen
+übrigen Bash-Regeln. Sonst träfe `pnpm harness pause 12 "jest.config kaputt"` zuerst die Sperre
+für Testsuite-Aufrufe — `\bjest\b` matcht auch mitten in einem Begründungstext — und der
+Aufrufer bekäme eine Begründung, die ihn in die Irre schickt. Sie gilt für **jede** Rolle, den
+`reviewer` eingeschlossen: er trägt seinen Marker während des gesamten Review-Schritts und wäre
+sonst der einzige, der sich entwaffnen könnte.
 
 ## D7 — Was dieser Change nicht anfasst
 

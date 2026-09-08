@@ -37,10 +37,13 @@ export type Status = {
   rundenRueckgaben?: RundenRueckgabe[]
 }
 // Welche Rolle zu welcher Phase gehoert. Zweite Stelle neben next() (add-harness-pause/design.md
-// D3): next() taugt nicht als Quelle, weil es nicht nach Phase allein entscheidet (im 'gate'-Fall
-// haengt die Rolle zusaetzlich an lastGate und pendingTestFindings) und Zustandsuebergaenge als
-// Seiteneffekt hat, die ein resume gerade nicht ausloesen darf. Gegen die Drift steht ein Test,
-// der jede Phase durchgeht und beide Wege vergleicht - nicht die Sorgfalt des naechsten Lesers.
+// D3): next() taugt nicht als Quelle, weil es Zustandsuebergaenge als Seiteneffekt hat, die ein
+// resume gerade nicht ausloesen darf. Gegen die Drift steht ein Test, der jeden Run-State
+// durchgeht und beide Wege vergleicht - nicht die Sorgfalt des naechsten Lesers.
+//
+// 'none' steht hier fuer beides: Schritte, die keiner Rolle gehoeren (das Gate laeuft als
+// Unterprozess des Orchestrators), und Schritte, die einen Zustandsuebergang verlangen. Den
+// vollzieht allein next(); resume nimmt ihn weder vorweg noch loest es ihn aus.
 export const ROLE_FOR_PHASE: Record<Status['phase'], Role> = {
   red: 'test-author',
   implement: 'implementer',
@@ -51,6 +54,18 @@ export const ROLE_FOR_PHASE: Record<Status['phase'], Role> = {
   done: 'none',
   archived: 'none',
   escalated: 'none',
+}
+// Die Phase allein genuegt nicht (Review-Befund): nach einem gruenen Gate laeuft der gesamte
+// Reviewer-Schritt, waehrend die Phase auf 'gate' stehen BLEIBT - next() emittiert dort
+// 'invoke-reviewer' ohne Phasenwechsel, und der Marker steht die ganze Zeit auf 'reviewer'.
+// Eine Ableitung nur ueber die Tabelle setzte dort rollenlos und widerspraeche §8.3, sobald
+// jemand mitten im Review pausiert. Die uebrigen 'gate'-Zweige verlangen einen Uebergang
+// (Nacharbeit-Runde bzw. Test-Nacharbeit) und bleiben deshalb rollenlos.
+export function roleForStatus(s: Status): Role {
+  if (s.phase !== 'gate') return ROLE_FOR_PHASE[s.phase]
+  const gruenUndNichtsOffen = s.lastGate?.green === true
+    && !(s.pendingTestFindings && s.pendingTestFindings.length > 0)
+  return gruenUndNichtsOffen ? 'reviewer' : 'none'
 }
 
 export const runDir = (i: string) => join('.harness', 'runs', i)
@@ -197,10 +212,21 @@ export function scopeOfFinding(f: unknown): Scope {
 }
 
 // --- Verbs ---
-export function start(i: string, change?: string) {
+export function start(i: string, change?: string, run: Sh = sh) {
+  // Auch start bewegt den Automaten (es schreibt den Run-State und ruft next()): auf einem
+  // pausierten Lauf wuerde es den Pausenzustand mitsamt Grund ueberschreiben und den Marker neu
+  // setzen - der stumme Pausenabbruch, den design.md D2 verhindert.
+  if (existsSync(statusPath(i))) assertNotPaused(readStatus(i))
   const branch = `feat/${i}`
-  sh('git fetch origin main --quiet')
-  sh(`git worktree add -B ${branch} ${worktreeDir(i)} origin/main`) // Basis immer origin/main, nie der zufaellige HEAD des Hauptrepos
+  run('git fetch origin main --quiet')
+  run(`git worktree add -B ${branch} ${worktreeDir(i)} origin/main`) // Basis immer origin/main, nie der zufaellige HEAD des Hauptrepos
+  // Der Worktree ist seit add-harness-pause das Lebenszeichen des Laufs (design.md D5). Schlaegt
+  // sein Anlegen fehl, entstuende ein Lauf mit Rollenmarker, den die Rollenermittlung fuer tot
+  // haelt - jeder Aufruf ohne ableitbares Issue waere dann rollenlos und damit ungeprueft. Das
+  // ist die einzige Richtung, in die der neue Check fail-OPEN kippen kann, und sie entstuende
+  // aus einem verschluckten Fehler. Deshalb hier abbrechen, bevor Marker und Run-State entstehen.
+  if (!existsSync(worktreeDir(i)))
+    fail(`Worktree ${worktreeDir(i)} konnte nicht angelegt werden — kein Lauf ohne Worktree.`)
   if (change) seedChangeDocs(i, change)
   writeStatus({ issue: i, branch, round: 0, phase: 'red', change, rounds: [] })
   console.log(next(i))
@@ -571,6 +597,13 @@ export function resume(i: string, opts: { rundeZurueck?: boolean } = {}) {
   // Ablehnen statt still ignorieren: ein wirkungslos geschlucktes Flag liesse den Menschen
   // glauben, er habe eine Runde zurueck, die er nicht hat - der Lauf eskalierte dann eine Runde
   // frueher als erwartet.
+  // Vor dem ersten Schreibzugriff (Review-Befund): waehrend der Pause korrigiert der Mensch den
+  // Run-State von Hand - ein Vertippen in `phase` ist dort der Regelfall. Ohne diese Pruefung
+  // liefe resume in ein writeFileSync(path, undefined) und stuerbe mit rohem Stacktrace, NACHDEM
+  // es den Pausenzustand schon geloescht hat: zurueck bliebe ein Lauf, der nicht mehr pausiert
+  // ist, dessen Marker noch den alten Wert traegt und dessen Abbruch nichts erklaert.
+  if (!(s.phase in ROLE_FOR_PHASE))
+    fail(`Unbekannte Phase "${s.phase}" in ${i}. Zulässig: ${Object.keys(ROLE_FOR_PHASE).join(', ')}`)
   if (opts.rundeZurueck && s.round <= 0)
     fail(`Rundenrückgabe abgelehnt: der Rundenzähler von ${i} steht bereits auf 0.`)
   const p = s.paused
@@ -582,7 +615,7 @@ export function resume(i: string, opts: { rundeZurueck?: boolean } = {}) {
   }
   s.paused = undefined
   writeStatus(s)
-  const rolle = ROLE_FOR_PHASE[s.phase]
+  const rolle = roleForStatus(s)
   setRole(i, rolle)
   console.log(JSON.stringify({ ok: true, rolle, phase: s.phase, runde: s.round }))
 }

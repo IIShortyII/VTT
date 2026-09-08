@@ -312,29 +312,45 @@ describe('Fallback auf die einzige aktive Rolle (kein Issue aus Pfad/Kommando ab
 
 // --- add-harness-pause (Issue #23) ---------------------------------------------------------
 
-describe('Eine aktive Rolle kann sich nicht selbst entpausieren', () => {
-  it('Eine aktive Rolle darf das Pausieren nicht aufrufen', () => {
-    for (const rolle of ['implementer', 'test-author']) {
-      const deps = { readRole: () => rolle }
-      for (const cmd of [
-        'pnpm harness pause 23 "jest.config kaputt"',
-        'pnpm harness resume 23',
-        'tsx .harness/orchestrator.ts pause 23 "x"',
-        'tsx .harness/orchestrator.ts resume 23 --runde-zurueck',
-      ]) {
-        const result = evaluate(bash(cmd), deps)
-        expect([cmd, rolle, result.blocked]).toEqual([cmd, rolle, true])
-        // Dieselbe Begruendung wie beim direkten Zugriff auf die Steuerdateien: es ist dieselbe
-        // Frage, ob dieser Aufrufer die Rollensteuerung anfassen darf.
+describe('Kein Werkzeugaufruf unter einer Rolle darf pausieren', () => {
+  const VERBEN = [
+    'pnpm harness pause 23 "jest.config kaputt"',
+    'pnpm harness resume 23',
+    'tsx .harness/orchestrator.ts pause 23 "x"',
+    'tsx .harness/orchestrator.ts resume 23 --runde-zurueck',
+  ]
+
+  it('Unter jeder Rolle wird das Pausieren verweigert', () => {
+    // Alle drei Rollen, nicht nur die mit Schreibbereich: der reviewer traegt seinen Marker
+    // waehrend des gesamten Review-Schritts und koennte sich sonst als einziger entwaffnen.
+    for (const rolle of ['implementer', 'test-author', 'reviewer']) {
+      for (const cmd of VERBEN) {
+        const result = evaluate(bash(cmd), { readRole: () => rolle })
+        expect([rolle, cmd, result.blocked]).toEqual([rolle, cmd, true])
         expect(result.message).toMatch(/Steuerdateien/)
       }
     }
   })
 
-  it('Ohne aktive Rolle sind die Verben erlaubt', () => {
-    const deps = { readRole: () => '' }
-    expect(evaluate(bash('pnpm harness pause 23 "jest.config kaputt"'), deps).blocked).toBe(false)
-    expect(evaluate(bash('pnpm harness resume 23 --runde-zurueck'), deps).blocked).toBe(false)
+  it('Ohne geltende Rolle sind die Verben erlaubt', () => {
+    // Der reale Fall: waehrend einer Pause traegt der Marker `none`. Geprueft wird gegen den
+    // echten Fallback (makeDeps), nicht gegen ein handgereichtes readRole - der blockierende
+    // Review-Befund entstand genau daran, dass die alte Fassung eine Kombination testete, die
+    // es nicht gibt.
+    const runs = mkdtempSync(join(tmpdir(), 'guard-verb-runs-'))
+    const wt = mkdtempSync(join(tmpdir(), 'guard-verb-wt-'))
+    try {
+      const dir = join(runs, '23')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'active-role'), 'none')
+      writeFileSync(join(dir, 'status.json'), JSON.stringify({ phase: 'implement', paused: { grund: 'x', seit: 'y' } }))
+      mkdirSync(join(wt, '23'), { recursive: true })
+      const deps = makeDeps(runs, wt)
+      for (const cmd of VERBEN) expect([cmd, evaluate(bash(cmd), deps).blocked]).toEqual([cmd, false])
+    } finally {
+      rmSync(runs, { recursive: true, force: true })
+      rmSync(wt, { recursive: true, force: true })
+    }
   })
 })
 

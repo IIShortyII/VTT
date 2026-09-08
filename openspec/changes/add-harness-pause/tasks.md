@@ -63,3 +63,31 @@ die Sitzung arbeitet direkt, test-first, mit `pnpm test:harness` als Gate.
       vorführen — er ist der reale Auslöser und muss danach keinem fremden Aufruf mehr eine
       Rolle aufzwingen
 - [ ] 5.4 Change nach `openspec/changes/archive/` verschieben (gleicher Branch), PR öffnen
+
+## 6. Nacharbeit-Runde 1 (Reviewer-Befund)
+
+- [x] 6.1 **Block:** Das Verb-Tabu sperrte die Sitzung aus dem Fall aus, für den das Verb
+      existiert (`soleActiveRole()` liefert beim Pausieren-Wollen genau `implementer`), während
+      `resume` nie geschützt war (Marker steht während der Pause auf `none`). Aufgelöst: der
+      Guard kann Sitzung und Subagent nicht unterscheiden, also gilt die Sperre für **jede**
+      Rolle, und der vorgesehene Kanal ist die Eingabe des Menschen — nachgemessen, dass
+      `!`-Kommandos den Hook nicht durchlaufen. Spec, design.md D6, `AGENTS.md` und `SKILL.md`
+      entsprechend umgeschrieben; Testfälle nun über den echten Fallback statt über ein
+      handgereichtes `readRole`
+- [x] 6.2 Verb-Tabu vor alle übrigen Bash-Regeln gezogen — `\bjest\b` traf sonst den
+      Begründungstext von `pause` und lieferte eine irreführende Ablehnung
+- [x] 6.3 Tabu auf `reviewer` ausgeweitet (trägt seinen Marker den ganzen Review-Schritt)
+- [x] 6.4 `roleForStatus()`: nach grünem Gate bleibt die Phase auf `gate`, während der
+      Reviewer-Schritt läuft — eine reine Phasentabelle setzte dort rollenlos. Drift-Test läuft
+      jetzt über Run-States statt Phasen und deckt die `gate`-Zweige mit ab
+- [x] 6.5 `resume` prüft die Phase vor dem ersten Schreibzugriff (Handkorrektur mit Tippfehler
+      hinterließ sonst einen nicht mehr pausierten Lauf mit rohem Stacktrace)
+- [x] 6.6 `start` in die Pausensperre aufgenommen; bricht ab, wenn der Worktree nicht angelegt
+      wurde — die einzige Richtung, in die die Lebenszeichen-Prüfung fail-open kippt
+- [x] 6.7 Testisolation: „Ein pausierter Lauf beansprucht keine Rolle mehr" prüft gegen eine
+      tmp-Spiegelung statt gegen die echten `.harness/runs`/`.harness/wt`, und über
+      `evaluate(...)` statt über den Zwischenwert `readRole`
+- [x] 6.8 Proposal: der Absatz zum toten Guard war seit dem Merge von #29 überholt — er war die
+      Annahme, unter der der Selbstblock unentdeckt blieb
+- [x] 6.9 Gate erneut grün: `pnpm test:harness` (106/106), `pnpm typecheck`, `pnpm lint`
+- [ ] 6.10 Zweiter Reviewer-Durchgang

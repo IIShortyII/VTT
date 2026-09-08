@@ -57,13 +57,21 @@ nächsten Schritt raten:
 
 Steht ein Eingriff an, der außerhalb von `src/`, `prisma/` und `tests/` liegt — eine kaputte
 Werkzeugkonfiguration, eine fehlende `.gitignore`-Regel, ein Befund ohne Rollenzuordnung nach
-`constitution.md` §3.3 —, dann **nicht** den Rollenmarker von Hand schreiben, sondern:
+`constitution.md` §3.3 —, dann **nicht** den Rollenmarker von Hand schreiben und auch nicht
+selbst pausieren: `pause` und `resume` sind dir verboten (`guard.ts`), und zwar mit Absicht.
+Der Guard kann dich nicht von einem Subagenten unterscheiden; dürftest du pausieren, dürfte
+der `implementer` es auch — und damit die Sperre abschalten, unter der er steht.
 
-1. `pnpm harness pause <issue> "<grund>"` — gibt den Marker frei, Phase und Rundenzähler
-   bleiben stehen. Danach verweigert jedes Automatenverb, bis fortgesetzt wird.
-2. Den Eingriff durchführen.
-3. `pnpm harness resume <issue>` — stellt die Rolle des aktuellen Schritts wieder her. Erst
-   danach wieder `pnpm harness next <issue>`.
+Stattdessen:
+
+1. **Bitte den Menschen**, in seiner eigenen Shell `pnpm harness pause <issue> "<grund>"`
+   auszuführen (im Chat mit `!` davor). Nenne den Grund, den er einsetzen soll. Das gibt den
+   Marker frei; Phase und Rundenzähler bleiben stehen, und jedes Automatenverb verweigert, bis
+   fortgesetzt wird.
+2. Den Eingriff durchführen — jetzt bist du rollenlos und kommst an die Datei.
+3. `pnpm harness resume <issue>` — das darfst du selbst, weil der Marker während der Pause auf
+   `none` steht: `resume` stellt eine Rolle wieder her, statt eine abzuschalten. Erst danach
+   wieder `pnpm harness next <issue>`.
 
 Hat eine Runde nachweislich nur eine kaputte Umgebung gemessen und keine Implementierung, kann
 der Mensch sie mit `pnpm harness resume <issue> --runde-zurueck` zurückgeben — genau eine, nie

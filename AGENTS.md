@@ -24,6 +24,8 @@ und NPC-Tokens.
 - Harness-eigene Tests: `pnpm test:harness`
 - Board-Status setzen: `pnpm harness board <issue> <status>` — den übrigen Status setzt der
   Loop selbst (siehe Board-Status)
+- Lauf pausieren: `pnpm harness pause <issue> "<grund>"` · fortsetzen:
+  `pnpm harness resume <issue> [--runde-zurueck]` (siehe Pause & Fortsetzen)
 - Prisma-Client generieren: `pnpm db:generate`
 - Migrationen führt der Agent nicht aus. Er schreibt das Schema unter `prisma/`; das
   Ausführen ist menschlich (constitution.md §5.1) bzw. Sache der CI (§6.1).
@@ -122,6 +124,32 @@ Schritts — damit der Fortschritt auch außerhalb der laufenden Sitzung sichtba
 - Der Harness **liest** das Board nie. Wer eine Spalte von Hand verschiebt, ändert am Lauf
   nichts.
 - Voraussetzung: `gh` mit `project`-Scope (`gh auth refresh -s project`).
+
+## Pause & Fortsetzen
+Der Zustand zwischen den Rollen: manchmal gehört der nächste sinnvolle Schritt keiner. Eine
+kaputte `jest.config.cjs`, eine fehlende `.gitignore`-Regel, ein Befund, den
+`constitution.md` §3.3 „ohne Zuordnung zu einer Rolle" an den Menschen eskaliert — alles
+außerhalb von `src/`, `prisma/` und `tests/` ist jeder Rolle gesperrt, und damit auch der
+Sitzung, solange der Marker auf einer Rolle steht.
+
+- `pnpm harness pause <issue> "<grund>"` setzt den Rollenmarker auf `none`. Phase und
+  Rundenzähler bleiben unberührt; Grund und Zeitpunkt stehen danach im Run-State. **Der Grund
+  ist Pflicht** — eine Pause ohne Anlass wäre dieselbe undokumentierte Handkorrektur wie
+  vorher, nur mit einem Verb davor.
+- **Ein pausierter Lauf steht still.** `next`, `gate`, `confirm-*`, `record-*` und `cleanup`
+  verweigern und verweisen auf `resume`. Ohne diese Sperre würde der nächste Schrittwechsel
+  den Marker über `emit()` neu setzen und die Pause stumm beenden.
+- `pnpm harness resume <issue>` beendet die Pause und stellt die Rolle des Schritts wieder
+  her, in dem der Lauf **jetzt** steht — abgeleitet aus der Phase, nicht aus einem bei `pause`
+  gesicherten Wert. Während der Pause korrigiert der Mensch den Lauf; ein gesicherter Wert
+  wäre danach womöglich die Rolle des falschen Schritts (§8.3).
+- `--runde-zurueck` zählt den Rundenzähler um **genau eins** herunter, nie unter null. Für den
+  Fall, dass eine Runde eine kaputte Umgebung gemessen hat statt einer Implementierung — im
+  ersten Feature-Run zweimal passiert. Die Rückgabe wird mit Zeitpunkt, dem Grund der Pause
+  und beiden Zählerständen dauerhaft im Run-State festgehalten; sie überlebt das Fortsetzen
+  bewusst, denn sie ist der einzige Weg, den Zähler zu senken.
+- **Aktiven Rollen sind beide Verben verboten** (`guard.ts`, Steuerdatei-Tabu) — sonst könnte
+  eine Rolle die Sperre abschalten, unter der sie gerade steht.
 
 ## Kritische Grenzen (immer)
 - Niemals Secrets/Credentials committen oder ausgeben.

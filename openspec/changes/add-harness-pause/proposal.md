@@ -36,14 +36,14 @@ Siehe Issue #23.
   hält Grund und Zeitpunkt im Run-State fest und lässt Phase wie Rundenzähler unberührt. Der
   Grund ist Pflicht: eine Pause ohne Anlass wäre genau die handgeschriebene Korrektur, die
   dieser Change ersetzen soll, nur mit einem Verb davor.
-- **Neu: Verb `pnpm harness resume <issue> [--runde-zurück]`** — beendet die Pause und stellt
+- **Neu: Verb `pnpm harness resume <issue> [--runde-zurueck]`** — beendet die Pause und stellt
   die Rolle wieder her, die dem **aktuellen** Schritt gehört. Die Rolle wird aus der Phase
   abgeleitet, nicht bei `pause` gesichert (design.md D3).
 - **Ein pausierter Lauf steht still.** Jedes Verb, das den Automaten bewegt (`next`, `gate`,
   `confirm-red`, `record-review`, …), verweigert während der Pause und verweist auf `resume`.
   Ohne diese Sperre würde der nächste `next`-Aufruf über `emit()` den Marker neu setzen und
   die Pause unbemerkt beenden.
-- **Rückgabe genau einer Runde** über `--runde-zurück`: zählt um 1 herunter, nie unter 0, und
+- **Rückgabe genau einer Runde** über `--runde-zurueck`: zählt um 1 herunter, nie unter 0, und
   protokolliert die Rückgabe gegen den bei `pause` genannten Grund. Damit bleibt die Mechanik
   im Code (Schrittweite, Untergrenze), während nur das Urteil „das war die Umgebung, nicht die
   Implementierung" menschlich bleibt — aktenkundig statt handgeschrieben. Im Lauf zu #12 hat

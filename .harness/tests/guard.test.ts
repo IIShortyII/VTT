@@ -264,30 +264,46 @@ describe('Fallback auf die einzige aktive Rolle (kein Issue aus Pfad/Kommando ab
   // gebliebene echte Runs). makeDeps mit einem eigenen tmp-Verzeichnis isoliert den Fallback
   // vollstaendig von allem anderen.
   let tmpRunsDir: string
+  let tmpWtDir: string
   let deps: ReturnType<typeof makeDeps>
 
-  beforeEach(() => { tmpRunsDir = mkdtempSync(join(tmpdir(), 'guard-test-runs-')); deps = makeDeps(tmpRunsDir) })
-  afterEach(() => rmSync(tmpRunsDir, { recursive: true, force: true }))
+  // Jeder Lauf hier bekommt einen Worktree (add-harness-pause/design.md D5): seit der
+  // Lebenszeichen-Pruefung ist ein Lauf ohne Worktree ohnehin inaktiv. Ohne ihn wuerde jeder
+  // Test dieses Blocks aus dem falschen Grund gruen - insbesondere der zum Terminal-Filter,
+  // der dann gar nicht mehr die Phase pruefte.
+  const anlegen = (issue: string, role: string, status?: object) => {
+    const dir = join(tmpRunsDir, issue)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'active-role'), role)
+    if (status) writeFileSync(join(dir, 'status.json'), JSON.stringify(status))
+    mkdirSync(join(tmpWtDir, issue), { recursive: true })
+  }
+
+  beforeEach(() => {
+    tmpRunsDir = mkdtempSync(join(tmpdir(), 'guard-test-runs-'))
+    tmpWtDir = mkdtempSync(join(tmpdir(), 'guard-test-wt-'))
+    deps = makeDeps(tmpRunsDir, tmpWtDir)
+  })
+  afterEach(() => {
+    rmSync(tmpRunsDir, { recursive: true, force: true })
+    rmSync(tmpWtDir, { recursive: true, force: true })
+  })
 
   it('wendet die Rolle des einzigen aktiven Issues auf einen relativen Pfad an', () => {
-    const dir = join(tmpRunsDir, 'issue-a')
-    mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, 'active-role'), 'implementer')
+    anlegen('issue-a', 'implementer')
     expect(evaluate(write('tests/x.test.ts'), deps).blocked).toBe(true)
     expect(evaluate(write('src/x.ts'), deps).blocked).toBe(false)
   })
 
   it('bleibt rollenlos, wenn mehrere Issues gleichzeitig eine Rolle tragen (mehrdeutig)', () => {
-    const dirA = join(tmpRunsDir, 'issue-a'); const dirB = join(tmpRunsDir, 'issue-b')
-    mkdirSync(dirA, { recursive: true }); writeFileSync(join(dirA, 'active-role'), 'implementer')
-    mkdirSync(dirB, { recursive: true }); writeFileSync(join(dirB, 'active-role'), 'test-author')
+    anlegen('issue-a', 'implementer')
+    anlegen('issue-b', 'test-author')
     expect(evaluate(write('tests/x.test.ts'), deps).blocked).toBe(false)
   })
 
   it('ignoriert den Marker eines abgeschlossenen Runs (status.json-Phase terminal)', () => {
-    const dir = join(tmpRunsDir, 'issue-done')
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'active-role'), 'implementer')
-    writeFileSync(join(dir, 'status.json'), JSON.stringify({ phase: 'done' }))
+    // Worktree vorhanden, damit ausschliesslich die terminale Phase den Lauf inaktiv macht.
+    anlegen('issue-done', 'implementer', { phase: 'done' })
     // Kein anderer aktiver Run -> ohne den Terminal-Filter waere dies faelschlich "die eine
     // aktive Rolle"; mit dem Filter bleibt der Aufruf rollenlos.
     expect(evaluate(write('tests/x.test.ts'), deps).blocked).toBe(false)

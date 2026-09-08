@@ -18,6 +18,13 @@ export type RoundRecord = {
   round: number; role: Role; summary?: unknown; geänderte_dateien?: string[]
   gateGreen?: boolean; reviewRecommendation?: 'ok' | 'nacharbeit'
 }
+// Pausenzustand (add-harness-pause/design.md D1): liegt im Run-State, nicht in einer eigenen
+// Datei. Der Rollenmarker traegt waehrenddessen `none` - der Guard braucht keine eigene Kenntnis
+// der Pause, sie faellt bei ihm in eine bestehende Regel.
+export type Pause = { grund: string; seit: string }
+// Die Rueckgabe ueberlebt das Fortsetzen bewusst (D4): der Pausenzustand endet, die Rueckgabe
+// bleibt als dauerhafter Beleg stehen - sie ist der einzige Weg, den Rundenzaehler zu senken.
+export type RundenRueckgabe = { zeitpunkt: string; grund: string; von: number; auf: number }
 export type Status = {
   issue: string; branch: string; round: number; change?: string
   phase: 'red' | 'implement' | 'gate' | 'review' | 'rework-tests' | 'app-review' | 'done' | 'archived' | 'escalated'
@@ -26,6 +33,24 @@ export type Status = {
   lastAppReview?: { freigegeben: boolean; feedback?: string }
   rounds?: RoundRecord[]
   pendingTestFindings?: unknown[]
+  paused?: Pause
+  rundenRueckgaben?: RundenRueckgabe[]
+}
+// Welche Rolle zu welcher Phase gehoert. Zweite Stelle neben next() (add-harness-pause/design.md
+// D3): next() taugt nicht als Quelle, weil es nicht nach Phase allein entscheidet (im 'gate'-Fall
+// haengt die Rolle zusaetzlich an lastGate und pendingTestFindings) und Zustandsuebergaenge als
+// Seiteneffekt hat, die ein resume gerade nicht ausloesen darf. Gegen die Drift steht ein Test,
+// der jede Phase durchgeht und beide Wege vergleicht - nicht die Sorgfalt des naechsten Lesers.
+export const ROLE_FOR_PHASE: Record<Status['phase'], Role> = {
+  red: 'test-author',
+  implement: 'implementer',
+  'rework-tests': 'test-author',
+  gate: 'none',
+  review: 'reviewer',
+  'app-review': 'none',
+  done: 'none',
+  archived: 'none',
+  escalated: 'none',
 }
 
 export const runDir = (i: string) => join('.harness', 'runs', i)
@@ -66,6 +91,16 @@ function emit(issue: string, a: string, role: Role = 'none'): string {
   return JSON.stringify({ action: a })
 }
 function fail(msg: string): never { console.error(msg); process.exit(1) }
+// add-harness-pause/design.md D2: waehrend der Pause bewegt kein Verb den Automaten. Ohne diese
+// Sperre wuerde der naechste Schrittwechsel ueber emit() den Rollenmarker neu setzen und die
+// Pause stumm beenden - der Eingriff liefe dann unter genau der Rolle, die ihn verbietet. Die
+// Sperre sitzt in den Verben, nicht in emit(): emit() ist der Trichter NACH der Entscheidung,
+// und eine Sperre dort traefe pause/resume selbst.
+function assertNotPaused(s: Status): void {
+  if (!s.paused) return
+  fail(`Lauf ${s.issue} ist pausiert seit ${s.paused.seit}: ${s.paused.grund}\n`
+    + `Erst fortsetzen, dann weiterarbeiten: pnpm harness resume ${s.issue}`)
+}
 
 function pushRound(s: Status, rec: Omit<RoundRecord, 'round'>) {
   const rounds = s.rounds ?? []
@@ -82,6 +117,7 @@ function updateLastRound(s: Status, patch: Partial<RoundRecord>) {
 // --- Die harten Invarianten: der Zustandsautomat ---
 export function next(i: string): string {
   const s = readStatus(i)
+  assertNotPaused(s)
   switch (s.phase) {
     case 'red':       return emit(i, 'invoke-test-author', 'test-author')
     case 'implement': return emit(i, 'invoke-implementer', 'implementer')
@@ -198,7 +234,9 @@ function removeUntrackedSourceDocs(src: string) {
 }
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
 export function confirmRed(i: string, run: Sh = sh) {
-  const s = readStatus(i); const r = run('pnpm test --silent', worktreeDir(i))
+  const s = readStatus(i)
+  assertNotPaused(s)
+  const r = run('pnpm test --silent', worktreeDir(i))
   const out = stripAnsi(r.out)
   // TS-Fehler, die aus fehlender Implementierung entstehen (der TDD-Regelfall) zaehlen
   // als gueltiges Rot, nicht als Setup-/Compile-Fehler des Tests selbst. TS2459 ("declares
@@ -222,6 +260,7 @@ export function confirmRed(i: string, run: Sh = sh) {
 // Implementer-Runde noetig), bei Rot ganz regulaer zu reworkImplementer mit Gate-Feedback.
 export function confirmTestRework(i: string) {
   const s = readStatus(i)
+  assertNotPaused(s)
   s.pendingTestFindings = undefined
   s.lastReview = undefined
   s.lastGate = undefined
@@ -230,11 +269,14 @@ export function confirmTestRework(i: string) {
   console.log(next(i))
 }
 export function gate(i: string, run: Sh = sh) {
-  // Zuerst das Board, vor jedem Werkzeugaufruf: die Spalte heisst "Gate + Review" und deckt
-  // beides ab. Erst beim Reviewer gesetzt, stuende ein Issue jede Gate-Runde sichtbar auf
-  // "Implementierung", obwohl der Implementer laengst fertig ist (design.md D3).
-  setBoardStatus(i, 'gate-review')
+  // Die Pausenpruefung steht VOR dem Board-Zugriff: ein pausierter Lauf darf die Spalte nicht
+  // weiterschalten, sonst zeigte das Board einen Schritt an, der gar nicht laeuft.
   const s = readStatus(i)
+  assertNotPaused(s)
+  // Dann das Board, vor jedem Werkzeugaufruf: die Spalte heisst "Gate + Review" und deckt
+  // beides ab. Erst beim Reviewer gesetzt, stuende ein Issue jede Gate-Runde sichtbar auf
+  // "Implementierung", obwohl der Implementer laengst fertig ist (set-board-status/design.md D3).
+  setBoardStatus(i, 'gate-review')
   const wt = worktreeDir(i)
   const jestOut = join(process.cwd(), runDir(i), 'jest.json') // absolut: Ausgabe landet im Run-State, unabhaengig vom Worktree-cwd
   const tsBuildInfo = join(process.cwd(), runDir(i), 'tsconfig.tsbuildinfo')
@@ -383,6 +425,7 @@ ${feedback}`
 export function recordRoundSummary(i: string, role: Role, json: string) {
   if (!ROLES.includes(role)) fail(`Unbekannte Rolle für record-round-summary: "${role}"`)
   const s = readStatus(i)
+  assertNotPaused(s)
   const data = JSON.parse(json) as Record<string, unknown>
   const geänderte_dateien = (data.geänderte_dateien ?? data.tests_geschrieben) as string[] | undefined
   pushRound(s, { role, summary: data, geänderte_dateien })
@@ -429,7 +472,9 @@ function rejectReview(i: string, json: string, reason: string): never {
   fail(`Reviewer-Antwort weicht vom Schema ab: ${reason} (Rohantwort in rejected-review.json)`)
 }
 export function recordReview(i: string, json: string) {
-  const s = readStatus(i); const r = JSON.parse(json)
+  const s = readStatus(i)
+  assertNotPaused(s)
+  const r = JSON.parse(json)
   if (r.freigabe_empfehlung !== 'ok' && r.freigabe_empfehlung !== 'nacharbeit')
     rejectReview(i, json, `freigabe_empfehlung="${r.freigabe_empfehlung}"`)
   if (r.findings !== undefined && !Array.isArray(r.findings))
@@ -450,6 +495,7 @@ export function recordReview(i: string, json: string) {
 // dieser Verb nur durch eine echte Session-Eingabe ausgeloest wird, nie durch eine Rolle.
 export function confirmAppReview(i: string, entscheidung: string, feedback?: string) {
   const s = readStatus(i)
+  assertNotPaused(s)
   const freigegeben = entscheidung === 'ja'
   s.lastAppReview = { freigegeben, feedback }
   s.phase = 'app-review'; writeStatus(s)
@@ -479,6 +525,7 @@ function preflightArchive(i: string) { console.log(JSON.stringify(checkPreflight
 const CLEANUP_PHASES = new Set<Status['phase']>(['done', 'archived'])
 export function cleanup(i: string, run?: GhRunner) {
   const s = readStatus(i)
+  assertNotPaused(s)
   if (!CLEANUP_PHASES.has(s.phase))
     fail(`Kein Cleanup in Phase "${s.phase}" — aufgeräumt wird nur nach ${[...CLEANUP_PHASES].join('/')}.`)
   // Die einzige Harness-Aktion nach dem Merge - und damit die Stelle fuer "Fertig". Weil
@@ -495,6 +542,51 @@ export function cleanup(i: string, run?: GhRunner) {
   if (existsSync(marker)) rmSync(marker)
   console.log(JSON.stringify({ ok: true, phase: s.phase, worktreeEntfernt }))
 }
+// --- Pause & Fortsetzen (add-harness-pause, Issue #23) ---
+// Der Zustand zwischen den Rollen: der naechste sinnvolle Schritt gehoert keiner. Ohne dieses
+// Verb blieb dem Menschen nur, den Rollenmarker von Hand zu schreiben - einer aktiven Rolle
+// verboten (guard.ts, Steuerdatei-Tabu) und nirgends festgehalten.
+export function pause(i: string, grund?: string) {
+  // Der Grund wird VOR dem Run-State geprueft: eine Pause ohne festgehaltenen Anlass waere
+  // dieselbe undokumentierte Handkorrektur wie bisher, nur mit einem Verb davor.
+  const text = (grund ?? '').trim()
+  if (text === '') fail(`Pausieren verlangt einen Grund: pnpm harness pause ${i} "<grund>"`)
+  const s = readStatus(i)
+  if (s.paused)
+    fail(`Lauf ${i} ist bereits pausiert seit ${s.paused.seit}: ${s.paused.grund}`)
+  s.paused = { grund: text, seit: new Date().toISOString() }
+  writeStatus(s)
+  // Zuletzt der Marker: waere er vor dem Schreiben des Run-State freigegeben und writeStatus
+  // schluege fehl, stuende der Lauf rollenlos da, ohne dass etwas von einer Pause wuesste.
+  setRole(i, 'none')
+  console.log(JSON.stringify({ ok: true, paused: s.paused }))
+}
+// Die Rolle stammt aus der PHASE, nicht aus einem bei pause gesicherten Wert (design.md D3):
+// waehrend der Pause korrigiert der Mensch den Lauf - genau dafuer ist sie da -, und ein
+// gesicherter Wert waere danach womoeglich die Rolle des falschen Schritts.
+export function resume(i: string, opts: { rundeZurueck?: boolean } = {}) {
+  const s = readStatus(i)
+  if (!s.paused)
+    fail(`Lauf ${i} ist nicht pausiert — kein Pausenzustand, der fortzusetzen wäre.`)
+  // Ablehnen statt still ignorieren: ein wirkungslos geschlucktes Flag liesse den Menschen
+  // glauben, er habe eine Runde zurueck, die er nicht hat - der Lauf eskalierte dann eine Runde
+  // frueher als erwartet.
+  if (opts.rundeZurueck && s.round <= 0)
+    fail(`Rundenrückgabe abgelehnt: der Rundenzähler von ${i} steht bereits auf 0.`)
+  const p = s.paused
+  if (opts.rundeZurueck) {
+    const von = s.round
+    s.round = von - 1
+    s.rundenRueckgaben = [...(s.rundenRueckgaben ?? []),
+      { zeitpunkt: new Date().toISOString(), grund: p.grund, von, auf: s.round }]
+  }
+  s.paused = undefined
+  writeStatus(s)
+  const rolle = ROLE_FOR_PHASE[s.phase]
+  setRole(i, rolle)
+  console.log(JSON.stringify({ ok: true, rolle, phase: s.phase, runde: s.round }))
+}
+
 // Der einzige Statuswechsel ohne Automaten: die Spezifikation entsteht ueber /opsx:propose,
 // also bevor `start` das Issue ueberhaupt kennt. Liest deshalb keinen Run-State und legt
 // keinen an (set-board-status/design.md D2). Taugt zugleich zur Korrektur von Hand.
@@ -566,6 +658,8 @@ if (isMain) {
     case 'confirm-app-review': confirmAppReview(a[0], a[1], a[2]); break
     case 'preflight-archive': preflightArchive(a[0]); break
     case 'board': boardVerb(a[0], a[1]); break
+    case 'pause': pause(a[0], a[1]); break
+    case 'resume': resume(a[0], { rundeZurueck: a.includes('--runde-zurueck') }); break
     case 'next': console.log(next(a[0])); break
     case 'escalate': escalate(a[0]); break
     case 'cleanup': cleanup(a[0]); break

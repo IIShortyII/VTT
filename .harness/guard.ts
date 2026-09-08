@@ -56,6 +56,10 @@ const TYPECHECK_COMMANDS = /\b(?:pnpm|npm|yarn|npx)\s+(?:run\s+)?typecheck(?![:\
 // Struktur und Mechanik ausdruecklich dem Typecheck zu, und ohne ihn fiele jeder Tippfehler
 // erst im Gate auf, dessen Runden gegen constitution.md 3.5 zaehlen.
 const SRC_ONLY_TYPECHECK = /\btypecheck:src\b|tsconfig\.src\.json/
+// Steuerdateien und -verben der Rollensteuerung. Beide Muster fuehren zur selben Ablehnung;
+// getrennt gehalten, weil das eine auf Pfade zielt und das andere auf Kommandos.
+const CONTROL_FILE_TABOO = /\.harness\/(runs\/[^/\s'"]+\/active-role|guard\.ts)\b/
+const CONTROL_VERB_TABOO = /\b(?:harness|orchestrator\.ts)\s+(?:pause|resume)\b/
 // ---------------------------------------------------------------------------------------------
 
 const norm = (p: string): string => p.replace(/\\/g, '/')
@@ -81,10 +85,11 @@ export function issueFromCommand(cmd: string): string | undefined {
 // status.json (z.B. sehr alter Run ohne dieses Feld), wird konservativ "noch aktiv" angenommen.
 const TERMINAL_PHASES = new Set(['done', 'archived', 'escalated'])
 
-// runsDir ist injizierbar (Review-Befund Runde 2: Testisolation) - Tests fuer den Fallback duerfen
-// nicht gegen das echte .harness/runs/ pruefen, das durch parallele Jest-Worker (andere
-// Testdateien) oder liegen gebliebene echte Runs unkontrollierten Zustand enthalten kann.
-export function makeDeps(runsDir: string): Deps {
+// runsDir und wtDir sind injizierbar (Review-Befund Runde 2: Testisolation) - Tests fuer den
+// Fallback duerfen nicht gegen die echten .harness/runs/ und .harness/wt/ pruefen, die durch
+// parallele Jest-Worker (andere Testdateien) oder liegen gebliebene echte Runs unkontrollierten
+// Zustand enthalten koennen.
+export function makeDeps(runsDir: string, wtDir: string): Deps {
   const activeRolePath = (issue: string) => join(runsDir, issue, 'active-role')
   const readRoleForIssue = (issue: string): string => {
     const p = activeRolePath(issue)
@@ -94,7 +99,14 @@ export function makeDeps(runsDir: string): Deps {
   // .harness/runs/ nie aufgeraeumt wird. Ohne diesen Filter wuerde ein toter Marker entweder
   // faelschlich als "die eine aktive Rolle" gelten (Fehlblock fuer unbeteiligte Aufrufe) oder,
   // mit einem zweiten toten Marker, den Fallback dauerhaft und unbemerkt auf rollenlos zwingen.
+  // Zweite Bedingung (add-harness-pause/design.md D5): der Worktree als Lebenszeichen. Phase und
+  // Marker bleiben liegen, wenn ein Lauf abgebrochen wird - der Worktree ist das einzige
+  // Artefakt mit sauberem Lebenszyklus (`start` legt ihn an, `cleanup` entfernt ihn). Ein Marker
+  // ohne Worktree gehoert zu einem Lauf, der nichts hat, woran er arbeiten koennte, und darf
+  // keinem fremden Aufruf eine Rolle aufzwingen. Beobachtet an einem liegen gebliebenen
+  // Handversuch, der jeder Sitzung ohne zuordenbares Issue die Rolle `implementer` gab.
   const isRunActive = (issue: string): boolean => {
+    if (!existsSync(join(wtDir, issue))) return false
     const statusPath = join(runsDir, issue, 'status.json')
     if (!existsSync(statusPath)) return true
     try {
@@ -127,7 +139,7 @@ export function makeDeps(runsDir: string): Deps {
 // Aufrufkontext. Eine argv[1]-basierte Herleitung des Wurzelverzeichnisses waere unter
 // tsx (CLI) vs. ts-jest (Modul-Import in Tests) uneinheitlich und wuerde neue, schwerer zu
 // durchschauende Fehlerquellen schaffen, ohne einen realen Aufrufpfad abzudecken.
-export const defaultDeps: Deps = makeDeps(join('.harness', 'runs'))
+export const defaultDeps: Deps = makeDeps(join('.harness', 'runs'), join('.harness', 'wt'))
 
 function extractWriteTargets(cmd: string): string[] {
   const targets = new Set<string>()
@@ -196,7 +208,11 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
     // Die Rollen-Markerdatei darf von einer aktiven Rolle weder umgeschrieben noch
     // entfernt/geleert werden (rm, sed -i, truncate, chmod, ...) - sonst faellt der
     // Guard fuer alle Folgeaufrufe Fail-Open statt Fail-Closed zurueck.
-    if (/\.harness\/(runs\/[^/\s'"]+\/active-role|guard\.ts)\b/.test(norm(cmd)))
+    // Dasselbe gilt fuer die VERBEN, die denselben Marker setzen (add-harness-pause/design.md
+    // D6): `pause` schreibt `none` und wuerde die Sperre, unter der die Rolle gerade steht,
+    // ohne diese Zeile per Kommando abschalten. Es ist dieselbe Frage - darf dieser Aufrufer
+    // die Rollensteuerung anfassen? -, deshalb dieselbe Regel und dieselbe Begruendung.
+    if (CONTROL_FILE_TABOO.test(norm(cmd)) || CONTROL_VERB_TABOO.test(norm(cmd)))
       return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu.' }
 
     for (const t of extractWriteTargets(cmd)) {

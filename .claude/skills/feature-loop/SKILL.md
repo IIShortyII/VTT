@@ -53,6 +53,23 @@ nächsten Schritt raten:
   Archivierungs-PR.
 - `escalate` → Automatik stoppen, an den Menschen übergeben (Zusammenfassung liegt im Run-Verzeichnis).
 
+## Wenn der nächste Schritt keiner Rolle gehört
+
+Steht ein Eingriff an, der außerhalb von `src/`, `prisma/` und `tests/` liegt — eine kaputte
+Werkzeugkonfiguration, eine fehlende `.gitignore`-Regel, ein Befund ohne Rollenzuordnung nach
+`constitution.md` §3.3 —, dann **nicht** den Rollenmarker von Hand schreiben, sondern:
+
+1. `pnpm harness pause <issue> "<grund>"` — gibt den Marker frei, Phase und Rundenzähler
+   bleiben stehen. Danach verweigert jedes Automatenverb, bis fortgesetzt wird.
+2. Den Eingriff durchführen.
+3. `pnpm harness resume <issue>` — stellt die Rolle des aktuellen Schritts wieder her. Erst
+   danach wieder `pnpm harness next <issue>`.
+
+Hat eine Runde nachweislich nur eine kaputte Umgebung gemessen und keine Implementierung, kann
+der Mensch sie mit `pnpm harness resume <issue> --runde-zurueck` zurückgeben — genau eine, nie
+unter null, dauerhaft im Run-State protokolliert. Das ist eine **menschliche** Entscheidung:
+frag danach, nimm sie nicht selbst an.
+
 Reiche zwischen Rollen nur strukturierte Rückgaben weiter, nie Rohprosa oder Testcode.
 Der Rundenzähler (max 3, Implementer-, test-author- und App-Test-Nacharbeit zusammengezählt)
 und die Gate-Reihenfolge liegen im Skript; halte dich an dessen Verdikt. Ein Reviewer-Finding,

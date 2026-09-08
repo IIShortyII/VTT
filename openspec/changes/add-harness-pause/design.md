@@ -66,7 +66,7 @@ Run-State setzt. Kommt eine Phase hinzu oder ändert sich eine Zuordnung, fällt
 
 ## D4 — Rundenrückgabe: eine, nie unter null, und die Grenze ergibt sich von selbst
 
-`--runde-zurück` verringert den Zähler um genau eins. „Höchstens einmal je Pause" braucht keine
+`--runde-zurueck` verringert den Zähler um genau eins. „Höchstens einmal je Pause" braucht keine
 eigene Mechanik: `resume` beendet die Pause, es gibt also kein zweites `resume` innerhalb
 derselben. Bei Zähler null wird die Rückgabe abgelehnt statt still ignoriert — ein still
 ignoriertes Flag ließe den Menschen glauben, er habe eine Runde zurück, die er nicht hat, und

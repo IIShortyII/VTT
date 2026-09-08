@@ -42,9 +42,14 @@ Siehe Issue #29.
   Exit 2 für einen Aufruf, den der Guard ablehnt, sowie Exit 0 für einen, den er zulässt.
 
 Der Test ist der eigentliche Gegenstand dieses Change. Die Korrektur des Kommandos ist ein
-Wort; dass der Bruch monatelang unbemerkt blieb, liegt nicht am Wort, sondern daran, dass ihn
-nichts bemerken konnte: kein bestehender Test in `.harness/tests/` fasst den Hook als Prozess
-an — alle importieren `evaluate()` direkt und waren deshalb durchgehend grün.
+Wort; dass der Bruch unbemerkt blieb, liegt nicht am Wort, sondern daran, dass ihn nichts
+bemerken konnte. Die bestehenden Tests importieren `evaluate()` direkt und prüfen damit die
+Entscheidung, nicht den Start. Die eine Ausnahme, `guard.test.ts` („blockiert (Exit 2) bei
+kaputtem Hook-JSON auf stdin am echten Prozesseinstieg"), startet den Guard zwar als Prozess —
+aber über einen **im Test wiederholten** Kommandostring (`pnpm exec tsx .harness/guard.ts`),
+der zufällig funktioniert. Sie war deshalb durchgehend grün, während das registrierte Kommando
+danebenlag. Genau diese Konstellation — eine richtige Kopie neben einem falschen Original —
+ist der Grund, warum der neue Test das Kommando aus `settings.json` lesen muss (design.md D3).
 
 **Unverändert:** `guard.ts` selbst, seine Entscheidungslogik und alle bestehenden Tests
 dagegen. Dieser Change berührt nur die Frage, ob der Guard gestartet wird.

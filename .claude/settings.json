@@ -20,7 +20,7 @@
   },
   "hooks": {
     "PreToolUse": [
-      { "matcher": "Read|Edit|Write|Bash|Grep|Glob", "hooks": [ { "type": "command", "command": "tsx .harness/guard.ts" } ] }
+      { "matcher": "Read|Edit|Write|Bash|Grep|Glob", "hooks": [ { "type": "command", "command": "node .harness/guard.ts" } ] }
     ]
   },
   "attribution": {

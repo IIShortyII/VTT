@@ -7,20 +7,22 @@ liegen außerhalb der Schreibbereiche von test-author (`tests/`) und implementer
 
 ## 1. Test (zuerst, rot bestätigt)
 
-- [ ] 1.1 `.harness/tests/hook.test.ts`: der aus `.claude/settings.json` gelesene
+- [x] 1.1 `.harness/tests/hook.test.ts`: der aus `.claude/settings.json` gelesene
       PreToolUse-Kommandostring blockt einen unzulässigen Aufruf mit Exit 2 und Begründung auf
       stderr — in einer Umgebung ohne `node_modules/.bin` im PATH
-- [ ] 1.2 derselbe Kommandostring lässt einen zulässigen Aufruf mit Exit 0 durch
-- [ ] 1.3 Test als rot bestätigt, und zwar aus dem richtigen Grund: Exit 127
-      („command not found"), nicht ein Fehler des Tests selbst
+- [x] 1.2 derselbe Kommandostring lässt einen zulässigen Aufruf mit Exit 0 durch
+- [x] 1.3 Test als rot bestätigt, und zwar aus dem richtigen Grund: der Interpreter wird nicht
+      gefunden („Der Befehl »tsx« … konnte nicht gefunden werden"), nicht ein Fehler des Tests
+      selbst. Der Exit-Code dabei hängt an der Shell — cmd liefert 1, bash 127; entscheidend ist
+      allein, dass er nicht 2 ist und der Aufruf damit durchliefe
 
 ## 2. Behebung
 
-- [ ] 2.1 `.claude/settings.json`: Hook-Kommando auf `node .harness/guard.ts` (design.md D1)
+- [x] 2.1 `.claude/settings.json`: Hook-Kommando auf `node .harness/guard.ts` (design.md D1)
 
 ## 3. Abnahme
 
-- [ ] 3.1 Gate grün: `pnpm test:harness`, `pnpm typecheck`, `pnpm lint`
+- [x] 3.1 Gate grün: `pnpm test:harness` (89/89), `pnpm typecheck`, `pnpm lint`
 - [ ] 3.2 Reviewer-Durchgang ohne blockierende Findings
 - [ ] 3.3 Menschlicher Test: in einer frischen Sitzung greift der Guard nachweislich — ein
       Aufruf, der geblockt gehört, wird geblockt

@@ -23,7 +23,17 @@ liegen außerhalb der Schreibbereiche von test-author (`tests/`) und implementer
 ## 3. Abnahme
 
 - [x] 3.1 Gate grün: `pnpm test:harness` (89/89), `pnpm typecheck`, `pnpm lint`
-- [ ] 3.2 Reviewer-Durchgang ohne blockierende Findings
+- [x] 3.2 Reviewer-Durchgang ohne blockierende Findings (Empfehlung „ok", sechs Hinweise).
+      Fünf davon eingearbeitet: Begründung der Ablehnung gepinnt statt bloßem `/Blockiert/`
+      (ein pauschal blockender Guard hätte den Test sonst grün gemacht); Hook-Eintrag gezielt
+      über `guard.ts` ausgewählt statt „genau einer"; Shebang und Kommentarblock in `guard.ts`
+      auf `node` korrigiert und die Type-Stripping-Bedingung dort dauerhaft hinterlegt, weil
+      `design.md` archiviert wird; `engines: node >=22.18` plus Spiegelung in `AGENTS.md` und
+      `README.md`; GIVEN des ersten Szenarios um die fehlende Datenbank-URL ergänzt.
+      Nicht eingearbeitet: die Umstellung auf `$CLAUDE_PROJECT_DIR` — eine nicht gesetzte
+      Variable ergäbe `node /.harness/guard.ts` und damit dieselbe stille Wirkungslosigkeit,
+      die dieser Change beseitigt. Stattdessen als bewusst akzeptierte Grenze in
+      `README.md` festgehalten.
 - [ ] 3.3 Menschlicher Test: in einer frischen Sitzung greift der Guard nachweislich — ein
       Aufruf, der geblockt gehört, wird geblockt
 - [ ] 3.4 Change nach `openspec/changes/archive/` verschieben (gleicher Branch), PR öffnen

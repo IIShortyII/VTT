@@ -157,3 +157,8 @@ Schritts — damit der Fortschritt auch außerhalb der laufenden Sitzung sichtba
 ## Versionen
 - Es gelten die Versionen aus `package.json`. Keine Major-Upgrades ohne Freigabe.
 - React 19, Vite 7, PixiJS 8, Fastify 5, Socket.IO 4, Prisma 6.
+- **Node ≥ 22.18** (`engines` in `package.json`) — keine Stilfrage: der PreToolUse-Guard
+  läuft als `node .harness/guard.ts`, also ohne Transpiler, und verlässt sich auf Nodes
+  eigenes Type-Stripping. Auf älterem Node endet der Hook mit Exit 1 — und weil ein
+  PreToolUse-Hook ausschließlich bei Exit 2 blockt, wäre der Guard damit still fail-open
+  (Issue #29). `.harness/tests/hook.test.ts` fängt den Fall ab.

@@ -33,11 +33,13 @@ bescheinigen.
 #### Scenario: Ein unzulässiger Aufruf wird geblockt
 
 - **GIVEN** der in `.claude/settings.json` registrierte Hook-Kommandostring und eine Umgebung,
-  deren PATH `node_modules/.bin` nicht enthält
+  deren PATH `node_modules/.bin` nicht enthält und in der keine Datenbank-URL gesetzt ist —
+  damit die Ablehnung an der fail-closed greifenden Migrationssperre hängt und nicht an einer
+  Rollenzuweisung, die von Lauf zu Lauf wechselt
 - **WHEN** das Kommando als Prozess gestartet wird und auf der Standardeingabe einen
   Werkzeugaufruf erhält, den der Guard ablehnt
-- **THEN** endet der Prozess mit Exit-Code 2 und gibt die Begründung der Ablehnung auf der
-  Fehlerausgabe aus
+- **THEN** endet der Prozess mit Exit-Code 2 und gibt auf der Fehlerausgabe die Begründung
+  **dieser** Ablehnung aus — nicht irgendeine Ablehnung
 
 #### Scenario: Ein zulässiger Aufruf wird durchgelassen
 

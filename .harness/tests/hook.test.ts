@@ -12,14 +12,20 @@ const REPO_ROOT = join(__dirname, '..', '..')
 
 // design.md D3: das Kommando stammt aus settings.json selbst. Eine Kopie hier wuerde denselben
 // Fehler wiederholen, den dieser Test aufdecken soll.
+//
+// Ausgewaehlt wird der Eintrag, der den Guard startet - nicht "der einzige". Ein spaeter
+// nachgetragener, voellig harmloser zweiter PreToolUse-Hook (Formatter, Logger) wuerde sonst
+// beide Szenarien mit einer Exception umwerfen, die nach einem kaputten Guard aussieht,
+// obwohl der Guard unveraendert korrekt ist (Review-Befund). Gestartet wird weiterhin der
+// registrierte String unveraendert.
 function registeredPreToolUseCommand(): string {
   const settings = JSON.parse(readFileSync(join(REPO_ROOT, '.claude', 'settings.json'), 'utf8'))
   const commands: string[] = (settings.hooks?.PreToolUse ?? [])
     .flatMap((matcher: { hooks?: { command?: string }[] }) => matcher.hooks ?? [])
     .map((h: { command?: string }) => h.command)
-    .filter((c: string | undefined): c is string => typeof c === 'string' && c.length > 0)
+    .filter((c: string | undefined): c is string => typeof c === 'string' && c.includes('guard.ts'))
   if (commands.length !== 1)
-    throw new Error(`Erwartet genau ein PreToolUse-Hook-Kommando in settings.json, gefunden: ${commands.length}`)
+    throw new Error(`Erwartet genau einen PreToolUse-Hook auf guard.ts in settings.json, gefunden: ${commands.length}`)
   return commands[0]
 }
 
@@ -62,15 +68,23 @@ const BLOCKED_CALL = { tool_name: 'Bash', tool_input: { command: 'prisma migrate
 const ALLOWED_CALL = { tool_name: 'Read', tool_input: { file_path: 'README.md' } }
 
 describe('Der registrierte PreToolUse-Hook blockt ohne projektlokalen PATH', () => {
+  // Die Begruendung wird VOR dem Status geprueft, aus zwei Gruenden (Review-Befund):
+  // 1. Ein blosses /Blockiert/ wuerde auch der Fail-Closed-Zweig am Prozesseinstieg erfuellen -
+  //    ein Guard, der aus einem ganz anderen Grund pauschal alles blockt, machte den Test gruen.
+  //    Die Spec verlangt aber die Begruendung DER ABLEHNUNG. Gepinnt wird deshalb die
+  //    tatsaechlich getroffene Entscheidung (Migrationssperre).
+  // 2. Scheitert der Test, zeigt Jest bei einer Status-Assertion nur "expected 2, received 1".
+  //    Die eigentliche Ursache - "command not found", oder Nodes Meldung bei nicht-strippbarer
+  //    Syntax in guard.ts - steht auf stderr und waere sonst unsichtbar.
   it('Ein unzulaessiger Aufruf wird geblockt', () => {
     const r = runHook(BLOCKED_CALL)
+    expect(r.stderr).toMatch(/Migration nur gegen die ephemere Test-DB/)
     expect(r.status).toBe(2)
-    expect(r.stderr).toMatch(/Blockiert/)
   }, 30000)
 
   it('Ein zulaessiger Aufruf wird durchgelassen', () => {
     const r = runHook(ALLOWED_CALL)
-    expect(r.status).toBe(0)
     expect(r.stderr).not.toMatch(/Blockiert/)
+    expect(r.status).toBe(0)
   }, 30000)
 })

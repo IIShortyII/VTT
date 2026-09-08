@@ -6,6 +6,8 @@ module.exports = {
   // den Rollen-Pfadregeln der App (test-author/implementer) unterliegen, siehe proposal.md.
   roots: ['<rootDir>/.harness/tests'],
   testRegex: '\\.test\\.tsx?$',
+  // Schaltet den Board-Zugriff fuer die gesamte Suite ab - Begruendung in tests/setup.ts.
+  setupFiles: ['<rootDir>/.harness/tests/setup.ts'],
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: { module: 'commonjs', moduleResolution: 'node' } }],
   },

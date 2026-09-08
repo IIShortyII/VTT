@@ -5,6 +5,8 @@
 import { execSync } from 'node:child_process'
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync, cpSync } from 'node:fs'
 import { join, resolve as resolvePath } from 'node:path'
+import { setBoardStatus, setBoardStatusIfIssueClosed } from './board.js'
+import type { BoardStatus, GhRunner } from './board.js'
 
 export const MAX_ROUNDS = 3 // Leitplanke: eine Runde = ein Nacharbeit-Versuch, unabhaengig von der Rolle (§3.5)
 const ROLES: Role[] = ['test-author', 'implementer', 'reviewer', 'none']
@@ -40,11 +42,29 @@ export function readStatus(i: string): Status {
   return s
 }
 export function writeStatus(s: Status) { mkdirSync(runDir(s.issue), { recursive: true }); writeFileSync(statusPath(s.issue), JSON.stringify(s, null, 2)) }
-function sh(cmd: string, cwd?: string) { try { return { ok: true, out: execSync(cmd, { encoding: 'utf8', cwd }) } } catch (e: any) { return { ok: false, out: (e.stdout ?? '') + (e.stderr ?? '') } } }
+// Ausfuehrungskanal der Verben, die Unterprozesse starten. Als Typ herausgezogen, damit ein
+// Test einen Stellvertreter uebergeben kann (set-board-status/design.md D1) - ohne ihn koennte
+// kein Test gate() oder confirmRed() aufrufen, ohne pnpm und git wirklich laufen zu lassen.
+export type Sh = (cmd: string, cwd?: string) => { ok: boolean; out: string }
+const sh: Sh = (cmd, cwd) => { try { return { ok: true, out: execSync(cmd, { encoding: 'utf8', cwd }) } } catch (e: any) { return { ok: false, out: (e.stdout ?? '') + (e.stderr ?? '') } } }
 // active-role liegt pro Issue (design.md D7) - eine globale Markerdatei wuerde parallele
 // Runs verschiedener Issues gegenseitig die Rolle ueberschreiben lassen.
 function setRole(issue: string, role: Role) { mkdirSync(runDir(issue), { recursive: true }); writeFileSync(join(runDir(issue), 'active-role'), role) }
-function emit(issue: string, a: string, role: Role = 'none'): string { setRole(issue, role); return JSON.stringify({ action: a }) }
+// Zwei der sieben Board-Status haengen an einer emittierten Aktion - und beide werden an je
+// ZWEI Stellen emittiert (next() und reworkTo fuer den Implementierungsschritt, zwei Zweige
+// von next() fuer den App-Test). Die Tabelle in emit() deckt alle vier ab und kann keine
+// uebersehen; emit() ist ohnehin der Trichter jedes Schrittwechsels und setzt hier schon den
+// active-role-Marker (set-board-status/design.md D2).
+const ACTION_STATUS: Record<string, BoardStatus> = {
+  'invoke-implementer': 'implementierung',
+  'present-app-review': 'app-test',
+}
+function emit(issue: string, a: string, role: Role = 'none'): string {
+  setRole(issue, role)
+  const status = ACTION_STATUS[a]
+  if (status) setBoardStatus(issue, status) // Beiwerk: wirft nie, Rueckgabe bewusst ungeprueft
+  return JSON.stringify({ action: a })
+}
 function fail(msg: string): never { console.error(msg); process.exit(1) }
 
 function pushRound(s: Status, rec: Omit<RoundRecord, 'round'>) {
@@ -177,8 +197,8 @@ function removeUntrackedSourceDocs(src: string) {
   rmSync(src, { recursive: true, force: true })
 }
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
-export function confirmRed(i: string) {
-  const s = readStatus(i); const r = sh('pnpm test --silent', worktreeDir(i))
+export function confirmRed(i: string, run: Sh = sh) {
+  const s = readStatus(i); const r = run('pnpm test --silent', worktreeDir(i))
   const out = stripAnsi(r.out)
   // TS-Fehler, die aus fehlender Implementierung entstehen (der TDD-Regelfall) zaehlen
   // als gueltiges Rot, nicht als Setup-/Compile-Fehler des Tests selbst. TS2459 ("declares
@@ -188,6 +208,9 @@ export function confirmRed(i: string) {
   const compileError = !missingImpl && /error TS\d+|SyntaxError/.test(out)
   const red = !r.ok && !compileError
   s.phase = red ? 'implement' : 'red'; writeStatus(s)
+  // Nur das BESTAETIGTE Rot schaltet das Board weiter: ein Rot aus dem falschen Grund
+  // (Setup-/Compile-Fehler, constitution.md §3.1) ist kein erreichter Schritt.
+  if (red) setBoardStatus(i, 'test-rot')
   console.log(JSON.stringify({ red, reason: red ? 'assertion/impl-missing' : compileError ? 'test-compile-error' : 'unexpected-green' }))
 }
 // design.md D1: Revalidierungspflicht nach jeder test-author-Nacharbeit. Beide Ausgaenge
@@ -206,7 +229,11 @@ export function confirmTestRework(i: string) {
   writeStatus(s)
   console.log(next(i))
 }
-export function gate(i: string) {
+export function gate(i: string, run: Sh = sh) {
+  // Zuerst das Board, vor jedem Werkzeugaufruf: die Spalte heisst "Gate + Review" und deckt
+  // beides ab. Erst beim Reviewer gesetzt, stuende ein Issue jede Gate-Runde sichtbar auf
+  // "Implementierung", obwohl der Implementer laengst fertig ist (design.md D3).
+  setBoardStatus(i, 'gate-review')
   const s = readStatus(i)
   const wt = worktreeDir(i)
   const jestOut = join(process.cwd(), runDir(i), 'jest.json') // absolut: Ausgabe landet im Run-State, unabhaengig vom Worktree-cwd
@@ -222,7 +249,7 @@ export function gate(i: string) {
     // --passWithNoTests: eine vorherige Runde kann allein an typecheck/lint gescheitert sein,
     // waehrend Jest selbst schon gruen war - --onlyFailures kennt dann keine roten Tests und
     // wuerde ohne dieses Flag faelschlich mit "No failed test found" als Fehlschlag durchgehen.
-    const quick = sh(`pnpm test --onlyFailures --passWithNoTests --json --outputFile="${jestOut}"`, wt)
+    const quick = run(`pnpm test --onlyFailures --passWithNoTests --json --outputFile="${jestOut}"`, wt)
     if (!quick.ok) {
       recordGateResult(s, false, parseJestFailures(i))
       console.log(next(i))
@@ -232,9 +259,9 @@ export function gate(i: string) {
   // Kein "--"-Trenner: pnpm reicht nachgestellte Argumente an das Skript durch, ohne dass
   // eine Disambiguierung noetig waere - mit "--" wuerde pnpm den Trenner selbst mit an tsc
   // weiterreichen (tsc bricht dann mit "error TS5023: Unknown compiler option '--'" ab).
-  const tc = sh(`pnpm typecheck --incremental --tsBuildInfoFile "${tsBuildInfo}"`, wt)
-  const lint = sh('pnpm lint', wt)
-  const test = sh(`pnpm test --json --outputFile="${jestOut}"`, wt)
+  const tc = run(`pnpm typecheck --incremental --tsBuildInfoFile "${tsBuildInfo}"`, wt)
+  const lint = run('pnpm lint', wt)
+  const test = run(`pnpm test --json --outputFile="${jestOut}"`, wt)
   const green = tc.ok && lint.ok && test.ok
   recordGateResult(s, green, green ? undefined : parseJestFailures(i))
   console.log(next(i))
@@ -450,10 +477,14 @@ function preflightArchive(i: string) { console.log(JSON.stringify(checkPreflight
 // Bewusst nur fuer terminale Phasen: ein laufender Run wuerde sich selbst den Boden
 // entziehen, und ein eskalierter Run muss fuer den Menschen inspizierbar bleiben.
 const CLEANUP_PHASES = new Set<Status['phase']>(['done', 'archived'])
-export function cleanup(i: string) {
+export function cleanup(i: string, run?: GhRunner) {
   const s = readStatus(i)
   if (!CLEANUP_PHASES.has(s.phase))
     fail(`Kein Cleanup in Phase "${s.phase}" — aufgeräumt wird nur nach ${[...CLEANUP_PHASES].join('/')}.`)
+  // Die einzige Harness-Aktion nach dem Merge - und damit die Stelle fuer "Fertig". Weil
+  // cleanup auch auf einem archivierten, aber noch nicht gemergten Lauf laufen kann, prueft
+  // das Board-Modul vorher den Zustand des Issues (set-board-status/design.md D4).
+  setBoardStatusIfIssueClosed(i, run)
   const wt = worktreeDir(i)
   const worktreeEntfernt = existsSync(wt) ? sh(`git worktree remove --force "${wt}"`).ok : false
   sh('git worktree prune')
@@ -463,6 +494,12 @@ export function cleanup(i: string) {
   const marker = join(runDir(i), 'active-role')
   if (existsSync(marker)) rmSync(marker)
   console.log(JSON.stringify({ ok: true, phase: s.phase, worktreeEntfernt }))
+}
+// Der einzige Statuswechsel ohne Automaten: die Spezifikation entsteht ueber /opsx:propose,
+// also bevor `start` das Issue ueberhaupt kennt. Liest deshalb keinen Run-State und legt
+// keinen an (set-board-status/design.md D2). Taugt zugleich zur Korrektur von Hand.
+export function boardVerb(i: string, status: string) {
+  console.log(JSON.stringify(setBoardStatus(i, status)))
 }
 export function escalate(i: string) {
   const s = readStatus(i)
@@ -528,6 +565,7 @@ if (isMain) {
     case 'confirm-test-rework': confirmTestRework(a[0]); break
     case 'confirm-app-review': confirmAppReview(a[0], a[1], a[2]); break
     case 'preflight-archive': preflightArchive(a[0]); break
+    case 'board': boardVerb(a[0], a[1]); break
     case 'next': console.log(next(a[0])); break
     case 'escalate': escalate(a[0]); break
     case 'cleanup': cleanup(a[0]); break

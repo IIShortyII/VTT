@@ -1,6 +1,5 @@
 {
   "env": {
-    "DISABLE_TELEMETRY": "1",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8[1m]"
   },
   "permissions": {

@@ -133,9 +133,9 @@ hinaus, und beide erwiesen sich als unfertig. Die Entscheidung liegt beim Mensch
       Hilfsdatei-Ausnahme entfernt, Pathspec zurückgedreht, Rückhalt abgeschaltet, beide
       Wächter auf den alten Vergleich zurückgesetzt) machen je mindestens einen Test rot —
       Nachweis, dass die Zusicherungen greifen statt nur grün zu sein
-- [ ] 8.4 Menschliche Freigabe einholen (`constitution.md` §3.4 — kein App-Test, der Change
+- [x] 8.4 Menschliche Freigabe einholen (`constitution.md` §3.4 — kein App-Test, der Change
       berührt keinen Anwendungscode; geprüft wird die Ausgabe aus 8.2)
-- [ ] 8.5 Change nach `openspec/changes/archive/` verschieben **und die Capability nach
+- [x] 8.5 Change nach `openspec/changes/archive/` verschieben **und die Capability nach
       `openspec/specs/` übernehmen** (beides im selben Branch/Commit-Bereich — der Sync wurde
       bei #22 vergessen und musste nachgetragen werden), dann PR mit `Closes #21` öffnen;
       menschlicher Merge

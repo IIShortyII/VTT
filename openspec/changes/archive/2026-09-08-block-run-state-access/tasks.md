@@ -138,8 +138,8 @@
 
 ## 7. Freigabe
 
-- [ ] 7.1 Menschliche Freigabe einholen (§3.4 — kein App-Test, der Change berührt keinen
+- [x] 7.1 Menschliche Freigabe einholen (§3.4 — kein App-Test, der Change berührt keinen
       Anwendungscode; geprüft wird die Gegenprobe aus 5.2)
-- [ ] 7.2 Change nach `openspec/changes/archive/YYYY-MM-DD-block-run-state-access/` verschieben
+- [x] 7.2 Change nach `openspec/changes/archive/YYYY-MM-DD-block-run-state-access/` verschieben
       **und die Capability nach `openspec/specs/` übernehmen** (beides im selben
       Branch/Commit-Bereich), dann PR mit `Closes #34` öffnen; menschlicher Merge

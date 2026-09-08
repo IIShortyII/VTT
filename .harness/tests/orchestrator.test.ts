@@ -741,15 +741,23 @@ describe('Pfadvergleiche unabhängig von der Schreibweise', () => {
   }
 
   it('Eine Nennung mit Forward-Slashes wird erkannt', () => {
-    const issue = freshIssue()
-    try {
-      // Der Harness fuehrt den Pfad intern mit den Trennzeichen des Betriebssystems; die
-      // design.md schreibt ihn so, wie ein Mensch ihn schreibt.
-      makeLauf(issue, `D10 - Der Ablauf ist in tests/${TESTDATEI} festgehalten.`)
-      const { warf, meldung } = bauenMitAbfangen(issue)
-      expect(warf).toBe(true)
-      expect(meldung).toContain(TESTDATEI)
-    } finally { cleanup(issue) }
+    // Der Harness fuehrt den Pfad intern mit den Trennzeichen des Betriebssystems; die
+    // design.md schreibt ihn so, wie ein Mensch ihn schreibt. Beide Laengen zaehlen: der
+    // worktree-relative Pfad (so steht er in einer design.md) und der vollstaendige (so steht
+    // er in einem Reviewer-Finding, das `ort` aus dem Worktree uebernimmt).
+    const faelle = [
+      () => `tests/${TESTDATEI}`,
+      (i: string) => `${worktreeDir(i).replace(/\\/g, '/')}/tests/${TESTDATEI}`,
+    ]
+    for (const form of faelle) {
+      const issue = freshIssue()
+      try {
+        makeLauf(issue, `D10 - Der Ablauf ist in ${form(issue)} festgehalten.`)
+        const { warf, meldung } = bauenMitAbfangen(issue)
+        expect(warf).toBe(true)
+        expect(meldung).toContain(TESTDATEI)
+      } finally { cleanup(issue) }
+    }
   })
 
   it('Der bloße Dateiname gilt als Nennung', () => {
@@ -760,6 +768,28 @@ describe('Pfadvergleiche unabhängig von der Schreibweise', () => {
       expect(warf).toBe(true)
       expect(meldung).toContain(TESTDATEI)
     } finally { cleanup(issue) }
+  })
+
+  it('Der Name einer Hilfsdatei zählt nur mit Pfadanteil', () => {
+    // Aufgefallen an echtem Material: listTestFiles liefert auch tests/.gitkeep, und ".gitkeep"
+    // steht in der proposal.md von add-user-auth ("src/ enthaelt heute nur .gitkeep"). Das
+    // Argument fuer den blossen Namen - er sei charakteristisch - gilt nur fuer Dateien, deren
+    // Name sie als Test ausweist.
+    const ohne = freshIssue()
+    try {
+      makeLauf(ohne, 'D1 - Das Verzeichnis enthaelt heute nur .gitkeep.')
+      writeFileSync(join(worktreeDir(ohne), 'tests', '.gitkeep'), '')
+      expect(bauenMitAbfangen(ohne).warf).toBe(false)
+    } finally { cleanup(ohne) }
+
+    // Dieselbe Datei MIT Pfadanteil bleibt eine Nennung - die Ausnahme gilt dem Namen, nicht
+    // der Datei.
+    const mit = freshIssue()
+    try {
+      makeLauf(mit, 'D1 - Der Platzhalter liegt in tests/.gitkeep.')
+      writeFileSync(join(worktreeDir(mit), 'tests', '.gitkeep'), '')
+      expect(bauenMitAbfangen(mit).warf).toBe(true)
+    } finally { cleanup(mit) }
   })
 
   it('Ein Name, der auf keine Testdatei des Laufs passt, hält den Lauf nicht an', () => {

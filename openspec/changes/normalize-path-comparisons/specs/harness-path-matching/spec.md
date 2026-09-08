@@ -21,8 +21,14 @@ in einer der Formen enthält, in denen er üblicherweise geschrieben wird: mit d
 des Betriebssystems oder mit Forward-Slashes, vollständig, relativ zum Worktree, oder als
 bloßer Dateiname.
 
-Der bloße Dateiname MUST mitzählen. In einer Spezifikation steht eher der Name als der Pfad,
-und er verrät dasselbe: welche Testdatei existiert und wie das Verhalten geschnitten ist.
+Der bloße Dateiname MUST mitzählen, **sofern er als Testdatei erkennbar ist**. In einer
+Spezifikation steht eher der Name als der Pfad, und er verrät dasselbe: welche Testdatei
+existiert und wie das Verhalten geschnitten ist.
+
+Für die übrigen Dateien unter `tests/` — Fixtures, Mocks, Platzhalter — MUST der Harness eine
+Nennung mit Pfadanteil verlangen. Ihre Namen sind generisch und kommen in gewöhnlicher Prosa
+vor; sie als Nennung zu werten hieße, jeden Auftrag anzuhalten, der zufällig dasselbe Wort
+benutzt.
 
 Der Harness MUST NOT die Groß-/Kleinschreibung angleichen. Sie zu ignorieren wäre eine Annahme
 über das Dateisystem, die auf einem anderen Läufer falsch ist.
@@ -42,6 +48,14 @@ Der Harness MUST NOT die Groß-/Kleinschreibung angleichen. Sie zu ignorieren w�
 - **WHEN** der Harness den Auftrag für den implementer baut
 - **THEN** bricht der Aufbau ab und meldet die betroffene Testdatei
 
+#### Scenario: Der Name einer Hilfsdatei zählt nur mit Pfadanteil
+
+- **GIVEN** unter `tests/` liegt eine Hilfsdatei mit generischem Namen, und eine Datei des
+  Change verwendet dasselbe Wort in gewöhnlicher Prosa, ohne Pfadanteil
+- **WHEN** der Harness den Auftrag für den implementer baut
+- **THEN** entsteht der Auftrag ohne Abbruch, während dieselbe Datei mit Pfadanteil genannt
+  den Aufbau anhalten würde
+
 #### Scenario: Ein Name, der auf keine Testdatei des Laufs passt, hält den Lauf nicht an
 
 - **GIVEN** eine Datei des Change nennt einen Testdateinamen, zu dem im Worktree keine Datei
@@ -59,14 +73,19 @@ vorbei, und welche der beiden gilt, hinge davon ab, auf welchem Weg der Text kom
 Ihre **Wirkung** bleibt verschieden: der Auftrag bricht ab, ein einzelner Gate-Failure
 degradiert auf die Kurzform (`constitution.md` §8.2 G3).
 
+Die weitergegebene Ausgabe eines degradierten Failure MUST die Nennung nicht mehr enthalten.
+Trägt auch die Kurzform sie noch, MUST der Harness weiter zurückhalten, bis nichts
+Preisgebendes übrig ist, und stattdessen benennen, dass zurückgehalten wurde. Eine
+Degradierung, die den Leak mitnimmt, ist keine.
+
 #### Scenario: Eine Gate-Ausgabe, die eine Testdatei beim Namen nennt, wird degradiert
 
 - **GIVEN** die Ausgabe eines fehlgeschlagenen Szenarios nennt eine existierende Testdatei nur
   mit ihrem Dateinamen, ohne Pfadanteil — die Form, die das Abschneiden vor dem Codeframe nicht
   erfasst, weil sie kein Verzeichnis enthält
 - **WHEN** der Harness die Gate-Ausgabe für die Weitergabe aufbereitet
-- **THEN** wird dieser Failure auf die Kurzform degradiert und der Vorgang protokolliert,
-  während der übrige Lauf weiterläuft
+- **THEN** enthält die weitergegebene Ausgabe dieses Failure den Dateinamen nicht mehr, der
+  Vorgang ist protokolliert, und der übrige Lauf läuft weiter
 
 ### Requirement: Pfadspezifikationen an Git tragen Forward-Slashes
 

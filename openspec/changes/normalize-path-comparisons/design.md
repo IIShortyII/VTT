@@ -57,17 +57,36 @@ den Namen für seine Meldung, `parseJestFailures` nur das Ob.
 
 ### D2 — Erkannt wird jede Form, in der eine Testdatei auftauchen kann
 
-Für jede Datei aus `listTestFiles` gilt als Nennung:
+Erkannt wird jede Schreibweise — geprüft wird jeweils die **kürzeste**, weil jede längere auf
+sie endet und darüber mitgefunden wird. Wie kurz das sein darf, hängt von der Datei ab:
 
-| Form | Beispiel |
-|---|---|
-| der Pfad, wie er vorliegt | `.harness\wt\12\tests\x.test.ts` |
-| derselbe Pfad mit Forward-Slashes | `.harness/wt/12/tests/x.test.ts` |
-| worktree-relativ, beide Schreibweisen | `tests/x.test.ts`, `tests\x.test.ts` |
-| der bloße Dateiname | `x.test.ts` |
+| Datei | geprüfte Form | Beispiel |
+|---|---|---|
+| erkennbare Testdatei (`.test.ts(x)`, `.test.js(x)`) | bloßer Dateiname | `x.test.ts` |
+| jede andere Datei unter `tests/` | worktree-relativer Pfad, beide Trennzeichen | `tests/.gitkeep`, `tests\.gitkeep` |
 
-Der absolute Pfad braucht keinen eigenen Eintrag: er endet auf den repo-relativen und wird über
-ihn erkannt — genau der Umstand, der `parseJestFailures` heute trägt.
+Dass ein absoluter Pfad über sein Suffix gefunden wird, ist genau der Umstand, der
+`parseJestFailures` heute trägt — Jest gibt absolute Pfade aus. Dasselbe Argument gilt für jede
+Zwischenlänge; es endet bei der geprüften Form.
+
+**Die Unterscheidung stammt aus der Gegenprobe, nicht aus dem Entwurf.** Eine erste Fassung
+prüfte für jede Datei den bloßen Namen. Am echten Material fiel sofort ein Fehlalarm an:
+`listTestFiles` liefert auch `tests/.gitkeep`, und `.gitkeep` steht in der `proposal.md` von
+`add-user-auth` (»`src/` enthält heute nur `.gitkeep`«). Das Argument für den bloßen Namen —
+er sei charakteristisch und komme in Prosa nicht vor — gilt eben nur für Dateien, deren Name
+sie als Test ausweist. Für Fixtures, Mocks und Platzhalter gilt es nicht, und für sie bleibt es
+beim Pfad.
+
+Eine erste Fassung führte alle Formen als Liste, um in der Meldung die spezifischste nennen zu
+können. Eine Mutationsprobe hat sie als totes Gewicht nachgewiesen: kein Test wurde rot, als
+die längeren Formen entfielen — sie ändern an der Erkennung nichts, nur an der Rückgabe, und
+diese Verfeinerung war weder von einem Szenario verlangt noch von einem Test gedeckt. Sie ist
+deshalb entfallen. Eine ungetestete Verhaltensverfeinerung an einer Sicherheitsnaht ist genau
+das, was §8.1 aus dem Ermessen heraushalten will.
+
+Der Preis ist benannt: die Fundstellenangabe sucht den Block, der den **Namen** enthält. Nennen
+mehrere Blöcke ihn, wird der erste gemeldet. Das ist eine Auskunft über einen Block, der die
+Nennung wirklich enthält — nur nicht zwingend über den einzigen.
 
 **Der bloße Dateiname zählt mit.** In einer `design.md` steht `user-auth.integration.test.ts`,
 nicht der volle Pfad — die naheliegendste Nennung wäre sonst die einzige, die durchginge. Und

@@ -3,8 +3,8 @@
 // reviewer) ruft der Orchestrator (Session) laut SKILL.md; dieses Skript besitzt
 // die harten Invarianten und setzt den active-role-Marker als Seiteneffekt.
 import { execSync } from 'node:child_process'
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync, cpSync } from 'node:fs'
-import { join, resolve as resolvePath, sep } from 'node:path'
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync, rmSync, cpSync } from 'node:fs'
+import { join, resolve as resolvePath } from 'node:path'
 import { setBoardStatus, setBoardStatusIfIssueClosed } from './board.js'
 import type { BoardStatus, GhRunner } from './board.js'
 
@@ -213,7 +213,7 @@ export function reviewRework(s: Status): string {
 // von src/prisma/tests gilt als 'human' (z.B. openspec/-Proposal, CI-Config, constitution.md) -
 // konservativer Default, der im Zweifel eskaliert statt eine Rolle falsch zu adressieren.
 export function scopeOfFinding(f: unknown): Scope {
-  const ort = String((f as Record<string, unknown>).ort ?? '').replace(/\\/g, '/')
+  const ort = fwd(String((f as Record<string, unknown>).ort ?? ''))
   if (/(^|\/)(src|prisma)\//.test(ort)) return 'impl'
   if (/(^|\/)tests\//.test(ort) || /\.test\.tsx?$/.test(ort)) return 'test'
   return 'human'
@@ -387,7 +387,16 @@ export function parseJestFailures(i: string): Failure[] {
           // stehen.
           const leakt = (text: string) => testFiles.some(f => testFileMention(text, f, i) !== undefined)
             || testLines.some(l => text.includes(l))
-          out.push({ name: t.title, message: leakt(trimmed) ? degradeToFirstLine(i, t.title, raw, leakt) : (trimmed || firstErrorLine(raw)) })
+          // Geprueft wird, was tatsaechlich WEITERGEREICHT wird - nicht, was zuerst gebildet
+          // wurde. Der Rueckfall auf die erste Zeile greift genau dann, wenn das Kuerzen nichts
+          // uebrig liess, und das ist der Regelfall bei "Cannot find module './x' from
+          // 'tests/y.test.ts'": die Nennung steht dort in Zeile 0, truncateAtTestReference
+          // schneidet davor ab, der geprueft Text waere leer - und der Rueckfall holte
+          // anschliessend genau die Zeile zurueck, die der Waechter verhindern soll
+          // (Review-Befund Runde 1). Eine Pruefung, an der eine spaetere Ersetzung vorbeilaeuft,
+          // schuetzt die Ausgabe nicht, die beim implementer ankommt.
+          const kandidat = trimmed || firstErrorLine(raw)
+          out.push({ name: t.title, message: leakt(kandidat) ? degradeToFirstLine(i, t.title, raw, leakt) : kandidat })
         }
     return out
   } catch (e) {
@@ -415,11 +424,16 @@ export function truncateAtTestReference(m: string): string {
 // ist niedriger als eine Preisgabe (constitution.md §2.2 vor §8.2 G3), und der Mensch findet
 // den Vorgang im Protokoll.
 function degradeToFirstLine(i: string, testName: string, raw: string, leakt: (t: string) => boolean): string {
-  const logPath = join(runDir(i), 'leak-degradations.log')
-  const prior = existsSync(logPath) ? readFileSync(logPath, 'utf8') : ''
   const kurz = firstErrorLine(raw)
   const zurueckgehalten = leakt(kurz)
-  writeFileSync(logPath, `${prior}[${new Date().toISOString()}] ${zurueckgehalten ? 'zurückgehalten' : 'degradiert'}: ${testName}\n`)
+  appendFileSync(join(runDir(i), 'leak-degradations.log'),
+    `[${new Date().toISOString()}] ${zurueckgehalten ? 'zurückgehalten' : 'degradiert'}: ${testName}\n`)
+  // Ein zurueckgehaltener Failure kostet den implementer sein Feedback, waehrend der
+  // Rundenzaehler nach §3.5 weiterlaeuft. Trifft es alle Failures einer Runde, liefe der Lauf
+  // bis zur Eskalation, ohne dass der Mensch den Grund saehe - das Protokoll liest niemand von
+  // allein. Deshalb zusaetzlich auf stderr, wie beim Board-Beiwerk (Review-Befund Runde 1).
+  if (zurueckgehalten)
+    console.error(`[gate] Ausgabe zu "${testName}" zurückgehalten: sie nennt eine Testdatei.`)
   return zurueckgehalten
     ? 'Ausgabe zurückgehalten: sie nennt eine Testdatei (siehe leak-degradations.log).'
     : kurz
@@ -593,7 +607,11 @@ function mentionForms(testFile: string, i: string): string[] {
   const wurzel = fwd(worktreeDir(i)) + '/'
   const wtRelativ = slash.startsWith(wurzel) ? slash.slice(wurzel.length) : slash
   if (IST_TESTDATEI.test(slash)) return [slash.slice(slash.lastIndexOf('/') + 1)]
-  return [...new Set([wtRelativ, wtRelativ.replace(/\//g, sep)])]
+  // Beide Trennzeichen LITERAL, nicht ueber `sep`: auf einem Linux-Laeufer waere sep === '/',
+  // die Backslash-Form entfiele - und ausgerechnet die design.md-Dateien dieses Repos entstehen
+  // auf Windows und koennen einen Backslash-Pfad enthalten. Ein Erkenner, der je nach Plattform
+  // nachsichtiger ist, waere keine Unabhaengigkeit von der Schreibweise (Review-Befund Runde 1).
+  return [...new Set([wtRelativ, wtRelativ.replace(/\//g, '\\')])]
 }
 const fwd = (p: string): string => p.replace(/\\/g, '/')
 // design.md D6: was in den Konventionsdateien steht, ist kein Leak. Anlass war kein

@@ -745,17 +745,24 @@ describe('Pfadvergleiche unabhängig von der Schreibweise', () => {
     // design.md schreibt ihn so, wie ein Mensch ihn schreibt. Beide Laengen zaehlen: der
     // worktree-relative Pfad (so steht er in einer design.md) und der vollstaendige (so steht
     // er in einem Reviewer-Finding, das `ort` aus dem Worktree uebernimmt).
+    // Geprueft an einer HILFSDATEI, nicht an einer .test.ts: bei letzterer traegt jeder dieser
+    // Texte auch den blossen Dateinamen, und schon der reicht fuer den Treffer - der
+    // Forward-Slash-Zweig waere dann nur nebenbei mitgetestet. Fuer eine Hilfsdatei zaehlt der
+    // Name gerade NICHT, hier haengt der Treffer also wirklich an der Pfadform.
+    const HILFSDATEI = 'fixture-daten.json'
     const faelle = [
-      () => `tests/${TESTDATEI}`,
-      (i: string) => `${worktreeDir(i).replace(/\\/g, '/')}/tests/${TESTDATEI}`,
+      () => `tests/${HILFSDATEI}`,
+      (i: string) => `${worktreeDir(i).replace(/\\/g, '/')}/tests/${HILFSDATEI}`,
+      () => `tests\\${HILFSDATEI}`,
     ]
     for (const form of faelle) {
       const issue = freshIssue()
       try {
         makeLauf(issue, `D10 - Der Ablauf ist in ${form(issue)} festgehalten.`)
+        writeFileSync(join(worktreeDir(issue), 'tests', HILFSDATEI), '{}')
         const { warf, meldung } = bauenMitAbfangen(issue)
         expect(warf).toBe(true)
-        expect(meldung).toContain(TESTDATEI)
+        expect(meldung).toContain(HILFSDATEI)
       } finally { cleanup(issue) }
     }
   })
@@ -788,7 +795,12 @@ describe('Pfadvergleiche unabhängig von der Schreibweise', () => {
     try {
       makeLauf(mit, 'D1 - Der Platzhalter liegt in tests/.gitkeep.')
       writeFileSync(join(worktreeDir(mit), 'tests', '.gitkeep'), '')
-      expect(bauenMitAbfangen(mit).warf).toBe(true)
+      const { warf, meldung } = bauenMitAbfangen(mit)
+      expect(warf).toBe(true)
+      // Auch der GRUND, nicht nur der Abbruch: bauenMitAbfangen faengt jede Exception, ein
+      // Absturz aus anderem Grund erfuellte `warf` sonst ebenso (Review-Befund Runde 1).
+      expect(meldung).toContain('Leak')
+      expect(meldung).toContain('.gitkeep')
     } finally { cleanup(mit) }
   })
 
@@ -800,6 +812,24 @@ describe('Pfadvergleiche unabhängig von der Schreibweise', () => {
       makeLauf(issue, 'D10 - Vorbild ist tests/gibt-es-nicht.unit.test.ts aus einem anderen Repo.')
       const { warf } = bauenMitAbfangen(issue)
       expect(warf).toBe(false)
+    } finally { cleanup(issue) }
+  })
+
+  it('Auch die Rückfallform nach vollständigem Kürzen wird geprüft', () => {
+    const issue = freshIssue()
+    try {
+      makeLauf(issue, 'D10 - keine Nennung hier.')
+      // MIT Pfadanteil und in der ERSTEN Zeile: truncateAtTestReference schneidet damit bei
+      // Zeile 0 ab und laesst nichts uebrig. Wer nur den gekuerzten Text prueft, prueft den
+      // leeren String - und reicht anschliessend ueber den Rueckfall genau die Zeile durch,
+      // die er verhindern sollte.
+      const message = `Cannot find module './fehlt' from 'tests/${TESTDATEI}'`
+      writeFileSync(join(runDir(issue), 'jest.json'), JSON.stringify({
+        testResults: [{ assertionResults: [{ status: 'failed', title: 'ein Szenario', failureMessages: [message] }] }],
+      }))
+      const failures = parseJestFailures(issue)
+      expect(failures).toHaveLength(1)
+      expect(failures[0].message).not.toContain(TESTDATEI)
     } finally { cleanup(issue) }
   })
 
@@ -821,30 +851,33 @@ describe('Pfadvergleiche unabhängig von der Schreibweise', () => {
   })
 
   it('Getrackte Propose-Originale bleiben erhalten', () => {
-    const src = join('openspec', 'changes', '__pfadtest_getrackt__')
-    try {
-      mkdirSync(src, { recursive: true })
-      writeFileSync(join(src, 'proposal.md'), 'x')
-      const kommandos: string[] = []
-      // ok: true = git kennt den Pfad, die Dateien sind getrackt.
-      const run: Sh = cmd => { kommandos.push(cmd); return { ok: true, out: '' } }
-      removeUntrackedSourceDocs(src, run)
-      expect(existsSync(src)).toBe(true)
-      // Die Pfadspezifikation muss Forward-Slashes tragen, sonst antwortet git immer
-      // "kein Treffer" und die Abfrage ist keine mehr.
-      const lsFiles = kommandos.find(c => c.includes('ls-files'))
-      expect(lsFiles).toContain('openspec/changes/__pfadtest_getrackt__')
-    } finally { rmSync(src, { recursive: true, force: true }) }
+    // Der Pfad wird LITERAL mit Backslashes uebergeben, nicht ueber join(): auf einem
+    // Nicht-Windows-Laeufer lieferte join() ohnehin Forward-Slashes, und der Defekt aus #21
+    // waere dort gar nicht nachstellbar. So prueft der Test dieselbe Sache auf jeder Plattform.
+    // Im getrackten Zweig folgt kein Dateisystemzugriff, das Verzeichnis muss also nicht
+    // existieren - und es entsteht kein Rauschen im Arbeitsbaum.
+    const src = 'openspec\\changes\\__pfadtest_getrackt__'
+    const kommandos: string[] = []
+    const run: Sh = cmd => { kommandos.push(cmd); return { ok: true, out: '' } } // ok = git kennt den Pfad
+    removeUntrackedSourceDocs(src, run)
+    const lsFiles = kommandos.find(c => c.includes('ls-files'))
+    // Ohne Forward-Slashes antwortet git immer "kein Treffer" - die Abfrage waere keine mehr.
+    expect(lsFiles).toContain('openspec/changes/__pfadtest_getrackt__')
+    expect(lsFiles).not.toContain('\\')
   })
 
   it('Untrackte Propose-Originale werden aufgeräumt', () => {
-    const src = join('openspec', 'changes', '__pfadtest_untracked__')
+    // Hier muss es das Verzeichnis wirklich geben - geprueft wird ja die Loeschung. Es liegt
+    // im Run-Verzeichnis statt unter openspec/changes/, damit ein Abbruch vor dem finally
+    // kein Rauschen in git status hinterlaesst.
+    const issue = freshIssue()
+    const src = join(runDir(issue), 'propose-original')
     try {
       mkdirSync(src, { recursive: true })
       writeFileSync(join(src, 'proposal.md'), 'x')
       const run: Sh = () => ({ ok: false, out: 'did not match any file(s) known to git' })
       removeUntrackedSourceDocs(src, run)
       expect(existsSync(src)).toBe(false)
-    } finally { rmSync(src, { recursive: true, force: true }) }
+    } finally { cleanup(issue) }
   })
 })

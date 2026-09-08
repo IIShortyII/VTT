@@ -116,18 +116,28 @@ Die Alternative wäre, `src` gar nicht erst über `join()` zu bilden. Sie wird n
 weil `src` auch an `existsSync` und `rmSync` geht — dort ist die native Form richtig. Ein Pfad,
 zwei Verwendungen, zwei Schreibweisen: die Umwandlung gehört an die Stelle, die sie braucht.
 
-### D5 — Der Erkenner ergänzt `truncateAtTestReference`, er ersetzt es nicht
+### D5 — Geprüft wird, was weitergereicht wird, nicht was zuerst gebildet wurde
 
-In `parseJestFailures` läuft vor dem Erkenner bereits `truncateAtTestReference`: es schneidet
-die Ausgabe an der ersten Zeile ab, die einen Codeframe oder `tests/`…/`tests\`… enthält. Eine
-Nennung **mit** Pfadanteil erreicht den Erkenner dort also gar nicht mehr — sie ist längst
-abgeschnitten, und das ist gut so.
+In `parseJestFailures` stehen zwei Stufen. `truncateAtTestReference` schneidet die Ausgabe an
+der ersten Zeile ab, die einen Codeframe oder `tests/`…/`tests\`… enthält; der Erkenner ist
+die letzte Instanz danach. Entscheidend ist, **worauf** die letzte Instanz angewendet wird:
+auf den Text, der tatsächlich beim implementer ankommt.
 
-Was der Erkenner dort zusätzlich fängt, ist die Form **ohne** Verzeichnis: der bloße Dateiname,
-wie er in Meldungen wie `Cannot find module './x' from 'auth-ui.unit.test.tsx'` auftaucht. Das
-Abschneiden erfasst sie nicht, weil sie kein Trennzeichen enthält. Das Szenario in `spec.md`
-prüft deshalb diese Form — die andere zu prüfen hieße, eine Wirkung zu behaupten, die eine
-frühere Stufe bereits erbracht hat.
+Das ist keine Formalie. Wird beim Kürzen nichts übrig gelassen — der Regelfall bei
+`Cannot find module './x' from 'tests/y.test.ts'`, wo die Nennung in Zeile 0 steht —, greift
+ein Rückfall auf die erste Zeile des Originals. Eine Prüfung, die nur den gekürzten Text
+ansieht, prüft dann den leeren String und lässt anschließend den Rückfall ungeprüft passieren:
+genau die Zeile, die sie verhindern sollte. Der Reviewer hat diesen Weg in Runde 1 gefunden;
+er lag offen, weil eine frühere Fassung dieses Absatzes behauptete, eine Nennung mit
+Pfadanteil sei „längst abgeschnitten, und das ist gut so".
+
+Sie ist abgeschnitten — und kommt über den Rückfall zurück. Deshalb bildet der Code erst den
+Kandidaten (gekürzt, sonst Rückfall) und prüft **ihn**.
+
+Was der Erkenner hier gegenüber dem Abschneiden zusätzlich fängt, bleibt die Form **ohne**
+Verzeichnis: der bloße Dateiname aus `Cannot find module './x' from 'auth-ui.unit.test.tsx'`.
+Das Abschneiden erfasst sie nicht, weil sie kein Trennzeichen enthält. `spec.md` prüft beide
+Formen in je einem Szenario.
 
 ### D6 — Die Konventions-Ausnahme aus #22 bleibt unangetastet
 

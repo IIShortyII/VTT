@@ -73,10 +73,24 @@ vorbei, und welche der beiden gilt, hinge davon ab, auf welchem Weg der Text kom
 Ihre **Wirkung** bleibt verschieden: der Auftrag bricht ab, ein einzelner Gate-Failure
 degradiert auf die Kurzform (`constitution.md` §8.2 G3).
 
-Die weitergegebene Ausgabe eines degradierten Failure MUST die Nennung nicht mehr enthalten.
-Trägt auch die Kurzform sie noch, MUST der Harness weiter zurückhalten, bis nichts
+**Keine** weitergegebene Ausgabe MUST eine Nennung enthalten — gleich, ob sie gekürzt,
+degradiert oder als Rückfallform entstanden ist, wenn das Kürzen nichts übrig ließ. Der
+Harness MUST prüfen, was er tatsächlich weiterreicht, nicht was er zuerst gebildet hat: eine
+Prüfung, an der eine spätere Ersetzung vorbeiläuft, schützt die Ausgabe nicht, die beim
+implementer ankommt.
+
+Trägt auch die Kurzform die Nennung noch, MUST der Harness weiter zurückhalten, bis nichts
 Preisgebendes übrig ist, und stattdessen benennen, dass zurückgehalten wurde. Eine
 Degradierung, die den Leak mitnimmt, ist keine.
+
+#### Scenario: Auch die Rückfallform nach vollständigem Kürzen wird geprüft
+
+- **GIVEN** die Ausgabe eines fehlgeschlagenen Szenarios nennt eine existierende Testdatei
+  bereits in ihrer ersten Zeile mit Pfadanteil, sodass das Kürzen vor dem Codeframe nichts
+  übrig lässt
+- **WHEN** der Harness die Gate-Ausgabe für die Weitergabe aufbereitet
+- **THEN** enthält die weitergegebene Ausgabe die Nennung nicht — obwohl sie nicht aus dem
+  gekürzten Text stammt, sondern aus dem Rückfall auf die erste Zeile
 
 #### Scenario: Eine Gate-Ausgabe, die eine Testdatei beim Namen nennt, wird degradiert
 

@@ -65,6 +65,11 @@ danach als einer.
 - **`git worktree add ${worktreeDir(i)}`** ohne Anführungszeichen (Zeile 230). Ein Pfad mit
   Leerzeichen bräche dort, aber das ist ein Quoting-Befund, kein Schreibweisen-Befund, und der
   Pfad ist harness-intern konstruiert.
+- **`guard.ts` behält sein eigenes `norm()`.** Es ist ein eigenständiges Skript mit eigenem
+  Prozess (PreToolUse-Hook) und importiert den Orchestrator nicht; eine geteilte Funktion
+  hieße dort, eine Abhängigkeit zwischen zwei bewusst getrennten Programmen einzuführen. In
+  `orchestrator.ts` dagegen ist die Dopplung beseitigt — auch `scopeOfFinding` benutzt jetzt
+  `fwd` statt einer eigenen Ersetzung.
 - Die übrigen Kinder von Epic #27 (#24, #25, #33).
 
 ## Capabilities

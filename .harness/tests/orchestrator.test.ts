@@ -5,6 +5,7 @@ import {
   scopeOfFinding, parseJestFailures, recordRoundSummary, recordReview, runDir, worktreeDir,
   cleanup as cleanupRun,
   confirmRed, gate, boardVerb,
+  buildImplPrompt, buildTestReworkPrompt, readChangeSpec,
   MAX_ROUNDS,
 } from '../orchestrator.js'
 import type { Status, Sh } from '../orchestrator.js'
@@ -499,5 +500,126 @@ describe('Board-Status an den Schritten des Loops', () => {
       expect(scheiternd.status).toBe(abgeschaltet.status)
       expect(scheiternd.rolle).toBe(abgeschaltet.rolle)
     } finally { cleanup(issue) }
+  })
+})
+
+// Das Material, das eine Rolle aus dem OpenSpec-Change bekommt
+// (spec.md "harness-spec-delivery").
+//
+// Geprueft wird die AUSGABE der beiden Prompt-Bauer, nicht readChangeSpec allein: der
+// implementer sieht nie den Change-Ordner, sondern ausschliesslich diesen Text (constitution.md
+// §2.2). Was hier nicht ankommt, existiert fuer ihn nicht.
+describe('Material aus dem OpenSpec-Change', () => {
+  const CHANGE = 'ein-change'
+  const PROPOSAL = 'Warum dieser Change existiert: die Sitzung verlaengert sich gleitend.'
+  const DESIGN = 'D4 - Der Cookie heisst "sid" und traegt HttpOnly, SameSite=Lax, 30 Tage.'
+  const SPEC_A = '### Requirement: Anmeldung\nDer Server MUST die Sitzung serverseitig fuehren.'
+  const SPEC_B = '### Requirement: Abmeldung\nDer Server MUST die Sitzung verwerfen.'
+
+  // Legt im Worktree eines Issues einen Change-Ordner mit genau den gewuenschten Dateien an und
+  // traegt den Change-Namen in status.json ein - readChangeSpec liest aus dem Worktree, nicht
+  // aus dem Hauptrepo.
+  function makeChange(issue: string, files: { design?: string; specs?: Record<string, string> } = {}) {
+    const dir = join(worktreeDir(issue), 'openspec', 'changes', CHANGE)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'proposal.md'), PROPOSAL)
+    if (files.design !== undefined) writeFileSync(join(dir, 'design.md'), files.design)
+    for (const [capability, text] of Object.entries(files.specs ?? { auth: SPEC_A })) {
+      mkdirSync(join(dir, 'specs', capability), { recursive: true })
+      writeFileSync(join(dir, 'specs', capability, 'spec.md'), text)
+    }
+    return makeStatus(issue, { change: CHANGE, phase: 'implement' })
+  }
+  // Die Prompt-Bauer schreiben auf stdout; abgegriffen wird, was der Rolle tatsaechlich zugeht.
+  function promptVon(bauen: () => void): string {
+    const zeilen: string[] = []
+    const spy = jest.spyOn(console, 'log').mockImplementation((...a: unknown[]) => { zeilen.push(a.map(String).join(' ')) })
+    try { bauen() } finally { spy.mockRestore() }
+    return zeilen.join('\n')
+  }
+
+  it('Ein Change mit design.md liefert die Entscheidungen an den implementer', () => {
+    const issue = freshIssue()
+    try {
+      makeChange(issue, { design: DESIGN })
+      expect(promptVon(() => buildImplPrompt(issue))).toContain(DESIGN)
+    } finally { cleanup(issue) }
+  })
+
+  it('Die Entscheidungen stehen vor den Anforderungen', () => {
+    const issue = freshIssue()
+    try {
+      makeChange(issue, { design: DESIGN })
+      const prompt = promptVon(() => buildImplPrompt(issue))
+      // Positionen statt eines erwarteten Gesamtstrings: geprueft wird die Reihenfolge
+      // warum -> wie entschieden -> was genau (design.md D1), nicht die Formatierung dazwischen.
+      expect(prompt.indexOf(PROPOSAL)).toBeGreaterThanOrEqual(0)
+      expect(prompt.indexOf(DESIGN)).toBeGreaterThan(prompt.indexOf(PROPOSAL))
+      expect(prompt.indexOf(SPEC_A)).toBeGreaterThan(prompt.indexOf(DESIGN))
+    } finally { cleanup(issue) }
+  })
+
+  it('Ein Change ohne design.md ergibt einen Auftrag ohne Luecke', () => {
+    const issue = freshIssue()
+    try {
+      makeChange(issue) // keine design.md
+      const prompt = promptVon(() => buildImplPrompt(issue))
+      expect(prompt).toContain(PROPOSAL)
+      expect(prompt).toContain(SPEC_A)
+      expect(prompt).not.toContain('design.md') // kein Platzhalter, keine leere Rubrik
+      expect(prompt.match(/^## Quelle: /gm) ?? []).toHaveLength(2)
+    } finally { cleanup(issue) }
+  })
+
+  it('Jeder Block traegt seine Quelldatei', () => {
+    const issue = freshIssue()
+    try {
+      makeChange(issue, { design: DESIGN, specs: { auth: SPEC_A, session: SPEC_B } })
+      const prompt = promptVon(() => buildImplPrompt(issue))
+      // Pfade relativ zum Change-Verzeichnis und mit Forward-Slashes (design.md D2) - ein aus
+      // join() entstandener Backslash-Pfad waere die Fehlerklasse aus #21.
+      expect(prompt).toContain('## Quelle: proposal.md')
+      expect(prompt).toContain('## Quelle: design.md')
+      expect(prompt).toContain('## Quelle: specs/auth/spec.md')
+      expect(prompt).toContain('## Quelle: specs/session/spec.md')
+      expect(prompt.match(/^## Quelle: /gm) ?? []).toHaveLength(4)
+    } finally { cleanup(issue) }
+  })
+
+  it('Die Test-Nacharbeit sieht dieselben Entscheidungen', () => {
+    const issue = freshIssue()
+    try {
+      const s = makeChange(issue, { design: DESIGN })
+      s.pendingTestFindings = [{ schwere: 'block', ort: 'tests/auth.integration.test.ts', problem: 'Szenario fehlt' }]
+      writeStatus(s)
+      const aufbereitet = readChangeSpec(issue, readStatus(issue))
+      expect(aufbereitet).toContain(DESIGN)
+      expect(aufbereitet).toContain('## Quelle: design.md')
+      // Beide Bauer setzen denselben aufbereiteten Change ein; ein Auseinanderdriften waere
+      // der Fehler, nicht die Gleichheit.
+      expect(promptVon(() => buildImplPrompt(issue))).toContain(aufbereitet)
+      expect(promptVon(() => buildTestReworkPrompt(issue))).toContain(aufbereitet)
+    } finally { cleanup(issue) }
+  })
+
+  it('Testinhalt in design.md haelt den Lauf an und nennt die Datei', () => {
+    const issue = freshIssue()
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`)
+    }) as never)
+    const meldungen: string[] = []
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation((...a: unknown[]) => { meldungen.push(a.map(String).join(' ')) })
+    try {
+      const geleakteZeile = "expect(res.cookies[0].name).toBe('sid') // laenger als zwanzig Zeichen"
+      makeChange(issue, { design: `${DESIGN}\n${geleakteZeile}` })
+      const testDir = join(worktreeDir(issue), 'tests')
+      mkdirSync(testDir, { recursive: true })
+      writeFileSync(join(testDir, 'auth.integration.test.ts'), `${geleakteZeile}\n`)
+
+      expect(() => promptVon(() => buildImplPrompt(issue))).toThrow(/process\.exit/)
+      const meldung = meldungen.join('\n')
+      expect(meldung).toContain('auth.integration.test.ts') // die betroffene Testdatei
+      expect(meldung).toContain('design.md')                // die Fundstelle im Change
+    } finally { exitSpy.mockRestore(); errorSpy.mockRestore(); cleanup(issue) }
   })
 })

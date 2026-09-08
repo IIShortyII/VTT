@@ -4,9 +4,12 @@ import {
   readStatus, writeStatus, next, reviewRework, confirmTestRework, confirmAppReview, checkPreflight,
   scopeOfFinding, parseJestFailures, recordRoundSummary, recordReview, runDir, worktreeDir,
   cleanup as cleanupRun,
+  confirmRed, gate, boardVerb,
   MAX_ROUNDS,
 } from '../orchestrator.js'
-import type { Status } from '../orchestrator.js'
+import type { Status, Sh } from '../orchestrator.js'
+import { BOARD } from '../board.js'
+import type { GhRunner } from '../board.js'
 
 let counter = 0
 function freshIssue(): string {
@@ -330,5 +333,171 @@ describe('Cleanup nach dem Merge', () => {
     cleanupRun(issue)
     expect(existsSync(marker)).toBe(false)
     expect(existsSync(join(runDir(issue), 'status.json'))).toBe(true)
+  })
+})
+
+// Die Aufrufstellen des Board-Status (spec.md "Der Board-Status folgt dem Schritt").
+//
+// Geprueft wird hier die VERDRAHTUNG - dass der jeweilige Schritt den richtigen Status
+// anfordert -, nicht der Schreibzugriff selbst; der steht in board.test.ts. Die Issue-Nummern
+// dieser Tests sind bewusst keine echten (`__orch_test_N__`): setBoardStatus bricht daran ab,
+// bevor gh gestartet wird, und hinterlaesst genau eine Zeile in board.log. Diese Zeile ist der
+// Zeuge dafuer, mit welchem Status der Schritt das Board angesprochen hat.
+describe('Board-Status an den Schritten des Loops', () => {
+  const boardLog = (issue: string) => {
+    const p = join(runDir(issue), 'board.log')
+    return existsSync(p) ? readFileSync(p, 'utf8').trim() : ''
+  }
+  const logZeilen = (issue: string) => boardLog(issue).split('\n').filter(l => l.length > 0)
+
+  let errorSpy: jest.SpyInstance
+  let logSpy: jest.SpyInstance
+
+  beforeEach(() => {
+    // setup.ts schaltet den Board-Zugriff fuer die Suite ab; diese Tests brauchen ihn an.
+    delete process.env.HARNESS_BOARD
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+    logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined)
+  })
+  afterEach(() => {
+    process.env.HARNESS_BOARD = 'off'
+    errorSpy.mockRestore()
+    logSpy.mockRestore()
+  })
+
+  it('Beginn der Spezifikation setzt „Spec"', () => {
+    const issue = freshIssue()
+    try {
+      boardVerb(issue, 'spec') // kein start() vorher: das Verb kommt VOR dem Lauf
+      expect(existsSync(join(runDir(issue), 'status.json'))).toBe(false)
+      expect(boardLog(issue)).toContain('spec')
+    } finally { cleanup(issue) }
+  })
+
+  it('Bestätigtes Rot setzt „Test rot"', () => {
+    const issue = freshIssue()
+    try {
+      makeStatus(issue, { phase: 'red' })
+      const rot: Sh = () => ({ ok: false, out: 'expect(received).toBe(expected)\n\nExpected: 3\nReceived: undefined' })
+      confirmRed(issue, rot)
+      expect(readStatus(issue).phase).toBe('implement') // Rot aus dem richtigen Grund
+      expect(boardLog(issue)).toContain('test-rot')
+    } finally { cleanup(issue) }
+  })
+
+  it('Rot aus dem falschen Grund schaltet das Board nicht weiter', () => {
+    const issue = freshIssue()
+    try {
+      makeStatus(issue, { phase: 'red' })
+      const kaputt: Sh = () => ({ ok: false, out: "foo.unit.test.ts:3:1 - error TS1005: ';' expected" })
+      confirmRed(issue, kaputt)
+      expect(readStatus(issue).phase).toBe('red') // kein bestaetigtes Rot (constitution.md §3.1)
+      expect(boardLog(issue)).toBe('')
+    } finally { cleanup(issue) }
+  })
+
+  it('Jeder Einstieg in einen Implementierungsschritt setzt „Implementierung"', () => {
+    const issue = freshIssue()
+    try {
+      // Erster Einstieg: regulaer nach bestaetigtem Rot.
+      makeStatus(issue, { phase: 'implement' })
+      expect(JSON.parse(next(issue)).action).toBe('invoke-implementer')
+
+      // Zweiter Einstieg: Nacharbeit nach rotem Gate, ueber reworkTo statt ueber next().
+      writeStatus({ ...readStatus(issue), phase: 'gate', lastGate: { green: false, failures: [] } })
+      expect(JSON.parse(next(issue)).action).toBe('invoke-implementer')
+      expect(readStatus(issue).round).toBe(1)
+
+      const zeilen = logZeilen(issue)
+      expect(zeilen).toHaveLength(2)
+      expect(zeilen.every(z => z.includes('implementierung'))).toBe(true)
+    } finally { cleanup(issue) }
+  })
+
+  it('Der Gate-Start setzt „Gate + Review"', () => {
+    const issue = freshIssue()
+    try {
+      makeStatus(issue, { phase: 'gate' })
+      let logBeimErstenWerkzeug = ''
+      const werkzeuge: Sh = () => {
+        if (logBeimErstenWerkzeug === '') logBeimErstenWerkzeug = boardLog(issue)
+        return { ok: true, out: '' }
+      }
+      gate(issue, werkzeuge)
+      // Der Status steht schon, bevor Typecheck/Lint/Testlauf ueberhaupt beginnen.
+      expect(logBeimErstenWerkzeug).toContain('gate-review')
+      expect(logZeilen(issue)[0]).toContain('gate-review')
+    } finally { cleanup(issue) }
+  })
+
+  it('Die Ankündigung des App-Tests setzt „App-Test (Mensch)"', () => {
+    const issue = freshIssue()
+    try {
+      makeStatus(issue, { phase: 'review', lastReview: { recommendation: 'ok', findings: [] } })
+      expect(JSON.parse(next(issue)).action).toBe('present-app-review')
+      expect(boardLog(issue)).toContain('app-test')
+    } finally { cleanup(issue) }
+  })
+
+  it('Aufräumen nach dem Merge setzt „Fertig"', () => {
+    const issue = '9042' // numerisch: der Issue-Zustand wird tatsaechlich abgefragt
+    try {
+      makeStatus(issue, { phase: 'archived' })
+      const calls: string[][] = []
+      const gh: GhRunner = args => {
+        calls.push(args)
+        if (args.includes('issue')) return { ok: true, out: JSON.stringify({ state: 'CLOSED' }) }
+        if (args.some(a => /\bmutation\b/.test(a))) return { ok: true, out: '{"data":{}}' }
+        return { ok: true, out: JSON.stringify({ data: { repository: { issue: { projectItems: { nodes: [{ id: 'PVTI_test', project: { id: BOARD.projectId } }] } } } } }) }
+      }
+      cleanupRun(issue, gh)
+      const mutation = calls.find(a => a.some(x => /\bmutation\b/.test(x)))
+      expect(mutation).toBeDefined()
+      expect(mutation).toContain(`option=${BOARD.options.fertig}`)
+    } finally { cleanup(issue) }
+  })
+
+  it('Aufräumen bei noch offenem Issue setzt „Fertig" nicht', () => {
+    const issue = '9043'
+    try {
+      makeStatus(issue, { phase: 'archived' })
+      const marker = join(runDir(issue), 'active-role')
+      writeFileSync(marker, 'implementer')
+      const calls: string[][] = []
+      const gh: GhRunner = args => {
+        calls.push(args)
+        return { ok: true, out: JSON.stringify({ state: 'OPEN' }) }
+      }
+      cleanupRun(issue, gh)
+      expect(calls.some(a => a.some(x => /\bmutation\b/.test(x)))).toBe(false)
+      expect(existsSync(marker)).toBe(false) // das Aufraeumen selbst laeuft trotzdem durch
+    } finally { cleanup(issue) }
+  })
+
+  it('Der Zustandsautomat verhält sich mit und ohne Board identisch', () => {
+    const issue = freshIssue()
+    const lauf = () => {
+      makeStatus(issue, { phase: 'implement', round: 0 })
+      const action = next(issue)
+      return {
+        action,
+        status: readFileSync(join(runDir(issue), 'status.json'), 'utf8'),
+        rolle: readFileSync(join(runDir(issue), 'active-role'), 'utf8'),
+      }
+    }
+    try {
+      process.env.HARNESS_BOARD = 'off'
+      const abgeschaltet = lauf()
+      expect(boardLog(issue)).toBe('') // kein Zugriff, kein Protokoll
+      cleanup(issue)
+
+      delete process.env.HARNESS_BOARD
+      const scheiternd = lauf()
+      expect(boardLog(issue)).not.toBe('') // der Zugriff wurde versucht und ist gescheitert
+
+      expect(scheiternd.action).toBe(abgeschaltet.action)
+      expect(scheiternd.status).toBe(abgeschaltet.status)
+      expect(scheiternd.rolle).toBe(abgeschaltet.rolle)
+    } finally { cleanup(issue) }
   })
 })

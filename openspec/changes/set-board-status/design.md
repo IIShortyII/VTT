@@ -58,6 +58,14 @@ Der dritte Parameter (`run`) ist der Ausführungskanal und existiert allein zur 
 ein Test übergibt einen Stellvertreter, der die Argumente festhält, statt `gh` zu starten. Er
 hat einen Vorgabewert, damit kein Aufrufer ihn kennen muss.
 
+Dasselbe Muster bekommen `confirmRed`, `gate` und `cleanup` im Orchestrator — je ein
+Vorgabe-Parameter für ihren Ausführungskanal. Sie starten heute unbedingt `pnpm`, `git` und
+`gh` als Unterprozesse, weshalb bisher kein Test sie überhaupt aufrufen konnte: die drei
+Szenarien „Der Gate-Start setzt Gate + Review", „Bestätigtes Rot setzt Test rot" und „Rot aus
+dem falschen Grund schaltet das Board nicht weiter" wären sonst nicht prüfbar, ohne echte
+Werkzeuge in einem Wegwerf-Worktree laufen zu lassen. Rein additiv: kein Aufrufer im Dispatch
+ändert sich, das Laufzeitverhalten bleibt gleich.
+
 ### D2 — Der Trichter: eine Tabelle in `emit()`, drei Sonderfälle daneben
 
 Zwei der sieben Statuswerte hängen an einer emittierten Aktion:

@@ -109,8 +109,32 @@
       gleichzeitig laufenden Issues mit verschiedenen Rollen greift die Sperre nicht
 - [x] 6.5 Gate erneut grün (130 Tests, Typecheck, Lint); Mutationsprobe `marker-relativ-auf`
       ergänzt: die Präfix-Alternative in `CONTROL_FILE_TABOO` zurückdrehen macht 6.2 rot
-- [ ] 6.6 Erneuter Review nach der Nacharbeit (§3.3: jede Nacharbeit-Runde durchläuft erneut
-      Gate und erneut Review)
+- [x] 6.6 Erneuter Review nach der Nacharbeit (§3.3: jede Nacharbeit-Runde durchläuft erneut
+      Gate und erneut Review) — Empfehlung **ok**, kein blockierender Befund. Der Reviewer
+      bestätigt: Befund 6.1 behoben, Reihenfolge aus D6 hält, keine Überdehnung der Pfad-Form
+      gegen den App-Baum, kein Kommando des Loops nennt den Run-State in einer Rollenphase,
+      Type-Stripping-Tauglichkeit (Issue #29) gewahrt
+- [x] 6.7 Die sieben Hinweise sind **bewusst nicht** eingearbeitet — Entscheidung des Menschen
+      bei „ok"-Empfehlung. Vier davon sind am laufenden Guard als offen verifiziert und gehören
+      damit in ein eigenes Issue statt in diesen Change (Präzedenz: #34 selbst wurde aus #21
+      herausgelöst):
+      **(a)** `Write .harness/runs/12 /active-role` — Zeichenklassen-Divergenz zwischen
+      `ROLE_MARKER_PATH` (`[^/]+`) und `CONTROL_FILE_TABOO` (`[^/\s'"]+`); der Marker fällt aus
+      der Ausnahme heraus, wird aber von der Gegensicherung nicht erfasst. Unter Win32 werden
+      nachgestellte Leerzeichen verworfen, der Zugriff landet auf dem echten Marker.
+      **(b)** `echo x >../../runs/12/status.json` — `>` fehlt in der Trennzeichenklasse von
+      `RUN_STATE_TABOO`.
+      **(c)** `cat .harness/wt/34/../../runs/12/status.json` — das `../` steht hinter einem
+      Schrägstrich und fällt damit aus derselben Klasse.
+      **(d)** `cd .harness && cat runs/12/status.json` — die Basis ist verschoben; der Guard
+      rekonstruiert das nicht. (b)–(d) **nennen** den Run-State und gehören damit nicht in die
+      unter D5 benannte offene Klasse „erfasst, ohne zu nennen" — D5 ist insoweit unvollständig.
+      Die übrigen drei Hinweise betreffen Dokumentation und Testschärfe: die Verbreiterung von
+      `CONTROL_FILE_TABOO` zieht den `guard.ts`-Zweig mit (jede relative Nennung *irgendeiner*
+      `guard.ts`), was `proposal.md` unter „Unverändert: alle bestehenden Sperren" nicht
+      abbildet; die Schreibzusicherung in „Ein Dateizugriff …" prüft nur `blocked`; und der
+      Bash-Zweig von `CONTROL_FILE_TABOO` ist unerreichbar, seit Block 0 dieselbe Prüfung für
+      jede Rolle vornimmt
 
 ## 7. Freigabe
 

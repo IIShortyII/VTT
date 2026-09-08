@@ -294,6 +294,82 @@ describe('Fallback auf die einzige aktive Rolle (kein Issue aus Pfad/Kommando ab
   })
 })
 
+// --- add-harness-pause (Issue #23) ---------------------------------------------------------
+
+describe('Eine aktive Rolle kann sich nicht selbst entpausieren', () => {
+  it('Eine aktive Rolle darf das Pausieren nicht aufrufen', () => {
+    for (const rolle of ['implementer', 'test-author']) {
+      const deps = { readRole: () => rolle }
+      for (const cmd of [
+        'pnpm harness pause 23 "jest.config kaputt"',
+        'pnpm harness resume 23',
+        'tsx .harness/orchestrator.ts pause 23 "x"',
+        'tsx .harness/orchestrator.ts resume 23 --runde-zurueck',
+      ]) {
+        const result = evaluate(bash(cmd), deps)
+        expect([cmd, rolle, result.blocked]).toEqual([cmd, rolle, true])
+        // Dieselbe Begruendung wie beim direkten Zugriff auf die Steuerdateien: es ist dieselbe
+        // Frage, ob dieser Aufrufer die Rollensteuerung anfassen darf.
+        expect(result.message).toMatch(/Steuerdateien/)
+      }
+    }
+  })
+
+  it('Ohne aktive Rolle sind die Verben erlaubt', () => {
+    const deps = { readRole: () => '' }
+    expect(evaluate(bash('pnpm harness pause 23 "jest.config kaputt"'), deps).blocked).toBe(false)
+    expect(evaluate(bash('pnpm harness resume 23 --runde-zurueck'), deps).blocked).toBe(false)
+  })
+})
+
+describe('Ein Lauf ohne Worktree beansprucht keine Rolle', () => {
+  // Eigene tmp-Verzeichnisse fuer runs/ UND wt/: der Lebenszeichen-Test darf weder gegen das
+  // echte .harness/runs noch gegen das echte .harness/wt pruefen (dort liegen echte Laeufe).
+  let tmpRunsDir: string
+  let tmpWtDir: string
+
+  const anlegen = (issue: string, role: string, mitWorktree: boolean) => {
+    const dir = join(tmpRunsDir, issue)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'active-role'), role)
+    writeFileSync(join(dir, 'status.json'), JSON.stringify({ phase: 'implement' }))
+    if (mitWorktree) mkdirSync(join(tmpWtDir, issue), { recursive: true })
+  }
+
+  beforeEach(() => {
+    tmpRunsDir = mkdtempSync(join(tmpdir(), 'guard-test-runs-'))
+    tmpWtDir = mkdtempSync(join(tmpdir(), 'guard-test-wt-'))
+  })
+  afterEach(() => {
+    rmSync(tmpRunsDir, { recursive: true, force: true })
+    rmSync(tmpWtDir, { recursive: true, force: true })
+  })
+
+  it('Ein Lauf ohne Worktree wird bei der Rollenermittlung übergangen', () => {
+    anlegen('issue-tot', 'implementer', false)
+    const deps = makeDeps(tmpRunsDir, tmpWtDir)
+    // Rollenlos: ein relativer Pfad loest kein Issue auf, und der einzige Marker gehoert zu
+    // einem Lauf, der nichts hat, woran er arbeiten koennte.
+    expect(evaluate(write('tests/x.test.ts'), deps).blocked).toBe(false)
+  })
+
+  it('Ein Lauf mit Worktree bleibt maßgeblich', () => {
+    anlegen('issue-lebt', 'implementer', true)
+    const deps = makeDeps(tmpRunsDir, tmpWtDir)
+    expect(evaluate(write('tests/x.test.ts'), deps).blocked).toBe(true)
+    expect(evaluate(write('src/x.ts'), deps).blocked).toBe(false)
+  })
+
+  it('Ein direkt adressierter Lauf bleibt von der Prüfung unberührt', () => {
+    // Kein Worktree - der Aufruf nennt sein Issue aber selbst im Pfad. Die Lebenszeichen-Pruefung
+    // gilt nur im Fallback; hier belegt der Pfad die Zustaendigkeit bereits.
+    anlegen('77', 'implementer', false)
+    const deps = makeDeps(tmpRunsDir, tmpWtDir)
+    expect(evaluate(write('.harness/wt/77/tests/x.test.ts'), deps).blocked).toBe(true)
+    expect(evaluate(write('.harness/wt/77/src/x.ts'), deps).blocked).toBe(false)
+  })
+})
+
 describe('Rollenmarker pro Issue', () => {
   const issueA = '__guard_test_a__'
   const issueB = '__guard_test_b__'

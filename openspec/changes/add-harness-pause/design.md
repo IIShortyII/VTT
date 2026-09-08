@@ -77,10 +77,12 @@ Doppelung: die Pause wird ja gerade deshalb eingelegt, weil etwas außerhalb der
 Implementierung kaputt war, und genau dieser Text rechtfertigt die Rückgabe.
 
 **Bekannte Grenze:** wiederholte `pause`/`resume`-Zyklen könnten Runden nachfüllen. Das ist
-bewusst nicht weiter verriegelt — jeder Zyklus steht mit Grund und Zeitpunkt im Run-State, und
-`constitution.md` §7.3 legt die Verantwortung ohnehin beim freigebenden Menschen. Eine
-Verriegelung dagegen (etwa ein Gesamtbudget an Rückgaben) würde eine Zahl erfinden, für die es
-keinen Anhaltspunkt gibt.
+bewusst nicht weiter verriegelt. Der Pausenzustand selbst endet mit dem Fortsetzen und bleibt
+nicht liegen — jede **Rückgabe** dagegen wird dauerhaft festgehalten, mit Zeitpunkt, Grund und
+den beiden Zählerständen. Genau das ist der Missbrauchsvektor: Runden nachfüllen geht nur über
+Rückgaben, und die stehen alle im Run-State. `constitution.md` §7.3 legt die Verantwortung
+ohnehin beim freigebenden Menschen. Eine Verriegelung dagegen (etwa ein Gesamtbudget an
+Rückgaben) würde eine Zahl erfinden, für die es keinen Anhaltspunkt gibt.
 
 ## D5 — Der Worktree als Lebenszeichen, nur im Fallback
 

@@ -4,7 +4,7 @@ import {
   readStatus, writeStatus, next, reviewRework, confirmTestRework, confirmAppReview, checkPreflight,
   scopeOfFinding, parseJestFailures, recordRoundSummary, recordReview, runDir, worktreeDir,
   cleanup as cleanupRun,
-  confirmRed, gate, boardVerb,
+  confirmRed, gate, boardVerb, start,
   buildImplPrompt, buildTestReworkPrompt, readChangeSpec, removeUntrackedSourceDocs,
   MAX_ROUNDS,
 } from '../orchestrator.js'
@@ -911,5 +911,72 @@ describe('Pfadvergleiche unabhängig von der Schreibweise', () => {
       removeUntrackedSourceDocs(src, run)
       expect(existsSync(src)).toBe(false)
     } finally { cleanup(issue) }
+  })
+})
+
+// Spec harness-worktree-setup: was start beim Anlegen des Worktree ueber das Klonen hinaus
+// einrichtet. Der Worktree-Ordner wird von Hand angelegt, damit die bestehende
+// Existenzpruefung greift, ohne dass ein echtes `git worktree add` laufen muss; alle
+// Unterprozesse (git, pnpm) fangen wir ueber den injizierten run-Stellvertreter ab. Ein
+// Change-Name ohne zugehoeriges openspec/changes/<change>-Verzeichnis haelt seedChangeDocs
+// inert - so loest kein echter git-Aufruf aus.
+describe('start richtet den frischen Worktree ein (harness-worktree-setup)', () => {
+  const issue = freshIssue()
+  const FIXTURE = 'setup-start-worktree-fixture' // existiert nicht unter openspec/changes/
+  let logSpy: jest.SpyInstance
+  let errorSpy: jest.SpyInstance
+
+  type Aufruf = { cmd: string; cwd?: string }
+  const aufzeichnendesRun = (calls: Aufruf[]): Sh => (cmd, cwd) => { calls.push({ cmd, cwd }); return { ok: true, out: '' } }
+  const stummesRun: Sh = () => ({ ok: true, out: '' })
+
+  beforeEach(() => {
+    mkdirSync(worktreeDir(issue), { recursive: true }) // Existenzpruefung soll greifen
+    logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined)
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+  })
+  afterEach(() => { logSpy.mockRestore(); errorSpy.mockRestore(); cleanup(issue) })
+
+  const envGemeldet = () => errorSpy.mock.calls.some(a => /\.env/.test(String(a[0])))
+
+  it('start installiert die Abhängigkeiten im neuen Worktree', () => {
+    const calls: Aufruf[] = []
+    start(issue, FIXTURE, aufzeichnendesRun(calls))
+    const installIdx = calls.findIndex(c => c.cmd === 'pnpm install')
+    const addIdx = calls.findIndex(c => c.cmd.startsWith('git worktree add'))
+    expect(installIdx).toBeGreaterThan(-1)
+    expect(calls[installIdx].cwd).toBe(worktreeDir(issue))
+    expect(installIdx).toBeGreaterThan(addIdx) // erst nach dem (existenzgeprueften) Worktree
+  })
+
+  it('Fehlende .env wird als Vorbedingung gemeldet, ohne sie anzulegen', () => {
+    writeFileSync(join(worktreeDir(issue), '.env.example'), 'DATABASE_URL=')
+    start(issue, undefined, stummesRun)
+    expect(envGemeldet()).toBe(true)
+    expect(existsSync(join(worktreeDir(issue), '.env'))).toBe(false)
+    expect(existsSync(join(runDir(issue), 'status.json'))).toBe(true) // Lauf lief weiter
+  })
+
+  it('Vorhandene .env erzeugt keine Meldung', () => {
+    writeFileSync(join(worktreeDir(issue), '.env.example'), 'DATABASE_URL=')
+    writeFileSync(join(worktreeDir(issue), '.env'), 'DATABASE_URL=file:./test.db')
+    start(issue, undefined, stummesRun)
+    expect(envGemeldet()).toBe(false)
+  })
+
+  it('Mit Change-Name entsteht feat/<issue>-<change>', () => {
+    const calls: Aufruf[] = []
+    start(issue, FIXTURE, aufzeichnendesRun(calls))
+    const add = calls.find(c => c.cmd.startsWith('git worktree add'))
+    expect(add!.cmd).toContain(`-B feat/${issue}-${FIXTURE} `)
+    expect(readStatus(issue).branch).toBe(`feat/${issue}-${FIXTURE}`)
+  })
+
+  it('Ohne Change-Name fällt der Name auf feat/<issue> zurück', () => {
+    const calls: Aufruf[] = []
+    start(issue, undefined, aufzeichnendesRun(calls))
+    const add = calls.find(c => c.cmd.startsWith('git worktree add'))
+    expect(add!.cmd).toContain(`-B feat/${issue} `)
+    expect(readStatus(issue).branch).toBe(`feat/${issue}`)
   })
 })

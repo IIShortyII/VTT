@@ -215,11 +215,7 @@ export function reviewRework(s: Status): string {
 export function scopeOfFinding(f: unknown): Scope {
   const ort = fwd(String((f as Record<string, unknown>).ort ?? ''))
   if (/(^|\/)(src|prisma)\//.test(ort)) return 'impl'
-  // Dieselbe Antwort auf "ist das eine Testdatei" wie im Leak-Waechter, nicht eine zweite
-  // (Review-Befund Runde 2, dieselbe Bewegung wie bei fwd): die alte Regex hier kannte nur
-  // .test.ts(x), sodass ein Finding zu x.test.js ausserhalb von tests/ als 'human' eskaliert
-  // waere, statt an den test-author zu gehen.
-  if (/(^|\/)tests\//.test(ort) || IST_TESTDATEI.test(ort)) return 'test'
+  if (/(^|\/)tests\//.test(ort) || /\.test\.tsx?$/.test(ort)) return 'test'
   return 'human'
 }
 

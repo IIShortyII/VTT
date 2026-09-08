@@ -54,12 +54,6 @@ Siehe Issue #21 samt Kommentar zur zweiten Fundstelle.
   sonst nicht vorkommen.
 - **`removeUntrackedSourceDocs` bildet die Pfadspezifikation mit Forward-Slashes** — wie es
   `sh('git add openspec/changes/…')` zwei Zeilen darüber schon tut.
-- **Der Run-State wird für die Rollen lesegesperrt.** Im Review dieses Change aufgefallen und
-  hierher gezogen, weil es dieselbe Naht ist: `.harness/runs/<issue>/jest.json` trägt die
-  **ungefilterte** Gate-Ausgabe — Codeframes, absolute Testpfade, vollständige
-  Matcher-Meldungen. `isTest()` greift dort nicht (der Pfad heißt `runs`, nicht `tests`), und
-  ein `Read` darauf ging bisher durch. Damit war jede Filterung an der Ausgabe wirkungslos:
-  wer die Quelle lesen darf, braucht das Aufbereitete nicht. Nachgestellt und behoben.
 - **Auch der Name eines fehlgeschlagenen Szenarios wird geprüft**, nicht nur seine Ausgabe.
   Beide gehen in den Auftrag; ein ungeprüfter Name träfe erst den Wächter über dem fertigen
   Auftrag — und der hält den ganzen Lauf an, statt den einzelnen Failure zu degradieren.
@@ -79,6 +73,17 @@ danach als einer.
   hieße dort, eine Abhängigkeit zwischen zwei bewusst getrennten Programmen einzuführen. In
   `orchestrator.ts` dagegen ist die Dopplung beseitigt — auch `scopeOfFinding` benutzt jetzt
   `fwd` statt einer eigenen Ersetzung.
+- **Die Lesesperre für `.harness/runs/**`.** Im Review dieses Change aufgefallen: das
+  Run-Verzeichnis trägt die ungefilterte Gate-Ausgabe und die gemeldeten Testpfade, und keine
+  Rolle ist davon ausgesperrt. Der Befund wurde zwischenzeitlich hier begonnen und wieder
+  herausgelöst — die erste Fassung schloss nur den direkten Dateizugriff, während der Weg über
+  ein Shell-Kommando offen blieb. Eine halb geschlossene Sicherheitsnaht ist schlechter als
+  eine offene, weil sie als geschlossen gilt. Der Befund steht mit seiner Verifikation in
+  einem eigenen Issue unter Epic #27 und bekommt dort einen eigenen Change.
+- **Die Regex-Vereinheitlichung in `scopeOfFinding`.** Ebenfalls begonnen und zurückgenommen:
+  `IST_TESTDATEI` ist auf das Zeilenende verankert und greift bei der üblichen `ort`-Schreibweise
+  `datei:zeile` nicht. Die Änderung hätte ein eigenes Szenario und einen eigenen Test gebraucht;
+  ohne beides gehört sie nicht in diesen Change.
 - Die übrigen Kinder von Epic #27 (#24, #25, #33).
 
 ## Capabilities
@@ -95,8 +100,7 @@ Das Requirement bleibt wörtlich gültig; es wird nur nicht mehr falsch umgesetz
 ## Impact
 
 - `.harness/orchestrator.ts` (`removeUntrackedSourceDocs`, `assertNoTestLeak`,
-  `parseJestFailures`, `scopeOfFinding`, neuer Erkenner), `.harness/guard.ts` (`isRunState`
-  und die Regel dazu), `.harness/tests/orchestrator.test.ts`, `.harness/tests/guard.test.ts`
+  `parseJestFailures`, `scopeOfFinding`, neuer Erkenner), `.harness/tests/orchestrator.test.ts`
 - Kein Anwendungscode (`constitution.md` §1.4)
 - Keine neuen Dependencies
 - **Wirkung auf laufende Feature-Läufe:** Der Leak-Wächter wird schärfer. Eine `design.md`, die

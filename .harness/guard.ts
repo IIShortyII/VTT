@@ -80,15 +80,6 @@ const norm = (p: string): string => p.replace(/\\/g, '/')
 // Der Verzeichnisname matcht auch ohne nachfolgenden Pfad ("(/|$)"): Grep/Glob bekommen ein
 // Verzeichnis als Suchwurzel uebergeben ("path": "src"), nicht nur Dateipfade.
 export const isTest = (p: string): boolean => { const n = norm(p); return /(^|\/)tests(\/|$)/.test(n) || /\.test\.tsx?$/.test(n) }
-// Das Run-Verzeichnis traegt die UNGEFILTERTE Gate-Ausgabe: jest.json mit Codeframes,
-// absoluten Testpfaden und vollstaendigen Matcher-Meldungen, status.json mit den geparsten
-// Failures. Der Orchestrator filtert beides sorgfaeltig, bevor es in einen Auftrag geht
-// (assertNoTestLeak, parseJestFailures) - wer die Quelle lesen darf, braucht das Aufbereitete
-// aber gar nicht. Die Filterung schuetzte dann eine Tuer, neben der ein offenes Fenster steht.
-//
-// isTest() greift hier nicht: der Pfad heisst "runs", nicht "tests". Deshalb eine eigene Regel
-// (Review-Befund Runde 2 zu #21).
-export const isRunState = (p: string): boolean => /(^|\/)\.harness\/runs(\/|$)/.test(norm(p))
 export const isSrc = (p: string): boolean => { const n = norm(p); return SRC_DIRS.some(d => new RegExp(`(^|/)${d}(/|$)`).test(n)) }
 
 // D7: das Issue wird aus dem Worktree-Pfad des Tool-Calls ermittelt (.harness/wt/<issue>/...).
@@ -234,10 +225,6 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
     // ein Write darauf ist derselbe Selbstentwaffnungsschritt wie `echo none > ...` (Regel 0).
     if (isWrite && role !== '' && role !== 'none' && CONTROL_FILE_TABOO.test(norm(path)))
       return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu.' }
-    // Fuer BEIDE Rollen, lesend wie schreibend: der Run-State gehoert dem Orchestrator. Steht
-    // vor der Rollenverzweigung, weil die Begruendung fuer beide dieselbe ist.
-    if ((role === 'implementer' || role === 'test-author') && isRunState(path))
-      return { blocked: true, message: 'Blockiert: der Run-State gehört dem Orchestrator — er enthält die ungefilterte Gate-Ausgabe.' }
     if (role === 'implementer') {
       if (isTest(path)) return { blocked: true, message: 'Blockiert: implementer darf Testdateien nicht lesen/ändern.' }
       if (isWrite && !isSrc(path)) return { blocked: true, message: 'Blockiert: implementer schreibt nur in src/ oder prisma/.' }

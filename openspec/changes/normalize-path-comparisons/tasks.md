@@ -5,7 +5,7 @@
 
 ## 1. Tests zuerst
 
-- [x] 1.1 `.harness/tests/orchestrator.test.ts` um die dreizehn Szenarien aus
+- [x] 1.1 `.harness/tests/orchestrator.test.ts` um die neun Szenarien aus
       `specs/harness-path-matching/spec.md` ergänzen, je einen Test pro Szenario:
       „Eine Nennung mit Forward-Slashes wird erkannt", „Der bloße Dateiname gilt als Nennung",
       „Ein Name, der auf keine Testdatei des Laufs passt, hält den Lauf nicht an",
@@ -53,7 +53,7 @@ Beides ist am echten Material aufgefallen, nicht im Entwurf — und beides ist e
       etwas preisgegeben war. Der bloße Name zählt jetzt nur für erkennbare Testdateien; für
       Fixtures, Mocks und Platzhalter zählt erst die Nennung mit Pfadanteil. Szenario „Der Name
       einer Hilfsdatei zählt nur mit Pfadanteil" ergänzt
-- [x] 4.3 Beide Nachträge sind das Ergebnis von Aufgabe 7.2 — die Gegenprobe an echtem Material
+- [x] 4.3 Beide Nachträge sind das Ergebnis von Aufgabe 8.2 — die Gegenprobe an echtem Material
       ist damit nicht Bestätigung am Ende, sondern der Schritt, der den Change korrigiert hat
 
 ## 5. Nacharbeit Runde 1 (Reviewer-Befunde)
@@ -95,35 +95,47 @@ Beides ist am echten Material aufgefallen, nicht im Entwurf — und beides ist e
 - [x] 6.2 `spec.md` verlangte für Hilfsdateien „eine Nennung mit Pfadanteil", implementiert ist
       der worktree-relative Pfad. Die Prosa ist an D2 angeglichen — nach Runde 1 war
       ausdrücklich verlangt, dass die Spec die Implementierung beschreibt
-- [x] 6.3 `scopeOfFinding` benutzt `IST_TESTDATEI` statt einer zweiten Regex. Die alte kannte
-      nur `.test.ts(x)`, sodass ein Finding zu `x.test.js` außerhalb von `tests/` als 'human'
-      eskaliert wäre statt an den test-author zu gehen
-- [x] 6.4 **Der Run-State ist jetzt lesegesperrt** (Entscheidung des Menschen: in diesem Change,
-      nicht als eigenes Ticket). `.harness/runs/<issue>/jest.json` trägt die ungefilterte
-      Gate-Ausgabe; `isTest()` greift dort nicht, und ein `Read` ging durch — jede Filterung an
-      der Ausgabe war damit wirkungslos. Nachgestellt (rot bestätigt), `isRunState` plus Regel
-      in `guard.ts`, vier Tests inklusive der Umwege über Bash und die Suchwerkzeuge
-- [x] 6.5 **Auch der Szenarioname wird geprüft.** Er geht als `## <name>` in den Auftrag; ein
+- [x] 6.3 **Auch der Szenarioname wird geprüft.** Er geht als `## <name>` in den Auftrag; ein
       ungeprüfter Name träfe erst `assertNoTestLeak` und beendete den ganzen Lauf, statt den
       einzelnen Failure zu degradieren (§8.2 G3). Der Failure wird jetzt vollständig
       zurückgehalten. **Ehrlichkeitsvermerk:** dieser eine Test entstand nach dem Code, nicht
       davor; die Rot-Bestätigung ist über die Mutationsprobe `titel` nachgeholt
-- [x] 6.6 Zwölf Mutationsproben über beide Dateien (`orchestrator.ts` und `guard.ts`), jede
-      macht mindestens einen Test rot
 
-## 7. Abschluss
+## 7. Nacharbeit Runde 3: zwei Nachträge wieder herausgelöst
 
-- [x] 7.1 `pnpm test:harness`, `pnpm typecheck` und `pnpm lint` grün
-- [x] 7.2 Gegenprobe am echten Material: einen Auftrag bauen lassen, dessen `design.md` eine
+Zwei in Runde 2 aufgenommene Erweiterungen sind nach dem dritten Review zurückgenommen worden.
+Beide waren als Hinweise hereingekommen, beide gingen über die Spezifikation dieses Change
+hinaus, und beide erwiesen sich als unfertig. Die Entscheidung liegt beim Menschen (§3.5).
+
+- [x] 7.1 **Die Lesesperre für `.harness/runs/**` ist entfernt** und in ein eigenes Issue
+      überführt. Der dritte Review zeigte: sie schloss nur den Weg über `file_path`. Verifiziert
+      am laufenden Guard — `cat .harness/runs/12/status.json` blieb für implementer **und**
+      test-author erlaubt, ebenso `leak-degradations.log`; `jest.json` wurde nur deshalb
+      geblockt, weil `\bjest\b` zufällig im Dateinamen matcht, also mit falscher Begründung.
+      Der zugehörige Test war damit **nur durch einen Zufall grün** — dieselbe Fehlerklasse, die
+      dieser Change an anderen Stellen behebt. Eine halb geschlossene Sicherheitsnaht ist
+      schlechter als eine offene, weil sie als geschlossen gilt
+- [x] 7.2 **Die Regex-Vereinheitlichung in `scopeOfFinding` ist zurückgenommen.**
+      `IST_TESTDATEI` ist auf das Zeilenende verankert und greift bei der üblichen
+      `ort`-Schreibweise `datei:zeile` nicht; die Änderung war zudem von keinem Szenario und
+      keinem Test gedeckt. `fwd` bleibt — das war der Teil, der zu D1 gehört
+- [x] 7.3 Die Spec-Dokumente sind nachgezogen: Requirement und vier Szenarien zum Run-State
+      entfernt, D6 entfällt (D7 wird wieder D6), beide Rücknahmen stehen in der proposal.md
+      unter „Nicht im Umfang" mit ihrer Begründung. Neun Szenarien, neun Tests
+
+## 8. Abschluss
+
+- [x] 8.1 `pnpm test:harness`, `pnpm typecheck` und `pnpm lint` grün
+- [x] 8.2 Gegenprobe am echten Material: einen Auftrag bauen lassen, dessen `design.md` eine
       existierende Testdatei einmal als `tests/<name>` und einmal nur mit dem Dateinamen nennt —
       beide Male Abbruch mit Fundstellenangabe; danach ohne die Nennung: Durchlauf
-- [x] 7.3 Mutationsproben: zwölf Eingriffe (Erkenner abgeschaltet, Dateinamen-Form entfernt,
+- [x] 8.3 Mutationsproben: zehn Eingriffe (Erkenner abgeschaltet, Dateinamen-Form entfernt,
       Hilfsdatei-Ausnahme entfernt, Pathspec zurückgedreht, Rückhalt abgeschaltet, beide
       Wächter auf den alten Vergleich zurückgesetzt) machen je mindestens einen Test rot —
       Nachweis, dass die Zusicherungen greifen statt nur grün zu sein
-- [ ] 7.4 Menschliche Freigabe einholen (`constitution.md` §3.4 — kein App-Test, der Change
-      berührt keinen Anwendungscode; geprüft wird die Ausgabe aus 7.2)
-- [ ] 7.5 Change nach `openspec/changes/archive/` verschieben **und die Capability nach
+- [ ] 8.4 Menschliche Freigabe einholen (`constitution.md` §3.4 — kein App-Test, der Change
+      berührt keinen Anwendungscode; geprüft wird die Ausgabe aus 8.2)
+- [ ] 8.5 Change nach `openspec/changes/archive/` verschieben **und die Capability nach
       `openspec/specs/` übernehmen** (beides im selben Branch/Commit-Bereich — der Sync wurde
       bei #22 vergessen und musste nachgetragen werden), dann PR mit `Closes #21` öffnen;
       menschlicher Merge

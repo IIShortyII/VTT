@@ -88,15 +88,12 @@ Der Preis ist benannt: die Fundstellenangabe sucht den Block, der den **Namen** 
 mehrere Blöcke ihn, wird der erste gemeldet. Das ist eine Auskunft über einen Block, der die
 Nennung wirklich enthält — nur nicht zwingend über den einzigen.
 
-**Der bloße Dateiname zählt mit.** In einer `design.md` steht `user-auth.integration.test.ts`,
-nicht der volle Pfad — die naheliegendste Nennung wäre sonst die einzige, die durchginge. Und
-sie ist keine harmlose: sie verrät, welche Testdatei existiert und wie das Verhalten geschnitten
-ist, also genau das, was §2.2 dem implementer vorenthält.
-
-Das Fehlalarmrisiko ist gering, aber nicht null: ein Dateiname ist ein kurzer Teilstring. Er
-endet allerdings auf `.test.ts`/`.test.tsx`/`.unit.test.tsx` — Endungen, die in Prosa nicht
-vorkommen. Und ein Fehlalarm ist hier der billige Fehler: er hält den Lauf an und benennt seit
-#22 die Fundstelle, während ein übersehener Leak unbemerkt bleibt.
+**Warum der bloße Name bei Testdateien überhaupt zählt:** In einer `design.md` steht
+`user-auth.integration.test.ts`, nicht der volle Pfad — die naheliegendste Nennung wäre sonst
+die einzige, die durchginge. Und sie ist keine harmlose: sie verrät, welche Testdatei existiert
+und wie das Verhalten geschnitten ist, also genau das, was §2.2 dem implementer vorenthält.
+Ein Fehlalarm ist hier der billige Fehler — er hält den Lauf an und benennt seit #22 die
+Fundstelle —, ein übersehener Leak der teure.
 
 ### D3 — Verglichen wird case-sensitiv
 
@@ -139,28 +136,7 @@ Verzeichnis: der bloße Dateiname aus `Cannot find module './x' from 'auth-ui.un
 Das Abschneiden erfasst sie nicht, weil sie kein Trennzeichen enthält. `spec.md` prüft beide
 Formen in je einem Szenario.
 
-### D6 — Die Sperre des Run-State liegt im Guard, nicht im Orchestrator
-
-`.harness/runs/<issue>/` ist die Quelle, aus der der Orchestrator seine gefilterten Ausgaben
-baut. Wer sie lesen darf, braucht das Gefilterte nicht — die Wächter über Auftrag und
-Gate-Ausgabe schützten dann eine Tür, neben der ein offenes Fenster steht.
-
-Die Regel gehört in `guard.ts`, weil sie einen **Werkzeugaufruf** betrifft und nicht das, was
-der Orchestrator selbst weitergibt. `isTest()` deckt sie nicht ab: der Pfad heißt `runs`, nicht
-`tests`, und eine Erweiterung von `isTest` wäre irreführend — das Run-Verzeichnis enthält keine
-Tests, sondern deren Ausgabe. Deshalb ein eigenes Prädikat `isRunState` und eine eigene Regel.
-
-Sie gilt für **beide** Rollen und lesend wie schreibend, und sie steht vor der
-Rollenverzweigung: die Begründung ist für implementer und test-author dieselbe, und der
-Run-State gehört keiner von beiden. Ohne aktive Rolle bleibt er lesbar — die orchestrierende
-Sitzung arbeitet mit ihm, und der Mensch muss ihn einsehen können.
-
-Die Umwege waren bereits zu (Grep/Glob über das Whitelisting der Quellpfade, Bash über
-`CONTROL_FILE_TABOO` und die Schreibziel-Erkennung); offen war allein der direkte `Read`. Ein
-Test hält jeden dieser Wege fest, damit die Sperre nicht an einer Stelle repariert und an der
-nächsten vergessen wird.
-
-### D7 — Die Konventions-Ausnahme aus #22 bleibt unangetastet
+### D6 — Die Konventions-Ausnahme aus #22 bleibt unangetastet
 
 Sie beantwortet eine andere Frage: nicht „ist das eine Testdatei", sondern „ist dieser Inhalt
 geheim". Sie greift auf dem Inhalts-Zweig und bleibt dort.

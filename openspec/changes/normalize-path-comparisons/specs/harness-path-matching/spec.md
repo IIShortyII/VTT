@@ -116,46 +116,6 @@ Degradierung vor.
 - **THEN** enthält die weitergegebene Ausgabe dieses Failure den Dateinamen nicht mehr, der
   Vorgang ist protokolliert, und der übrige Lauf läuft weiter
 
-### Requirement: Der Run-State ist für die Rollen nicht lesbar
-
-Der Harness MUST den Rollen `implementer` und `test-author` den Lesezugriff auf das
-Run-Verzeichnis eines Laufs verwehren. Dort liegt die **ungefilterte** Gate-Ausgabe: `jest.json`
-enthält Codeframes, absolute Testpfade und vollständige Matcher-Meldungen, `status.json` die
-geparsten Failures.
-
-Ohne diese Sperre ist jede Filterung an der Ausgabe wirkungslos — wer die Quelle lesen darf,
-braucht das Aufbereitete nicht. Die Wächter über Auftrag und Gate-Ausgabe schützen dann eine
-Tür, neben der ein offenes Fenster steht.
-
-#### Scenario: Der implementer darf die rohe Gate-Ausgabe nicht lesen
-
-- **GIVEN** ein Lauf steht in einem Implementierungsschritt, und im Run-Verzeichnis liegt die
-  rohe Ausgabe des letzten Gate-Laufs
-- **WHEN** der implementer versucht, eine Datei aus dem Run-Verzeichnis zu lesen
-- **THEN** wird der Zugriff abgelehnt
-
-#### Scenario: Auch der test-author bleibt draußen
-
-- **GIVEN** ein Lauf steht in einem Test-Nacharbeit-Schritt
-- **WHEN** der test-author versucht, eine Datei aus dem Run-Verzeichnis zu lesen
-- **THEN** wird der Zugriff abgelehnt — die Rundenhistorie und die Reviewer-Findings anderer
-  Rollen gehören ihm so wenig wie dem implementer
-
-#### Scenario: Auch die Umwege sind gesperrt
-
-- **GIVEN** ein Lauf steht in einem Implementierungsschritt
-- **WHEN** der implementer das Run-Verzeichnis nicht über einen Dateizugriff, sondern über ein
-  Shell-Kommando oder ein Suchwerkzeug zu lesen versucht
-- **THEN** wird auch dieser Zugriff abgelehnt — eine Sperre, die nur den direkten Weg kennt,
-  verlagert den Zugriff, statt ihn zu verhindern
-
-#### Scenario: Ohne aktive Rolle bleibt das Run-Verzeichnis lesbar
-
-- **GIVEN** kein Lauf beansprucht eine aktive Rolle
-- **WHEN** eine Datei aus dem Run-Verzeichnis gelesen wird
-- **THEN** wird der Zugriff erlaubt — die orchestrierende Sitzung arbeitet mit dem Run-State,
-  und der Mensch muss ihn einsehen können
-
 ### Requirement: Pfadspezifikationen an Git tragen Forward-Slashes
 
 Der Harness MUST Pfade, die er als **Pfadspezifikation** an Git übergibt, mit Forward-Slashes

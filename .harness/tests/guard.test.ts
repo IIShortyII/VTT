@@ -496,39 +496,3 @@ describe('isTest/isSrc', () => {
     expect(isSrc('openspec/changes/x/proposal.md')).toBe(false)
   })
 })
-
-// Der Run-State ist fuer die Rollen nicht lesbar
-// (normalize-path-comparisons/spec.md "harness-path-matching").
-//
-// .harness/runs/<issue>/jest.json traegt die UNGEFILTERTE Gate-Ausgabe: Codeframes, absolute
-// Testpfade, vollstaendige Matcher-Meldungen. Wer die Quelle lesen darf, braucht das
-// Aufbereitete nicht - die Waechter ueber Auftrag und Gate-Ausgabe schuetzten dann eine Tuer,
-// neben der ein offenes Fenster steht. isTest() matcht auf diesen Pfaden nicht ("runs", nicht
-// "tests"), die Sperre braucht also eine eigene Regel.
-describe('Run-State als Umgehung der Leseschranke', () => {
-  it('Der implementer darf die rohe Gate-Ausgabe nicht lesen', () => {
-    const deps = { readRole: () => 'implementer' }
-    expect(evaluate(read('.harness/runs/12/jest.json'), deps).blocked).toBe(true)
-    expect(evaluate(read('.harness/runs/12/status.json'), deps).blocked).toBe(true)
-  })
-
-  it('Auch der test-author bleibt draußen', () => {
-    const deps = { readRole: () => 'test-author' }
-    expect(evaluate(read('.harness/runs/12/jest.json'), deps).blocked).toBe(true)
-  })
-
-  it('Ohne aktive Rolle bleibt das Run-Verzeichnis lesbar', () => {
-    // Die orchestrierende Sitzung arbeitet mit dem Run-State, und der Mensch muss ihn einsehen
-    // koennen - die Sperre gilt der Rolle, nicht der Datei.
-    for (const role of ['none', '']) {
-      const deps = { readRole: () => role }
-      expect(evaluate(read('.harness/runs/12/jest.json'), deps).blocked).toBe(false)
-    }
-  })
-
-  it('Auch die Umwege sind gesperrt', () => {
-    const deps = { readRole: () => 'implementer' }
-    expect(evaluate(bash('cat .harness/runs/12/jest.json'), deps).blocked).toBe(true)
-    expect(evaluate({ tool_name: 'Grep', tool_input: { pattern: 'expect', path: '.harness/runs/12' } }, deps).blocked).toBe(true)
-  })
-})

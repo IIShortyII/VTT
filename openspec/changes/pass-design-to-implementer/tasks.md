@@ -5,51 +5,59 @@
 
 ## 1. Tests zuerst
 
-- [ ] 1.1 `.harness/tests/orchestrator.test.ts` um die sechs Szenarien aus
+- [x] 1.1 `.harness/tests/orchestrator.test.ts` um die sieben Szenarien aus
       `specs/harness-spec-delivery/spec.md` ergänzen, je einen Test pro Szenario: „Ein Change
       mit design.md liefert die Entscheidungen an den implementer", „Die Entscheidungen stehen
       vor den Anforderungen" (Reihenfolge über Indexvergleich, nicht über einen erwarteten
       Gesamtstring), „Ein Change ohne design.md ergibt einen Auftrag ohne Lücke", „Jeder Block
       trägt seine Quelldatei" (vier Blöcke, zwei Capabilities), „Die Test-Nacharbeit sieht
       dieselben Entscheidungen" (Vergleich der Spec-Anteile beider Prompt-Bauer),
-      „Testinhalt in design.md hält den Lauf an und nennt die Datei"
-- [ ] 1.2 Hilfsfunktion für die Testfälle: legt im Worktree eines frischen Issues einen
+      „Testinhalt in design.md hält den Lauf an und nennt die Datei", „Eine zitierte
+      Konvention ist kein Leak"
+- [x] 1.2 Hilfsfunktion für die Testfälle: legt im Worktree eines frischen Issues einen
       Change-Ordner mit wählbaren Dateien an (`proposal.md`, `design.md`, Capabilities) und
       schreibt den Change-Namen nach `status.json`; die Ausgabe von `buildImplPrompt` /
       `buildTestReworkPrompt` wird über einen `console.log`-Spy abgegriffen
-- [ ] 1.3 Rot bestätigen (§3.1): `pnpm test:harness` — die neuen Fälle scheitern an der
+- [x] 1.3 Rot bestätigen (§3.1): `pnpm test:harness` — die neuen Fälle scheitern an der
       erwarteten Zusicherung (fehlender `design.md`-Text, fehlende Quellenzeile, fehlende
       Datei in der Leak-Meldung), nicht an einem Import- oder Compile-Fehler
 
 ## 2. Der Change als Blockliste
 
-- [ ] 2.1 `readChangeParts(issue, status)` in `.harness/orchestrator.ts` anlegen: liefert
+- [x] 2.1 `readChangeParts(issue, status)` in `.harness/orchestrator.ts` anlegen: liefert
       `{ quelle, text }[]` in der Reihenfolge `proposal.md`, `design.md`,
       `specs/<capability>/spec.md` (design.md D1/D3); `quelle` ist der Pfad relativ zum
       Change-Verzeichnis, **mit Forward-Slashes** und nicht über `join()` gebildet (D2),
       fehlende Dateien erzeugen keinen Block (D5); verifizieren mit den Testfällen zu
       Reihenfolge und fehlender `design.md`
-- [ ] 2.2 `readChangeSpec` auf `readChangeParts` setzen und die Blöcke mit vorangestellter
+- [x] 2.2 `readChangeSpec` auf `readChangeParts` setzen und die Blöcke mit vorangestellter
       Zeile `## Quelle: <pfad>` verketten, Trennung wie bisher `\n\n---\n\n` (D2); Signatur und
       Rückgabetyp bleiben unverändert; verifizieren mit den Testfällen „Jeder Block trägt seine
       Quelldatei" und „Ein Change mit design.md liefert die Entscheidungen an den implementer"
 
 ## 3. Die Fundstelle in der Leak-Meldung
 
-- [ ] 3.1 `assertNoTestLeak` um den Parameter der Blockliste erweitern (D4): geprüft wird
+- [x] 3.1 `assertNoTestLeak` um den Parameter der Blockliste erweitern (D4): geprüft wird
       weiterhin der **fertige Prompt**; erst bei einem Treffer wird der Block gesucht, der ihn
       enthält, und in der Meldung benannt. Kein Treffer in einem Block → heutige Meldung;
-      verifizieren mit dem Testfall „Ein Testpfad in design.md hält den Lauf an und nennt die
+      verifizieren mit dem Testfall „Testinhalt in design.md hält den Lauf an und nennt die
       Datei"
-- [ ] 3.2 `buildImplPrompt` reicht die Blockliste an `assertNoTestLeak` durch, ohne den Prompt
+- [x] 3.2 `buildImplPrompt` reicht die Blockliste an `assertNoTestLeak` durch, ohne den Prompt
       selbst anders aufzubauen; verifizieren mit denselben Testfällen
+- [x] 3.3 Ausnahme für Konventionszeilen nach design.md D6: der Wächter überspringt jede
+      Zeile, die wörtlich in `AGENTS.md` oder `constitution.md` steht — genau diese beiden
+      Dateien, wörtlicher Vergleich, einmal je Aufruf gelesen; verifizieren mit dem Testfall
+      „Eine zitierte Konvention ist kein Leak" **und** mit der Gegenprobe aus 4.2, die den
+      Fehlalarm ausgelöst hat
 
 ## 4. Abschluss
 
-- [ ] 4.1 `pnpm test:harness` und `pnpm lint` grün
-- [ ] 4.2 Gegenprobe am echten Material: für einen archivierten Change mit `design.md`
+- [x] 4.1 `pnpm test:harness` und `pnpm lint` grün
+- [x] 4.2 Gegenprobe am echten Material: für einen archivierten Change mit `design.md`
       (`2026-09-07-add-user-auth`) den Auftrag bauen lassen und prüfen, dass die
-      Design-Entscheidungen mit Quellenzeile darin stehen und die Reihenfolge stimmt
+      Design-Entscheidungen mit Quellenzeile darin stehen und die Reihenfolge stimmt —
+      **mit den echten Testdateien daneben**, damit der Leak-Wächter tatsächlich läuft (in
+      dieser Konstellation ist der Fehlalarm aus D6 aufgefallen)
 - [ ] 4.3 Menschliche Freigabe einholen (`constitution.md` §3.4 — kein App-Test, der Change
       berührt keinen Anwendungscode; geprüft wird die Ausgabe aus 4.2)
 - [ ] 4.4 Change nach `openspec/changes/archive/` verschieben (gleicher Branch/Commit-Bereich)

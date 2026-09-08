@@ -26,12 +26,15 @@ Motivation: siehe `proposal.md` — Why, und Issue #22. Verhalten: siehe
 - Beide Rollen bekommen dasselbe Material aus dem Change — kein Auseinanderdriften.
 - Der implementer sieht, aus welcher Datei ein Abschnitt stammt.
 - Ein Leak-Abbruch ist ohne Suche behebbar.
+- Eine `design.md`, die eine vorgeschriebene Konvention zitiert, hält den Lauf nicht an.
 
 **Non-Goals:**
 - Keine Auswahl innerhalb einer Datei. Der Auftrag bekommt `design.md` ganz oder gar nicht;
   eine Heuristik, die „nur die Decisions" extrahiert, wäre eine stille Interpretation der Spec
   durch den Harness.
-- Keine Aufweichung des Leak-Wächters. Er filtert nicht, er hält an.
+- Keine Aufweichung des Leak-Wächters. Er filtert nicht, er hält an. Die Ausnahme für
+  Konventionszeilen (D6) ändert daran nichts: sie entfernt nichts aus dem Auftrag, sie zieht
+  die Grenze dessen, was überhaupt geheim ist.
 - Keine Änderung am Zustandsautomaten, am Rundenzähler oder an der Gate-Reihenfolge.
 
 ## Decisions
@@ -100,9 +103,8 @@ den behebt der Mensch dort.
 trägt heute nur die zweite. Der Pfad-Vergleich läuft gegen den vollen Worktree-Pfad in
 nativer Schreibweise (`.harness\wt\<issue>\tests\…`) und trifft eine übliche Nennung wie
 `tests/auth.integration.test.ts` nie. Das ist ein eigener Defekt derselben Klasse wie #21 und
-dort dokumentiert; dieser Change lässt Wirkung und Härte des Wächters unverändert und ergänzt
-allein die Fundstellen-Angabe. Das Szenario in `spec.md` prüft deshalb den Inhalts-Zweig —
-den, der trägt.
+dort dokumentiert; dieser Change behebt ihn nicht. Das Szenario in `spec.md` prüft deshalb den
+Inhalts-Zweig — den, der trägt.
 
 ### D5 — Fehlende Dateien sind der Normalfall, kein Sonderfall
 
@@ -110,3 +112,28 @@ Fehlt `design.md`, entsteht kein Block — kein Platzhalter, keine leere Übersc
 Hinweis „keine Designentscheidungen". Das ist die bestehende Behandlung von `proposal.md` und
 `specs/` und bleibt es. Ein Auftrag, der eine leere Rubrik führt, lädt zu der Annahme ein, es
 gäbe dort etwas zu holen.
+
+### D6 — Was in den Konventionsdateien steht, ist kein Leak
+
+Der Wächter überspringt jede Zeile, die wörtlich auch in `AGENTS.md` oder `constitution.md`
+steht. Die beiden Dateien werden einmal je Aufruf gelesen und als ein Text durchsucht.
+
+Der Anlass ist kein hypothetischer. Die Gegenprobe an der echten `design.md` von #12 hat den
+Wächter ausgelöst — an der Zeile `/** @jest-environment jsdom */`. Sie steht dort in
+„D10 — Testaufbau", weil `AGENTS.md` genau diesen Docblock für Komponententests vorschreibt,
+und sie steht deshalb notwendigerweise auch in jeder solchen Testdatei. Ohne die Ausnahme
+hielte jeder Change mit Komponententests an einer Zeile an, die nichts preisgibt — ein
+Stillstand, den dieser Change selbst einführen würde: vor ihm ging `design.md` nicht in den
+Prompt ein.
+
+Die Ausnahme weicht den Wächter nicht auf, sondern schärft sein Kriterium. Sein Zweck ist,
+dem implementer vorzuenthalten, was er nicht sehen darf (`constitution.md` §2.2). Der Prompt
+verweist ihn im Abschnitt „Konventionen" ausdrücklich auf beide Dateien — er darf sie also
+ohnehin lesen. Eine Zeile, die dort steht, kann ihm eine Testdatei nicht verraten; sie über
+den Umweg der Testdatei zu verbieten, wäre eine Regel ohne Schutzwirkung.
+
+Die Grenze ist eng gezogen: **genau diese beiden Dateien**, wörtlicher Vergleich, kein Muster,
+keine Ähnlichkeit, kein Verzeichnis. `AGENTS.md` und `constitution.md` sind die kanonischen
+Konventionsdateien des Repositories (`CLAUDE.md` bindet beide ein) und enthalten selbst keine
+Tests. Eine weiter gefasste Ausnahme — etwa „alles, was in irgendeiner Markdown-Datei steht" —
+wäre der Punkt, an dem der Wächter aufhörte, einer zu sein.

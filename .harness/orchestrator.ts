@@ -404,7 +404,8 @@ function firstErrorLine(m: string): string {
 }
 export function buildImplPrompt(i: string) {
   const s = readStatus(i)
-  const spec = readChangeSpec(i, s)
+  const parts = readChangeParts(i, s)
+  const spec = formatChangeParts(parts)
   const gateFeedback = s.lastGate && !s.lastGate.green
     ? s.lastGate.failures!.map(f => `## ${f.name}\n${f.message}`).join('\n\n') : ''
   const reviewFeedback = s.lastReview && s.lastReview.recommendation === 'nacharbeit'
@@ -424,7 +425,7 @@ ${spec}
 
 # Konventionen
 Siehe AGENTS.md und constitution.md.${gateFeedback ? `\n\n# Fehlgeschlagene Szenarien (vollständige Matcher-Ausgabe, kein Testcode)\n${gateFeedback}` : ''}${reviewFeedback ? `\n\n# Reviewer-Findings aus vorheriger Runde (beheben)\n${reviewFeedback}` : ''}${appReviewFeedback ? `\n\n# Ablehnung aus dem menschlichen App-Test (beheben)\n${appReviewFeedback}` : ''}${history}`
-  assertNoTestLeak(prompt, i) // G1: bricht ab bei Testpfad/-inhalt
+  assertNoTestLeak(prompt, i, parts) // G1: bricht ab bei Testpfad/-inhalt
   console.log(prompt)
 }
 // test-author korrigiert Tests gegen die SPEC, nie gegen die Implementierung (constitution.md
@@ -487,12 +488,51 @@ function formatReviewFindings(findings: unknown[]): string {
     return `- ${sev}${r.ort ? r.ort + ' — ' : ''}${r.problem}${r.vorschlag ? ` (Vorschlag: ${r.vorschlag})` : ''}`
   }).join('\n')
 }
-function assertNoTestLeak(prompt: string, i: string) {
-  for (const f of listTestFiles(i)) {
-    if (prompt.includes(f)) fail(`Leak: Prompt referenziert Testpfad ${f}`)
-    for (const line of readFileSync(f, 'utf8').split('\n').map(l => l.trim()).filter(l => l.length > 20))
-      if (prompt.includes(line)) fail(`Leak: Prompt enthält Testinhalt aus ${f}`)
+// Geprueft wird der FERTIGE Prompt, nicht die Blockliste (design.md D4): pruefte der Waechter
+// die Bloecke, entstuende eine Luecke fuer alles, was buildImplPrompt danach anhaengt - und das
+// Gate-Feedback ist die Stelle, an der Testmaterial nachweislich schon einmal durchgesickert ist
+// (constitution.md §8.2 G3). Die Bloecke dienen allein dazu, einen Treffer zu verorten:
+// design.md nennt erfahrungsgemaess konkrete Dateipfade und ist damit die wahrscheinlichste
+// Quelle eines Abbruchs; ohne die Angabe sucht der Mensch den Treffer im ganzen Change-Ordner.
+//
+// Der Abbruch bleibt hart. Filtern wuerde die betroffene Zeile entfernen und den Lauf
+// weiterlaufen lassen - mit einer Spec, die der implementer nur unvollstaendig sieht, ohne dass
+// es jemand merkt. Ein Waechter, der bei einem Treffer weiterlaeuft, waere keiner (G1).
+function assertNoTestLeak(prompt: string, i: string, parts: ChangePart[] = []) {
+  const fundstelle = (fund: string) => {
+    const p = parts.find(x => x.text.includes(fund))
+    return p ? ` (Fundstelle: ${p.quelle})` : ''
   }
+  const konventionen = readKonventionen(i)
+  for (const f of listTestFiles(i)) {
+    if (prompt.includes(f)) fail(`Leak: Prompt referenziert Testpfad ${f}${fundstelle(f)}`)
+    // Die Ausnahme gilt dem Inhalts-Zweig: geprueft wird eine ZEILE, und eine Zeile, die auch
+    // in den Konventionen steht, ist keine geheime. Der Pfad-Zweig darueber bleibt unberuehrt -
+    // er vergleicht volle Worktree-Pfade, die in keiner Konventionsdatei vorkommen.
+    for (const line of readFileSync(f, 'utf8').split('\n').map(l => l.trim())
+      .filter(l => l.length > 20 && !konventionen.includes(l)))
+      if (prompt.includes(line)) fail(`Leak: Prompt enthält Testinhalt aus ${f}${fundstelle(line)}`)
+  }
+}
+// design.md D6: was in den Konventionsdateien steht, ist kein Leak. Anlass war kein
+// hypothetischer - die echte design.md zu #12 liess den Waechter an `/** @jest-environment
+// jsdom */` anschlagen, einer Zeile, die AGENTS.md fuer Komponententests VORSCHREIBT und die
+// deshalb notwendig auch in jeder solchen Testdatei steht. Der Prompt verweist den implementer
+// im Abschnitt "Konventionen" ausdruecklich auf beide Dateien; was er ohnehin lesen darf, kann
+// ihm eine Testdatei nicht verraten.
+//
+// Die Grenze ist eng: genau diese beiden Dateien, woertlicher Vergleich, kein Muster. Beide
+// Fassungen zaehlen - die im Worktree (die fuer den Lauf geltende) und die im Hauptrepo, in
+// dem der Orchestrator selbst laeuft; die Zeile ist in jeder von ihnen gleich oeffentlich.
+const KONVENTIONSDATEIEN = ['AGENTS.md', 'constitution.md']
+function readKonventionen(i: string): string {
+  const texte: string[] = []
+  for (const ort of [worktreeDir(i), '.'])
+    for (const datei of KONVENTIONSDATEIEN) {
+      const p = join(ort, datei)
+      if (existsSync(p)) texte.push(readFileSync(p, 'utf8'))
+    }
+  return texte.join('\n')
 }
 // G2 (schema-gebundene Rollen-Summaries): eine vom Schema abweichende Reviewer-Antwort
 // (wiederkehrender Vorfall) darf next() nicht unbemerkt als
@@ -652,19 +692,47 @@ export function escalate(i: string) {
 // explizites Mapping wird die Issue-Nummer selbst als Verzeichnisname versucht (Fallback fuer
 // aeltere Runs).
 export function readChangeSpec(i: string, s: Status): string {
+  return formatChangeParts(readChangeParts(i, s))
+}
+// Reihenfolge = Lesart des Change-Ordners (design.md D1): warum (proposal.md) -> wie
+// entschieden (design.md) -> was genau (specs/). Der implementer liest von oben; jede Zeile vor
+// den Requirements ist Kontext, gegen den er sie auslegt. Stuenden die Entscheidungen dahinter,
+// haette er die Anforderungen bereits einmal frei interpretiert, bevor er erfaehrt, dass die
+// Frage schon beantwortet war - genau die doppelte Beantwortung, die Issue #22 aufgefallen ist.
+//
+// Blockliste statt fertigem String (D3), damit assertNoTestLeak einen Treffer einer Quelldatei
+// zuordnen kann. Die Zuordnung aus dem fertigen Prompt zurueckzurechnen waere falsch, sobald der
+// Treffer im angehaengten Gate-Feedback steht - dessen Abschnitte sind mit `## <testname>`
+// ueberschrieben.
+export type ChangePart = { quelle: string; text: string }
+export function readChangeParts(i: string, s: Status): ChangePart[] {
   const dir = join(worktreeDir(i), 'openspec', 'changes', s.change ?? i)
-  if (!existsSync(dir)) return ''
-  const parts: string[] = []
-  const proposalPath = join(dir, 'proposal.md')
-  if (existsSync(proposalPath)) parts.push(readFileSync(proposalPath, 'utf8'))
-  const specsDir = join(dir, 'specs')
-  if (existsSync(specsDir)) {
-    for (const capability of readdirSync(specsDir)) {
-      const specPath = join(specsDir, capability, 'spec.md')
-      if (existsSync(specPath)) parts.push(readFileSync(specPath, 'utf8'))
-    }
+  if (!existsSync(dir)) return []
+  const parts: ChangePart[] = []
+  // Fehlende Dateien erzeugen keinen Block (D5) - ein Auftrag mit leerer Rubrik laedt zu der
+  // Annahme ein, es gaebe dort etwas zu holen.
+  const lies = (quelle: string, ...pfad: string[]) => {
+    const p = join(dir, ...pfad)
+    if (existsSync(p)) parts.push({ quelle, text: readFileSync(p, 'utf8') })
   }
-  return parts.join('\n\n---\n\n')
+  lies('proposal.md', 'proposal.md')
+  lies('design.md', 'design.md')
+  const specsDir = join(dir, 'specs')
+  if (existsSync(specsDir))
+    // Forward-Slashes, nicht join() (D2): die Quelle ist Text fuer einen Leser, keine
+    // Pfadangabe fuer das Dateisystem, und soll so erscheinen, wie der Change sie selbst
+    // ueberall fuehrt. Ein Backslash-Pfad waere hier die Fehlerklasse aus Issue #21.
+    for (const capability of readdirSync(specsDir))
+      lies(`specs/${capability}/spec.md`, 'specs', capability, 'spec.md')
+  return parts
+}
+// Die Quellenzeile traegt den Praefix "Quelle:", weil die eingebetteten Dateien selbst
+// ##-Ueberschriften fuehren (## Why, ## Context, ## ADDED Requirements) - eine nackte
+// `## design.md` stuende ununterscheidbar zwischen ihnen. Ein Level-1-# scheidet aus: der
+// umgebende Prompt gliedert seine Abschnitte so (# Spec, # Konventionen), ein # mitten im
+// Spec-Block wuerde die Spec optisch beenden.
+function formatChangeParts(parts: ChangePart[]): string {
+  return parts.map(p => `## Quelle: ${p.quelle}\n\n${p.text}`).join('\n\n---\n\n')
 }
 // Rekursiv und ohne Endungsfilter (Review-Befund): Hilfsdateien wie tests/__mocks__/*.tsx sind
 // ebenso Leak-Flaeche wie *.test.ts(x) selbst - der 4000-Zeichen-Ausschnitt aus D2 vergroessert

@@ -622,4 +622,28 @@ describe('Material aus dem OpenSpec-Change', () => {
       expect(meldung).toContain('design.md')                // die Fundstelle im Change
     } finally { exitSpy.mockRestore(); errorSpy.mockRestore(); cleanup(issue) }
   })
+
+  it('Eine zitierte Konvention ist kein Leak', () => {
+    const issue = freshIssue()
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`)
+    }) as never)
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      // Der Docblock, den AGENTS.md fuer Komponententests vorschreibt: er steht dort und steht
+      // deshalb notwendig auch in jeder solchen Testdatei. Die Zeile stammt aus AGENTS.md
+      // selbst, nicht aus einer Kopie hier - sonst pruefte der Test eine eigene Behauptung
+      // statt der Konvention.
+      const konvention = '/** @jest-environment jsdom */'
+      expect(readFileSync('AGENTS.md', 'utf8')).toContain(konvention)
+
+      makeChange(issue, { design: `${DESIGN}\nD10 - Testaufbau: Docblock ${konvention} am Dateianfang.` })
+      const testDir = join(worktreeDir(issue), 'tests')
+      mkdirSync(testDir, { recursive: true })
+      writeFileSync(join(testDir, 'auth-ui.unit.test.tsx'), `${konvention}\n`)
+
+      const prompt = promptVon(() => buildImplPrompt(issue))
+      expect(prompt).toContain(DESIGN)
+    } finally { exitSpy.mockRestore(); errorSpy.mockRestore(); cleanup(issue) }
+  })
 })

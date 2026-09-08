@@ -90,10 +90,25 @@ jemand bemerkt.
 Stammt der Treffer aus einer Datei des Change, MUST die Meldung diese Datei benennen. Stammt
 er aus keinem der Blöcke, MUST die Meldung wie bisher lauten.
 
+Der Harness MUST NOT eine Zeile als Leak werten, die wörtlich auch in den kanonischen
+Konventionsdateien des Repositories steht. Der Auftrag verweist den implementer ausdrücklich
+auf diese Dateien; was er ohnehin lesen darf, kann ihm eine Testdatei nicht verraten. Ohne
+diese Ausnahme hielte eine `design.md`, die eine vorgeschriebene Konvention wörtlich zitiert,
+den Lauf an — obwohl sie nichts preisgibt.
+
 #### Scenario: Testinhalt in design.md hält den Lauf an und nennt die Datei
 
 - **GIVEN** die `design.md` eines Change enthält eine Zeile, die wörtlich so auch in einer
-  Testdatei des Worktrees steht
+  Testdatei des Worktrees steht und in keiner Konventionsdatei vorkommt
 - **WHEN** der Harness den Auftrag für den implementer baut
 - **THEN** bricht der Aufbau ab, und die Meldung nennt sowohl die betroffene Testdatei als auch
   `design.md` als Fundstelle
+
+#### Scenario: Eine zitierte Konvention ist kein Leak
+
+- **GIVEN** die `design.md` eines Change zitiert wörtlich eine Zeile aus einer
+  Konventionsdatei des Repositories, und dieselbe Zeile steht auch in einer Testdatei des
+  Worktrees — weil die Konvention genau das vorschreibt
+- **WHEN** der Harness den Auftrag für den implementer baut
+- **THEN** entsteht der Auftrag ohne Abbruch, und er enthält den Text der `design.md`
+

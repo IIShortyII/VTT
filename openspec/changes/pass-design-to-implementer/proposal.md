@@ -38,6 +38,13 @@ verwiesen. Das ist eine Umgehung, keine Lösung: `SKILL.md` verlangt, den Prompt
   Change** den Treffer enthält. `design.md` nennt erfahrungsgemäß konkrete Dateipfade und ist
   damit die wahrscheinlichste Quelle eines künftigen Abbruchs; ohne diese Angabe sucht der
   Mensch den Treffer im ganzen Change-Ordner.
+- **Eine zitierte Konvention gilt nicht mehr als Leak.** Die Gegenprobe an der echten
+  `design.md` von #12 hat den Wächter ausgelöst — an `/** @jest-environment jsdom */`. Die
+  Zeile steht dort, weil `AGENTS.md` genau diesen Docblock vorschreibt, und steht deshalb
+  notwendig auch in jeder Komponententestdatei. Ohne Ausnahme hielte dieser Change jeden
+  solchen Lauf an einer Zeile an, die nichts preisgibt. Der Wächter überspringt daher, was
+  wörtlich in `AGENTS.md` oder `constitution.md` steht — Dateien, auf die der Auftrag den
+  implementer ohnehin ausdrücklich verweist.
 
 **Unverändert:** Der Zustandsautomat, der Rundenzähler, die Gate-Reihenfolge und das
 Rollenrouting. `assertNoTestLeak` bleibt in Wirkung und Härte gleich — es filtert nichts

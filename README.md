@@ -83,6 +83,10 @@ sondern fragt `next`.
 
 ## Aufsetzen
 
+0. **Node ≥ 22.18.** Der PreToolUse-Guard läuft als `node .harness/guard.ts`, ohne
+   Transpiler — auf älterem Node endet der Hook mit Exit 1, und da ein PreToolUse-Hook
+   ausschließlich bei Exit 2 blockt, wäre der Guard damit wirkungslos, ohne dass es auffällt.
+   `pnpm test:harness` (Schritt 7) deckt den Fall ab.
 1. Authentifizierung läuft über die Claude-Subscription — im Repo liegt kein API-Key und
    keine Endpunkt-Konfiguration. Welches Modell eine Rolle benutzt, steht in der Frontmatter
    der jeweiligen Definition unter `.claude/agents/` (`opus` für `test-author` und
@@ -111,5 +115,14 @@ sondern fragt `next`.
   gleichzeitig, bleibt der Aufruf bewusst rollenlos — parallele Runs sind nicht abgedeckt.
 - **Der `implementer` hat kein `Edit`**, nur `Write`; er schreibt Dateien vollständig neu.
   Bewusst eng gehalten, aber bei großen Dateien teuer.
+- **Der Hook-Aufruf ist relativ zum Arbeitsverzeichnis.** `settings.json` startet
+  `node .harness/guard.ts`, und `guard.ts` sucht `.harness/runs/` ebenfalls relativ. Beides
+  setzt voraus, dass Claude Code den Hook mit dem Projekt-Root als Arbeitsverzeichnis
+  startet. Trifft das einmal nicht zu, findet der Hook sein Skript nicht (Exit 1 — kein
+  Block) oder liest ein leeres `runs/` und hält jeden Aufruf für rollenlos. Bewusst nicht
+  über `$CLAUDE_PROJECT_DIR` abgesichert: ist die Variable nicht gesetzt, ergäbe das
+  `node /.harness/guard.ts` und damit dieselbe stille Wirkungslosigkeit — nur schwerer zu
+  sehen. `.harness/tests/hook.test.ts` prüft den Hook deshalb ausdrücklich mit dem
+  Projekt-Root als Arbeitsverzeichnis und kann diese Grenze nicht abdecken.
 - **`confirm-red` kennt keinen Rundenzähler.** Läuft die Suite unerwartet grün, geht es
   zurück an den `test-author`, ohne dass eine Runde verbraucht wird.

@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.0.5",
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "dev": "concurrently -n server,client -c blue,green \"pnpm dev:server\" \"pnpm dev:client\"",
     "dev:client": "vite",

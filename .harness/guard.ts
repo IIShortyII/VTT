@@ -1,8 +1,19 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env node
 // PreToolUse-Guard (Port von guard.sh, design.md D6/D7). Liest das Tool-JSON von stdin,
 // den active-role-Marker pro Issue vom Skript. Fail-closed: jede unbehandelte Exception
 // blockt statt durchzulassen (Gegenteil des bash-Crash-Verhaltens - dort war ein Absturz
 // gleichbedeutend mit "kein exit 2", also fail-open).
+//
+// BEDINGUNG AN DIESE DATEI (Issue #29): settings.json startet sie als `node .harness/guard.ts`,
+// also OHNE Transpiler - Node strippt die Typen selbst. Diese Datei muss deshalb dauerhaft
+// type-stripping-tauglich bleiben: keine `enum`, keine `namespace`, keine
+// Parameter-Properties, keine Importe lokaler Module (nur `node:`-Builtins). Der Grund fuer
+// das nackte `node`: der Hook laeuft vor JEDEM Werkzeugaufruf, und `pnpm exec tsx` kostet
+// dabei 3,1 s statt 0,44 s. Der Grund gegen `tsx`: es liegt nur in node_modules/.bin, das im
+// PATH der Hook-Shell fehlt - der Hook starb dann mit "command not found", und weil ein
+// PreToolUse-Hook ausschliesslich bei Exit 2 blockt, lief jeder Aufruf durch (still
+// fail-open). Ein Verstoss gegen die Bedingung faellt in .harness/tests/hook.test.ts auf,
+// nicht im Typecheck - ts-jest transpiliert enums klaglos.
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join, resolve as resolvePath } from 'node:path'
 
@@ -230,7 +241,8 @@ export function evaluate(input: Record<string, unknown>, deps: Deps = defaultDep
   }
 }
 
-// Kein import.meta.url-Vergleich: guard.ts wird produktiv per tsx (ESM) ausgefuehrt, aber von
+// Kein import.meta.url-Vergleich: guard.ts wird produktiv per node (ESM, Type-Stripping)
+// ausgefuehrt, aber von
 // ts-jest fuer Tests nach CommonJS transpiliert (siehe .harness/jest.config.cjs) - import.meta
 // ist unter dem commonjs-Modul-Target ein Parse-Fehler, unabhaengig davon, ob der Zweig je
 // ausgefuehrt wuerde. resolvePath normalisiert relative/absolute Formunterschiede von argv[1];

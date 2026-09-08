@@ -9,7 +9,7 @@
       `specs/harness-path-matching/spec.md` ergänzen, je einen Test pro Szenario:
       „Eine Nennung mit Forward-Slashes wird erkannt", „Der bloße Dateiname gilt als Nennung",
       „Ein Name, der auf keine Testdatei des Laufs passt, hält den Lauf nicht an",
-      „Eine Gate-Ausgabe mit Forward-Slash-Nennung wird degradiert", „Getrackte
+      „Eine Gate-Ausgabe, die eine Testdatei beim Namen nennt, wird degradiert", „Getrackte
       Propose-Originale bleiben erhalten", „Untrackte Propose-Originale werden aufgeräumt"
 - [ ] 1.2 Für die beiden Git-Szenarien einen Stellvertreter-Runner (`Sh`) einsetzen, der die
       abgesetzten Kommandos festhält und die Antwort von `git ls-files` vorgibt — geprüft wird

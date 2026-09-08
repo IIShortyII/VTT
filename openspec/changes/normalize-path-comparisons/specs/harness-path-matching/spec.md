@@ -59,10 +59,11 @@ vorbei, und welche der beiden gilt, hinge davon ab, auf welchem Weg der Text kom
 Ihre **Wirkung** bleibt verschieden: der Auftrag bricht ab, ein einzelner Gate-Failure
 degradiert auf die Kurzform (`constitution.md` §8.2 G3).
 
-#### Scenario: Eine Gate-Ausgabe mit Forward-Slash-Nennung wird degradiert
+#### Scenario: Eine Gate-Ausgabe, die eine Testdatei beim Namen nennt, wird degradiert
 
-- **GIVEN** die Ausgabe eines fehlgeschlagenen Szenarios nennt eine existierende Testdatei als
-  Pfad mit Forward-Slashes
+- **GIVEN** die Ausgabe eines fehlgeschlagenen Szenarios nennt eine existierende Testdatei nur
+  mit ihrem Dateinamen, ohne Pfadanteil — die Form, die das Abschneiden vor dem Codeframe nicht
+  erfasst, weil sie kein Verzeichnis enthält
 - **WHEN** der Harness die Gate-Ausgabe für die Weitergabe aufbereitet
 - **THEN** wird dieser Failure auf die Kurzform degradiert und der Vorgang protokolliert,
   während der übrige Lauf weiterläuft

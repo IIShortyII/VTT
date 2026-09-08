@@ -97,7 +97,20 @@ Die Alternative wäre, `src` gar nicht erst über `join()` zu bilden. Sie wird n
 weil `src` auch an `existsSync` und `rmSync` geht — dort ist die native Form richtig. Ein Pfad,
 zwei Verwendungen, zwei Schreibweisen: die Umwandlung gehört an die Stelle, die sie braucht.
 
-### D5 — Die Konventions-Ausnahme aus #22 bleibt unangetastet
+### D5 — Der Erkenner ergänzt `truncateAtTestReference`, er ersetzt es nicht
+
+In `parseJestFailures` läuft vor dem Erkenner bereits `truncateAtTestReference`: es schneidet
+die Ausgabe an der ersten Zeile ab, die einen Codeframe oder `tests/`…/`tests\`… enthält. Eine
+Nennung **mit** Pfadanteil erreicht den Erkenner dort also gar nicht mehr — sie ist längst
+abgeschnitten, und das ist gut so.
+
+Was der Erkenner dort zusätzlich fängt, ist die Form **ohne** Verzeichnis: der bloße Dateiname,
+wie er in Meldungen wie `Cannot find module './x' from 'auth-ui.unit.test.tsx'` auftaucht. Das
+Abschneiden erfasst sie nicht, weil sie kein Trennzeichen enthält. Das Szenario in `spec.md`
+prüft deshalb diese Form — die andere zu prüfen hieße, eine Wirkung zu behaupten, die eine
+frühere Stufe bereits erbracht hat.
+
+### D6 — Die Konventions-Ausnahme aus #22 bleibt unangetastet
 
 Sie beantwortet eine andere Frage: nicht „ist das eine Testdatei", sondern „ist dieser Inhalt
 geheim". Sie greift auf dem Inhalts-Zweig und bleibt dort.

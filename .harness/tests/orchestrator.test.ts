@@ -581,6 +581,45 @@ describe('Material aus dem OpenSpec-Change', () => {
     } finally { cleanup(issue) }
   })
 
+  it('Ein fehlendes Change-Verzeichnis hält den Lauf an und nennt das Verzeichnis', () => {
+    const issue = freshIssue()
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`)
+    }) as never)
+    const meldungen: string[] = []
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation((...a: unknown[]) => { meldungen.push(a.map(String).join(' ')) })
+    try {
+      // Status zeigt auf einen Change, dessen Verzeichnis nie angelegt wurde: readChangeParts
+      // liefert [] und buildImplPrompt schriebe sonst einen gueltig aussehenden Auftrag mit
+      // leerem # Spec-Abschnitt - der implementer implementierte gegen nichts (Issue #33).
+      makeStatus(issue, { change: CHANGE, phase: 'implement' })
+      expect(() => promptVon(() => buildImplPrompt(issue))).toThrow(/process\.exit/)
+      // Das erwartete Verzeichnis muss in der Meldung stehen, damit der Mensch sieht, ob es
+      // fehlt oder der Change-Name in status.json falsch ist - dieselbe Bildung wie in
+      // readChangeParts, in der Schreibweise des Betriebssystems.
+      expect(meldungen.join('\n')).toContain(join(worktreeDir(issue), 'openspec', 'changes', CHANGE))
+    } finally { exitSpy.mockRestore(); errorSpy.mockRestore(); cleanup(issue) }
+  })
+
+  it('Ein existierendes, aber materialloses Verzeichnis hält den Lauf ebenso an', () => {
+    const issue = freshIssue()
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`)
+    }) as never)
+    const meldungen: string[] = []
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation((...a: unknown[]) => { meldungen.push(a.map(String).join(' ')) })
+    try {
+      // Das Verzeichnis existiert, traegt aber keine der Materialdateien - readChangeParts liefert
+      // trotzdem []. Dieser Zweig ist die Rechtfertigung dafuer, parts.length statt existsSync(dir)
+      // zu pruefen (design.md D2); ein Rueckfall auf existsSync kaeme ohne diesen Test gruen durch.
+      const dir = join(worktreeDir(issue), 'openspec', 'changes', CHANGE)
+      mkdirSync(dir, { recursive: true })
+      makeStatus(issue, { change: CHANGE, phase: 'implement' })
+      expect(() => promptVon(() => buildImplPrompt(issue))).toThrow(/process\.exit/)
+      expect(meldungen.join('\n')).toContain(dir)
+    } finally { exitSpy.mockRestore(); errorSpy.mockRestore(); cleanup(issue) }
+  })
+
   it('Jeder Block trägt seine Quelldatei', () => {
     const issue = freshIssue()
     try {

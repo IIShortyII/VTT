@@ -477,6 +477,16 @@ function firstErrorLine(m: string): string {
 export function buildImplPrompt(i: string) {
   const s = readStatus(i)
   const parts = readChangeParts(i, s)
+  // Issue #33: Ein leerer Auftrag entsteht still, wenn der Change-Ordner fehlt oder kein
+  // Material traegt - formatChangeParts([]) liefert '', der Auftrag saehe gueltig aus, und der
+  // implementer implementierte gegen einen leeren # Spec-Abschnitt. Der Fehlschlag faellt sonst
+  // erst Minuten spaeter als rotes Gate auf und verbraucht eine der drei Runden (§3.5), obwohl
+  // er hier mechanisch feststellbar ist (§8.1). Die Pruefung gehoert hierher, nicht in
+  // readChangeParts: dessen zweiter Aufrufer (readChangeSpec/buildTestReworkPrompt) darf mit
+  // einem leeren Change umgehen. Die Meldung nennt das erwartete Verzeichnis in derselben
+  // Bildung wie readChangeParts, damit erkennbar ist, ob es fehlt oder s.change falsch ist.
+  if (parts.length === 0)
+    fail(`Kein Material im erwarteten Change-Verzeichnis ${join(worktreeDir(i), 'openspec', 'changes', s.change ?? i)} — Verzeichnis fehlt oder der Change-Name in status.json ist falsch.`)
   const spec = formatChangeParts(parts)
   const gateFeedback = s.lastGate && !s.lastGate.green
     ? s.lastGate.failures!.map(f => `## ${f.name}\n${f.message}`).join('\n\n') : ''

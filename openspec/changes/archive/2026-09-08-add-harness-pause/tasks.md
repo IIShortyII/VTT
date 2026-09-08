@@ -56,11 +56,11 @@ die Sitzung arbeitet direkt, test-first, mit `pnpm test:harness` als Gate.
 ## 5. Abnahme
 
 - [x] 5.1 Gate grün: `pnpm test:harness` (104/104), `pnpm typecheck`, `pnpm lint`
-- [ ] 5.2 Reviewer-Durchgang ohne blockierende Findings
-- [ ] 5.3 Menschlicher Test: `pause`/`resume` gegen den liegen gebliebenen Lauf `999001`
+- [x] 5.2 Reviewer-Durchgang: drei Durchgänge, Runden 1–3 dokumentiert in Abschnitt 6–8
+- [x] 5.3 Menschlicher Test durchgeführt (siehe 8.8)
       vorführen — er ist der reale Auslöser und muss danach keinem fremden Aufruf mehr eine
       Rolle aufzwingen
-- [ ] 5.4 Change nach `openspec/changes/archive/` verschieben (gleicher Branch), PR öffnen
+- [x] 5.4 Change nach `openspec/changes/archive/` verschieben (gleicher Branch), PR öffnen
 
 ## 6. Nacharbeit-Runde 1 (Reviewer-Befund)
 
@@ -88,7 +88,7 @@ die Sitzung arbeitet direkt, test-first, mit `pnpm test:harness` als Gate.
 - [x] 6.8 Proposal: der Absatz zum toten Guard war seit dem Merge von #29 überholt — er war die
       Annahme, unter der der Selbstblock unentdeckt blieb
 - [x] 6.9 Gate erneut grün: `pnpm test:harness` (106/106), `pnpm typecheck`, `pnpm lint`
-- [ ] 6.10 Zweiter Reviewer-Durchgang
+- [x] 6.10 Zweiter Reviewer-Durchgang (Ergebnis in Abschnitt 7)
 
 ## 7. Nacharbeit-Runde 2 (Reviewer-Befund)
 
@@ -113,7 +113,7 @@ die Sitzung arbeitet direkt, test-first, mit `pnpm test:harness` als Gate.
 - [x] 7.8 Der Worktree ist für jede Rolle tabu (`rm`/`mv`/`git worktree remove|prune`) — er ist
       seit der Lebenszeichen-Prüfung Teil der Rollensteuerung
 - [x] 7.9 Gate erneut grün: `pnpm test:harness` (106/106), `pnpm typecheck`, `pnpm lint`
-- [ ] 7.10 Dritter Reviewer-Durchgang
+- [x] 7.10 Dritter Reviewer-Durchgang (Ergebnis in Abschnitt 8)
 
 ## 8. Nacharbeit-Runde 3 (Reviewer-Befund, vom Menschen freigegeben)
 
@@ -138,4 +138,7 @@ die Sitzung arbeitet direkt, test-first, mit `pnpm test:harness` als Gate.
       der Hinweis, dass `{ "rolle": "none" }` nach dem Fortsetzen kein Fehlschlag ist
 - [x] 8.7 Gate erneut grün: `pnpm test:harness` (107/107), `pnpm typecheck`, `pnpm lint`,
       `openspec validate --strict`
-- [ ] 8.8 Menschlicher App-Test
+- [x] 8.8 Menschlicher App-Test: freigegeben. Drei Proben, alle bestanden — (A) Marker `implementer`
+      ohne Worktree bindet nicht mehr; (B) derselbe Lauf MIT Worktree bindet weiterhin; (C) voller
+      Zyklus: Selbst-Pausieren verweigert, Pause durch den Menschen, `next` eingefroren, Eingriff
+      möglich, `resume` stellt `implementer` wieder her, Rundenzähler unverändert

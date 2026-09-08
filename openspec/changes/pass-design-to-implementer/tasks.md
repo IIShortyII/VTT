@@ -47,18 +47,41 @@
 - [x] 3.3 Ausnahme für Konventionszeilen nach design.md D6: der Wächter überspringt jede
       Zeile, die wörtlich in `AGENTS.md` oder `constitution.md` steht — genau diese beiden
       Dateien, wörtlicher Vergleich, einmal je Aufruf gelesen; verifizieren mit dem Testfall
-      „Eine zitierte Konvention ist kein Leak" **und** mit der Gegenprobe aus 4.2, die den
+      „Eine zitierte Konvention ist kein Leak" **und** mit der Gegenprobe aus 5.2, die den
       Fehlalarm ausgelöst hat
 
-## 4. Abschluss
+## 4. Nacharbeit Runde 1 (Reviewer-Befunde)
 
-- [x] 4.1 `pnpm test:harness` und `pnpm lint` grün
-- [x] 4.2 Gegenprobe am echten Material: für einen archivierten Change mit `design.md`
+- [x] 4.1 **Block:** Der Test „Eine zitierte Konvention ist kein Leak" wies nur den
+      ausbleibenden Abbruch nach, nicht das Ankommen der zitierenden Zeile — eine
+      Implementierung, die sie still herausfiltert, wäre grün gewesen (genau die von
+      `spec.md` verbotene Variante). Zusicherung ergänzt; `spec.md` und die THEN-Klausel um
+      „unverändert im Auftrag ankommen" geschärft
+- [x] 4.2 **Abgelehnt:** zeilenweiser statt Teilstring-Vergleich in `readKonventionen`. Der
+      auslösende Fall steht in `AGENTS.md` nicht als eigene Zeile, sondern eingebettet
+      (`` `/** @jest-environment jsdom */`-Docblock am Dateianfang … ``) — mit
+      Zeilengleichheit griffe die Ausnahme nie und der Fehlalarm wäre zurück. Stattdessen
+      D6 und `spec.md` präzisiert: maßgeblich ist, ob der Inhalt in den Konventionen
+      nachzulesen ist, nicht ob er dort isoliert steht. Der Test hält das Eingebettetsein
+      ausdrücklich fest
+- [x] 4.3 Der Hauptrepo-Zweig aus `readKonventionen` entfernt: der implementer liest die
+      `AGENTS.md` des Worktrees, eine nur auf `main` weitergezogene Fassung wäre für ihn nicht
+      öffentlich. Der Test legt die Konventionsdateien nun im Worktree an, wie es
+      `git worktree add` tut; gegengeprobt an echtem Material — ohne sie Abbruch, mit ihnen
+      Durchlauf
+- [x] 4.4 Testnamen ohne Umlaut-Transliteration auf die Szenarionamen aus `spec.md`
+      zurückgeführt (`AGENTS.md`: Testname = Szenarioname) und die Fundstellen-Zusicherung
+      auf `(Fundstelle: design.md)` verschärft
+
+## 5. Abschluss
+
+- [x] 5.1 `pnpm test:harness` und `pnpm lint` grün
+- [x] 5.2 Gegenprobe am echten Material: für einen archivierten Change mit `design.md`
       (`2026-09-07-add-user-auth`) den Auftrag bauen lassen und prüfen, dass die
       Design-Entscheidungen mit Quellenzeile darin stehen und die Reihenfolge stimmt —
       **mit den echten Testdateien daneben**, damit der Leak-Wächter tatsächlich läuft (in
       dieser Konstellation ist der Fehlalarm aus D6 aufgefallen)
-- [ ] 4.3 Menschliche Freigabe einholen (`constitution.md` §3.4 — kein App-Test, der Change
-      berührt keinen Anwendungscode; geprüft wird die Ausgabe aus 4.2)
-- [ ] 4.4 Change nach `openspec/changes/archive/` verschieben (gleicher Branch/Commit-Bereich)
+- [ ] 5.3 Menschliche Freigabe einholen (`constitution.md` §3.4 — kein App-Test, der Change
+      berührt keinen Anwendungscode; geprüft wird die Ausgabe aus 5.2)
+- [ ] 5.4 Change nach `openspec/changes/archive/` verschieben (gleicher Branch/Commit-Bereich)
       und PR mit `Closes #22` öffnen; menschlicher Merge

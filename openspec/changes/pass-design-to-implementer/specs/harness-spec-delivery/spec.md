@@ -90,11 +90,15 @@ jemand bemerkt.
 Stammt der Treffer aus einer Datei des Change, MUST die Meldung diese Datei benennen. Stammt
 er aus keinem der Blöcke, MUST die Meldung wie bisher lauten.
 
-Der Harness MUST NOT eine Zeile als Leak werten, die wörtlich auch in den kanonischen
-Konventionsdateien des Repositories steht. Der Auftrag verweist den implementer ausdrücklich
-auf diese Dateien; was er ohnehin lesen darf, kann ihm eine Testdatei nicht verraten. Ohne
-diese Ausnahme hielte eine `design.md`, die eine vorgeschriebene Konvention wörtlich zitiert,
-den Lauf an — obwohl sie nichts preisgibt.
+Der Harness MUST NOT eine Zeile als Leak werten, deren Inhalt wörtlich in den kanonischen
+Konventionsdateien des Repositories nachzulesen ist — auch dann nicht, wenn er dort in
+Fließtext eingebettet steht und keine eigene Zeile bildet. Der Auftrag verweist den
+implementer ausdrücklich auf diese Dateien; was er ohnehin lesen darf, kann ihm eine Testdatei
+nicht verraten. Ohne diese Ausnahme hielte eine `design.md`, die eine vorgeschriebene
+Konvention zitiert, den Lauf an — obwohl sie nichts preisgibt.
+
+Die ausgenommene Zeile MUST unverändert im Auftrag ankommen. Die Ausnahme entscheidet allein
+darüber, ob eine Zeile geheim ist; sie ist kein Filter und darf keiner werden.
 
 #### Scenario: Testinhalt in design.md hält den Lauf an und nennt die Datei
 
@@ -111,4 +115,5 @@ den Lauf an — obwohl sie nichts preisgibt.
   Worktrees — weil die Konvention genau das vorschreibt
 - **WHEN** der Harness den Auftrag für den implementer baut
 - **THEN** entsteht der Auftrag ohne Abbruch, und er enthält den Text der `design.md`
+  vollständig — die zitierende Zeile eingeschlossen, unverändert
 

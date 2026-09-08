@@ -115,8 +115,26 @@ gäbe dort etwas zu holen.
 
 ### D6 — Was in den Konventionsdateien steht, ist kein Leak
 
-Der Wächter überspringt jede Zeile, die wörtlich auch in `AGENTS.md` oder `constitution.md`
-steht. Die beiden Dateien werden einmal je Aufruf gelesen und als ein Text durchsucht.
+Der Wächter überspringt jede Testzeile, die wörtlich **im Text** von `AGENTS.md` oder
+`constitution.md` vorkommt. Maßgeblich sind die Fassungen im Worktree des Laufs — die für ihn
+geltenden —, gelesen einmal je Aufruf.
+
+**Teilstring, nicht Zeilengleichheit** — und das ist keine Nachlässigkeit, sondern die
+Bedingung dafür, dass die Ausnahme überhaupt greift. Konventionen stehen in `AGENTS.md` nicht
+als nackte Codezeilen, sondern eingebettet in Fließtext und Backticks. Der auslösende Fall
+steht dort so:
+
+```
+`/** @jest-environment jsdom */`-Docblock am Dateianfang statt globaler jsdom-Umgebung —
+```
+
+Ein Vergleich auf ganze Zeilen fände hier nichts, und der Fehlalarm wäre zurück. Die weitere
+Regel ist auch die richtige: sie fragt nicht, ob eine Zeile in den Konventionen *isoliert*
+steht, sondern ob ihr Inhalt dort nachzulesen ist. Genau das ist das Kriterium — was der
+implementer in einer Datei findet, auf die der Auftrag ihn verweist, kann ihm eine Testdatei
+nicht verraten. Dass dabei auch ein Fragment einer längeren Konventionszeile ausgenommen wird,
+ist die Folge desselben Arguments und keine Lücke: das Fragment steht wörtlich in einer Datei,
+die er lesen darf.
 
 Der Anlass ist kein hypothetischer. Die Gegenprobe an der echten `design.md` von #12 hat den
 Wächter ausgelöst — an der Zeile `/** @jest-environment jsdom */`. Sie steht dort in
@@ -132,8 +150,15 @@ verweist ihn im Abschnitt „Konventionen" ausdrücklich auf beide Dateien — e
 ohnehin lesen. Eine Zeile, die dort steht, kann ihm eine Testdatei nicht verraten; sie über
 den Umweg der Testdatei zu verbieten, wäre eine Regel ohne Schutzwirkung.
 
-Die Grenze ist eng gezogen: **genau diese beiden Dateien**, wörtlicher Vergleich, kein Muster,
-keine Ähnlichkeit, kein Verzeichnis. `AGENTS.md` und `constitution.md` sind die kanonischen
-Konventionsdateien des Repositories (`CLAUDE.md` bindet beide ein) und enthalten selbst keine
-Tests. Eine weiter gefasste Ausnahme — etwa „alles, was in irgendeiner Markdown-Datei steht" —
-wäre der Punkt, an dem der Wächter aufhörte, einer zu sein.
+Die Grenze ist eng gezogen: **genau diese beiden Dateien**, **nur im Worktree des Laufs**,
+wörtlicher Vergleich, kein Muster, keine Ähnlichkeit, kein Verzeichnis. `AGENTS.md` und
+`constitution.md` sind die kanonischen Konventionsdateien des Repositories (`CLAUDE.md` bindet
+beide ein) und enthalten selbst keine Tests. Eine weiter gefasste Ausnahme — etwa „alles, was
+in irgendeiner Markdown-Datei steht" — wäre der Punkt, an dem der Wächter aufhörte, einer zu
+sein.
+
+Die Fassung im **Hauptrepo** zählt bewusst nicht mit, obwohl der Orchestrator selbst dort
+läuft. Der implementer arbeitet im Worktree und liest dessen `AGENTS.md`; eine Zeile, die nur
+in der inzwischen weitergezogenen Fassung auf `main` steht, wäre für ihn nicht öffentlich, und
+die Begründung dieser Ausnahme trüge für sie nicht. Fehlen die Dateien im Worktree, greift
+keine Ausnahme — der Wächter fällt dann auf die strengere Seite.

@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, copyFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   readStatus, writeStatus, next, reviewRework, confirmTestRework, confirmAppReview, checkPreflight,
@@ -559,7 +559,7 @@ describe('Material aus dem OpenSpec-Change', () => {
     } finally { cleanup(issue) }
   })
 
-  it('Ein Change ohne design.md ergibt einen Auftrag ohne Luecke', () => {
+  it('Ein Change ohne design.md ergibt einen Auftrag ohne Lücke', () => {
     const issue = freshIssue()
     try {
       makeChange(issue) // keine design.md
@@ -571,7 +571,7 @@ describe('Material aus dem OpenSpec-Change', () => {
     } finally { cleanup(issue) }
   })
 
-  it('Jeder Block traegt seine Quelldatei', () => {
+  it('Jeder Block trägt seine Quelldatei', () => {
     const issue = freshIssue()
     try {
       makeChange(issue, { design: DESIGN, specs: { auth: SPEC_A, session: SPEC_B } })
@@ -602,7 +602,7 @@ describe('Material aus dem OpenSpec-Change', () => {
     } finally { cleanup(issue) }
   })
 
-  it('Testinhalt in design.md haelt den Lauf an und nennt die Datei', () => {
+  it('Testinhalt in design.md hält den Lauf an und nennt die Datei', () => {
     const issue = freshIssue()
     const exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`process.exit(${code})`)
@@ -619,7 +619,7 @@ describe('Material aus dem OpenSpec-Change', () => {
       expect(() => promptVon(() => buildImplPrompt(issue))).toThrow(/process\.exit/)
       const meldung = meldungen.join('\n')
       expect(meldung).toContain('auth.integration.test.ts') // die betroffene Testdatei
-      expect(meldung).toContain('design.md')                // die Fundstelle im Change
+      expect(meldung).toContain('(Fundstelle: design.md)')  // als Fundstelle ausgewiesen, nicht bloss erwaehnt
     } finally { exitSpy.mockRestore(); errorSpy.mockRestore(); cleanup(issue) }
   })
 
@@ -633,17 +633,28 @@ describe('Material aus dem OpenSpec-Change', () => {
       // Der Docblock, den AGENTS.md fuer Komponententests vorschreibt: er steht dort und steht
       // deshalb notwendig auch in jeder solchen Testdatei. Die Zeile stammt aus AGENTS.md
       // selbst, nicht aus einer Kopie hier - sonst pruefte der Test eine eigene Behauptung
-      // statt der Konvention.
+      // statt der Konvention. Sie steht dort NICHT als eigene Zeile, sondern in Fliesstext und
+      // Backticks eingebettet; ein Vergleich auf ganze Zeilen faende sie nie (design.md D6).
       const konvention = '/** @jest-environment jsdom */'
-      expect(readFileSync('AGENTS.md', 'utf8')).toContain(konvention)
+      const agents = readFileSync('AGENTS.md', 'utf8')
+      expect(agents).toContain(konvention)
+      expect(agents.split('\n').map(l => l.trim())).not.toContain(konvention)
 
-      makeChange(issue, { design: `${DESIGN}\nD10 - Testaufbau: Docblock ${konvention} am Dateianfang.` })
+      // Der Worktree traegt seine eigene AGENTS.md - so, wie git worktree add ihn anlegt. Nur
+      // diese Fassung zaehlt (D6): die im Hauptrepo kann weitergezogen sein.
+      const zitat = `D10 - Testaufbau: Docblock ${konvention} am Dateianfang.`
+      makeChange(issue, { design: `${DESIGN}\n${zitat}` })
+      copyFileSync('AGENTS.md', join(worktreeDir(issue), 'AGENTS.md'))
       const testDir = join(worktreeDir(issue), 'tests')
       mkdirSync(testDir, { recursive: true })
       writeFileSync(join(testDir, 'auth-ui.unit.test.tsx'), `${konvention}\n`)
 
       const prompt = promptVon(() => buildImplPrompt(issue))
+      // Die zitierende Zeile muss ANKOMMEN, nicht bloss den Abbruch vermeiden: eine
+      // Implementierung, die sie still herausfiltert, waere sonst ebenfalls gruen - genau die
+      // Variante, die spec.md dem Waechter verbietet.
       expect(prompt).toContain(DESIGN)
+      expect(prompt).toContain(zitat)
     } finally { exitSpy.mockRestore(); errorSpy.mockRestore(); cleanup(issue) }
   })
 })

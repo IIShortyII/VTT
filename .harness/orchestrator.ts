@@ -521,17 +521,24 @@ function assertNoTestLeak(prompt: string, i: string, parts: ChangePart[] = []) {
 // im Abschnitt "Konventionen" ausdruecklich auf beide Dateien; was er ohnehin lesen darf, kann
 // ihm eine Testdatei nicht verraten.
 //
-// Die Grenze ist eng: genau diese beiden Dateien, woertlicher Vergleich, kein Muster. Beide
-// Fassungen zaehlen - die im Worktree (die fuer den Lauf geltende) und die im Hauptrepo, in
-// dem der Orchestrator selbst laeuft; die Zeile ist in jeder von ihnen gleich oeffentlich.
+// Verglichen wird als TEILSTRING ueber den ganzen Text, nicht zeilenweise - und das ist die
+// Bedingung dafuer, dass die Ausnahme ueberhaupt greift: Konventionen stehen in AGENTS.md
+// eingebettet in Fliesstext und Backticks, der ausloesende Fall als
+// "`/** @jest-environment jsdom */`-Docblock am Dateianfang statt globaler jsdom-Umgebung —".
+// Ein Vergleich auf ganze Zeilen faende dort nichts. Die Frage ist nicht, ob eine Zeile in den
+// Konventionen isoliert steht, sondern ob ihr Inhalt dort nachzulesen ist.
+//
+// Nur die Fassungen im WORKTREE zaehlen, nicht die im Hauptrepo, in dem der Orchestrator
+// laeuft: der implementer arbeitet im Worktree und liest dessen AGENTS.md. Eine Zeile, die nur
+// in der weitergezogenen Fassung auf main steht, waere fuer ihn nicht oeffentlich. Fehlen die
+// Dateien, greift keine Ausnahme - der Waechter faellt auf die strengere Seite.
 const KONVENTIONSDATEIEN = ['AGENTS.md', 'constitution.md']
 function readKonventionen(i: string): string {
   const texte: string[] = []
-  for (const ort of [worktreeDir(i), '.'])
-    for (const datei of KONVENTIONSDATEIEN) {
-      const p = join(ort, datei)
-      if (existsSync(p)) texte.push(readFileSync(p, 'utf8'))
-    }
+  for (const datei of KONVENTIONSDATEIEN) {
+    const p = join(worktreeDir(i), datei)
+    if (existsSync(p)) texte.push(readFileSync(p, 'utf8'))
+  }
   return texte.join('\n')
 }
 // G2 (schema-gebundene Rollen-Summaries): eine vom Schema abweichende Reviewer-Antwort

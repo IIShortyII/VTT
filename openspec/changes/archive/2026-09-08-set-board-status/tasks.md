@@ -84,5 +84,5 @@
       Ergebnis auf Project 3 kontrollieren; danach prüfen, dass ein Lauf mit unerreichbarem
       Board (etwa `PATH` ohne `gh`) dieselbe Aktion liefert und nur eine Zeile in `board.log`
       hinterlässt
-- [ ] 5.3 Change nach `openspec/changes/archive/` verschieben (gleicher Commit-Bereich) und PR
+- [x] 5.3 Change nach `openspec/changes/archive/` verschieben (gleicher Commit-Bereich) und PR
       mit `Closes #26` öffnen; menschlicher Merge

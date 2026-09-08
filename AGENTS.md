@@ -22,6 +22,8 @@ und NPC-Tokens.
   (`test.db`), die pro Lauf angelegt, migriert und danach gelöscht wird. Kein Docker nötig.
 - Alle Tests: `pnpm test`
 - Harness-eigene Tests: `pnpm test:harness`
+- Board-Status setzen: `pnpm harness board <issue> <status>` — den übrigen Status setzt der
+  Loop selbst (siehe Board-Status)
 - Prisma-Client generieren: `pnpm db:generate`
 - Migrationen führt der Agent nicht aus. Er schreibt das Schema unter `prisma/`; das
   Ausführen ist menschlich (constitution.md §5.1) bzw. Sache der CI (§6.1).
@@ -89,6 +91,37 @@ Bibliothek im Projekt sie mitbringt.
   `.harness/runs/<issue>/`, nicht im Worktree — vermeidet Commit-Rauschen).
 - Fehlerfeedback an den Implementer enthält die vollständige Matcher-Ausgabe (Diff,
   DOM-Ausgabe) bis zur Codeframe-/Stacktrace-Grenze, nie Testquellcode.
+
+## Board-Status
+Der Harness setzt den Status des Issues auf dem GitHub-Project „VTT" **zu Beginn** jedes
+Schritts — damit der Fortschritt auch außerhalb der laufenden Sitzung sichtbar ist
+(constitution.md §7.4).
+
+| Status | wird gesetzt … |
+|---|---|
+| Spec | von der Session zu Beginn der Spezifikation: `pnpm harness board <issue> spec` |
+| Test rot | wenn `confirm-red` das Rot **bestätigt** — ein Rot aus dem falschen Grund (§3.1) nicht |
+| Implementierung | bei jedem Einstieg in einen Implementierungsschritt, Nacharbeit eingeschlossen |
+| Gate + Review | beim Start des Gates, vor Typecheck/Lint/Testlauf |
+| App-Test (Mensch) | wenn der Loop den manuellen Test ankündigt |
+| Fertig | bei `pnpm harness cleanup`, aber nur wenn das Issue geschlossen (also gemergt) ist |
+
+- „Backlog" setzt niemand — das ist der Ausgangszustand des Boards.
+- **Der Statuswechsel ist Beiwerk, keine Invariante.** Ein nicht erreichbares Board, ein
+  abgelaufenes Token oder ein fehlendes Item halten den Lauf nicht an: eine Warnung auf stderr
+  und eine Zeile in `.harness/runs/<issue>/board.log`, sonst nichts. Auch erfolgreiche Wechsel
+  stehen im Log — es ist die Antwort auf „warum steht das Board falsch".
+- **Kill-Switch `HARNESS_BOARD=off`** schaltet jeden Board-Zugriff ab. Die Harness-Jest-Config
+  setzt ihn, damit Tests keine echten `gh`-Aufrufe absetzen; dem Menschen dient er als
+  Notausschalter.
+- **Grenze des Schreibzugriffs (constitution.md §5.3, autonom):** ausschließlich das Statusfeld
+  eines **bereits vorhandenen** Items des laufenden Issues im Project „VTT". Kein Anlegen oder
+  Entfernen von Items, kein anderes Feld, kein anderes Projekt, und der Status stammt aus einer
+  festen Tabelle in `.harness/board.ts` — ein unbekanntes Statuswort führt zu keinem Zugriff.
+  Die Grenze ist Mechanik, nicht Absichtserklärung (§8.1).
+- Der Harness **liest** das Board nie. Wer eine Spalte von Hand verschiebt, ändert am Lauf
+  nichts.
+- Voraussetzung: `gh` mit `project`-Scope (`gh auth refresh -s project`).
 
 ## Kritische Grenzen (immer)
 - Niemals Secrets/Credentials committen oder ausgeben.

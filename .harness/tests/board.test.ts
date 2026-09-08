@@ -11,7 +11,7 @@ type Call = string[]
 const queryOf = (args: Call) => args.find(a => a.startsWith('query='))?.slice('query='.length) ?? ''
 const isMutation = (args: Call) => /\bmutation\b/.test(queryOf(args))
 
-const ITEM_RESPONSE = (projectId = BOARD.projectId) =>
+const ITEM_RESPONSE = (projectId: string = BOARD.projectId) =>
   JSON.stringify({ data: { repository: { issue: { projectItems: { nodes: [{ id: 'PVTI_test', project: { id: projectId } }] } } } } })
 const MUTATION_RESPONSE = JSON.stringify({ data: { updateProjectV2ItemFieldValue: { projectV2Item: { id: 'PVTI_test' } } } })
 

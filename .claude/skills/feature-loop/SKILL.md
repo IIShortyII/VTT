@@ -7,6 +7,12 @@ description: Fährt eine Arbeitseinheit (OpenSpec-Change) durch den TDD-Loop mit
 Du bist der Orchestrator. Du **sequenzierst** die Rollen; alle harten Entscheidungen triffst
 du NICHT selbst, sondern rufst `pnpm harness <verb>` und befolgst dessen Ausgabe.
 
+Noch **vor** dem Start, sobald die Spezifikation des Change beginnt (`/opsx:propose`):
+`pnpm harness board <issue> spec`. Das ist der einzige Statuswechsel, den der Automat nicht
+selbst auslöst — zu dem Zeitpunkt kennt er das Issue noch gar nicht. Alle weiteren setzt der
+Loop von allein (siehe AGENTS.md, „Board-Status"). Schlägt der Aufruf fehl, ist das kein Grund
+anzuhalten: er meldet es und du machst weiter.
+
 Start: `pnpm harness start <issue> <change>`. Danach nach *jedem* Schritt erneut
 `pnpm harness next <issue>` fragen und die zurückgegebene Aktion ausführen — nie den
 nächsten Schritt raten:

@@ -50,6 +50,11 @@ weiterläuft, wäre keiner (G1).
   jedem zweiten Change still. Was der implementer zu tun hat, steht in den Requirements.
 - **Kein Zugriff des implementer auf den Change-Ordner selbst.** Das Extrakt bleibt der einzige
   Weg; es ist die Stelle, an der der Leak-Wächter greift.
+- **Der wirkungslose Pfad-Vergleich im Leak-Wächter.** Bei der Arbeit an diesem Change ist
+  aufgefallen, dass `assertNoTestLeak` Testpfade gegen den vollen Worktree-Pfad in nativer
+  Schreibweise prüft und eine übliche Nennung (`tests/foo.test.ts`) deshalb nie trifft. Das
+  ist derselbe Defekt wie in #21 und dort dokumentiert — er wird nicht hier miterledigt,
+  sondern in dem Change, der die Pfad-Schreibweise im Harness insgesamt geraderückt.
 - Die übrigen Befunde aus Epic #27 (#21, #24, #25) — jeder bekommt seinen eigenen Change.
 
 ## Capabilities

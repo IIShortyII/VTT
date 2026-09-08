@@ -11,8 +11,8 @@
       vor den Anforderungen" (Reihenfolge über Indexvergleich, nicht über einen erwarteten
       Gesamtstring), „Ein Change ohne design.md ergibt einen Auftrag ohne Lücke", „Jeder Block
       trägt seine Quelldatei" (vier Blöcke, zwei Capabilities), „Die Test-Nacharbeit sieht
-      dieselben Entscheidungen" (Vergleich der Spec-Anteile beider Prompt-Bauer), „Ein
-      Testpfad in design.md hält den Lauf an und nennt die Datei"
+      dieselben Entscheidungen" (Vergleich der Spec-Anteile beider Prompt-Bauer),
+      „Testinhalt in design.md hält den Lauf an und nennt die Datei"
 - [ ] 1.2 Hilfsfunktion für die Testfälle: legt im Worktree eines frischen Issues einen
       Change-Ordner mit wählbaren Dateien an (`proposal.md`, `design.md`, Capabilities) und
       schreibt den Change-Namen nach `status.json`; die Ausgabe von `buildImplPrompt` /
@@ -26,8 +26,9 @@
 - [ ] 2.1 `readChangeParts(issue, status)` in `.harness/orchestrator.ts` anlegen: liefert
       `{ quelle, text }[]` in der Reihenfolge `proposal.md`, `design.md`,
       `specs/<capability>/spec.md` (design.md D1/D3); `quelle` ist der Pfad relativ zum
-      Change-Verzeichnis, fehlende Dateien erzeugen keinen Block (D5); verifizieren mit den
-      Testfällen zu Reihenfolge und fehlender `design.md`
+      Change-Verzeichnis, **mit Forward-Slashes** und nicht über `join()` gebildet (D2),
+      fehlende Dateien erzeugen keinen Block (D5); verifizieren mit den Testfällen zu
+      Reihenfolge und fehlender `design.md`
 - [ ] 2.2 `readChangeSpec` auf `readChangeParts` setzen und die Blöcke mit vorangestellter
       Zeile `## Quelle: <pfad>` verketten, Trennung wie bisher `\n\n---\n\n` (D2); Signatur und
       Rückgabetyp bleiben unverändert; verifizieren mit den Testfällen „Jeder Block trägt seine

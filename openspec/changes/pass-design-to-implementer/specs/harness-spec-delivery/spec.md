@@ -90,9 +90,10 @@ jemand bemerkt.
 Stammt der Treffer aus einer Datei des Change, MUST die Meldung diese Datei benennen. Stammt
 er aus keinem der Blöcke, MUST die Meldung wie bisher lauten.
 
-#### Scenario: Ein Testpfad in design.md hält den Lauf an und nennt die Datei
+#### Scenario: Testinhalt in design.md hält den Lauf an und nennt die Datei
 
-- **GIVEN** die `design.md` eines Change nennt den Pfad einer existierenden Testdatei
+- **GIVEN** die `design.md` eines Change enthält eine Zeile, die wörtlich so auch in einer
+  Testdatei des Worktrees steht
 - **WHEN** der Harness den Auftrag für den implementer baut
 - **THEN** bricht der Aufbau ab, und die Meldung nennt sowohl die betroffene Testdatei als auch
   `design.md` als Fundstelle

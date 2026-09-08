@@ -60,6 +60,12 @@ eigenen Abschnitte (`# Spec`, `# Konventionen`) so gliedert; ein `#` mitten im S
 würde die Spec optisch beenden. Der Pfad ist relativ, weil ein absoluter Pfad den
 Worktree-Ort in den Prompt trüge, ohne dass die Rolle damit etwas anfangen kann.
 
+Geschrieben wird er mit **Forward-Slashes**, unabhängig vom Betriebssystem — `specs/auth/spec.md`,
+nie `specs\auth\spec.md`. Der Pfad ist hier Text für einen Leser, keine Pfadangabe für das
+Dateisystem, und er soll in der Form erscheinen, in der der Change ihn selbst überall führt.
+Ein aus `join()` entstandener Backslash-Pfad wäre zudem genau die Klasse von Fehler, die
+Issue #21 an zwei anderen Stellen des Harness aufarbeitet.
+
 ### D3 — Die Blöcke entstehen als Liste, der String erst danach
 
 `readChangeSpec` wird auf eine interne Funktion `readChangeParts(issue, status)` gesetzt, die
@@ -89,6 +95,14 @@ Der Abbruch bleibt hart. Filtern würde die betroffene Zeile aus dem Auftrag ent
 Lauf weiterlaufen lassen — mit einer Spec, die der implementer nur unvollständig sieht, ohne
 dass es jemand merkt. Ein Leak-Treffer in `design.md` ist ein Fehler in der `design.md`, und
 den behebt der Mensch dort.
+
+**Bekannte Schwäche, hier bewusst nicht behoben:** Von den beiden Bedingungen des Wächters
+trägt heute nur die zweite. Der Pfad-Vergleich läuft gegen den vollen Worktree-Pfad in
+nativer Schreibweise (`.harness\wt\<issue>\tests\…`) und trifft eine übliche Nennung wie
+`tests/auth.integration.test.ts` nie. Das ist ein eigener Defekt derselben Klasse wie #21 und
+dort dokumentiert; dieser Change lässt Wirkung und Härte des Wächters unverändert und ergänzt
+allein die Fundstellen-Angabe. Das Szenario in `spec.md` prüft deshalb den Inhalts-Zweig —
+den, der trägt.
 
 ### D5 — Fehlende Dateien sind der Normalfall, kein Sonderfall
 

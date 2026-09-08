@@ -586,7 +586,15 @@ export function cleanup(i: string, run?: GhRunner) {
 // vollem Pfad (Review-Befund).
 function readRunOrFail(i: string, was: string): Status {
   if (!existsSync(statusPath(i))) fail(`Kein Lauf "${i}" — nichts ${was}.`)
-  return readStatus(i)
+  try {
+    return readStatus(i)
+  } catch (e) {
+    // Dieselbe Fehlerklasse wie beim vertippten `phase`: waehrend der Pause korrigiert der
+    // Mensch status.json von Hand, ein Komma zu viel ist dort so wahrscheinlich wie ein
+    // Buchstabendreher. Nur die Fehlerklasse ausgeben, nicht die volle Meldung - die enthaelt
+    // den vollen Dateipfad (wie in parseJestFailures).
+    return fail(`Run-State von "${i}" ist nicht lesbar (${(e as Error).name}) — status.json prüfen.`)
+  }
 }
 export function pause(i: string, grund?: string) {
   // Der Grund wird VOR dem Run-State geprueft: eine Pause ohne festgehaltenen Anlass waere

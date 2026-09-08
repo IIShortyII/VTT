@@ -11,7 +11,7 @@ bei der beide Dateien für sich stimmig aussehen und der Guard trotzdem das Fals
 `none` ist zudem schon heute der Wert, den `soleActiveRole()` herausfiltert; die Pause braucht
 im Guard also gar keine eigene Kenntnis, sie fällt in eine bestehende Regel.
 
-Der *Pausenzustand* selbst (Grund, Zeitpunkt, erfolgte Rundenrückgabe) gehört dagegen in
+Der *Pausenzustand* selbst (Grund, Zeitpunkt) gehört dagegen in
 `status.json` unter ein Feld `paused`: das ist der Run-State, den `readStatus()` ohnehin lädt,
 und der Ort, an dem der Orchestrator alle seine Entscheidungen herleitet. Der Guard liest ihn
 nicht — er muss nur wissen, dass keine Rolle aktiv ist, und das steht im Marker.
@@ -151,9 +151,9 @@ so steht es in `AGENTS.md` und in der Skill-Datei.
 
 Das entwertet den Change nicht, es verschiebt nur, was er einlöst. Vorher schrieb der Mensch
 eine Steuerdatei von Hand, undokumentiert und ohne dass der Automat davon wusste. Jetzt tippt
-er ein Verb mit Pflichtgrund, der Lauf friert nachweislich ein, die Rückgabe einer Runde wird
-protokolliert, und `resume` stellt die richtige Rolle wieder her, ohne dass er wissen muss,
-welche. Genau das hat Issue #23 verlangt.
+er ein Verb mit Pflichtgrund, der Lauf friert nachweislich ein, und `resume` stellt die richtige
+Rolle wieder her, ohne dass er wissen muss, welche. Genau das hat Issue #23 verlangt. Was der
+Change darüber hinaus *nicht* liefert — die Rückgabe einer Runde —, begründet D4.
 
 **Bewusst akzeptierte Grenze:** die Pause entwaffnet nicht nur die Sitzung, sondern jeden
 gerade laufenden Aufruf — der Marker steht auf `none`, damit greift für niemanden mehr eine

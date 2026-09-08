@@ -406,9 +406,27 @@ describe('Ein Lauf ohne Worktree beansprucht keine Rolle', () => {
         expect([rolle, cmd, result.blocked]).toEqual([rolle, cmd, true])
       }
     }
-    // Der Arbeitsbereich selbst bleibt erreichbar - `.harness/wt/` steht in fast jedem
-    // legitimen Aufruf einer Rolle.
+    // Der Arbeitsbereich INNERHALB des Worktrees bleibt erreichbar - verboten ist die Wurzel,
+    // nicht ihr Inhalt. Ohne diese Faelle blieb die erste Fassung des Musters ueberdehnt und
+    // sperrte den Rollen ihren eigenen Bereich (Review-Befund Runde 3): der implementer hat kein
+    // Delete-Werkzeug, er loescht zwangslaeufig ueber Bash.
     expect(evaluate(bash('cat .harness/wt/12/src/x.ts'), { readRole: () => 'implementer' }).blocked).toBe(false)
+    expect(evaluate(bash('rm .harness/wt/23/src/veraltet.ts'), { readRole: () => 'implementer' }).blocked).toBe(false)
+    expect(evaluate(bash('mv .harness/wt/23/tests/a.test.ts .harness/wt/23/tests/b.test.ts'), { readRole: () => 'test-author' }).blocked).toBe(false)
+    // Mehrzeilig: ein beliebiges `rm` in Zeile 1 darf sich nicht mit einer spaeteren Zeile
+    // verbinden, die den Worktree nur erwaehnt.
+    expect(evaluate(bash('rm build.log\ncd .harness/wt/23 && pnpm lint'), { readRole: () => 'implementer' }).blocked).toBe(false)
+  })
+
+  it('Eine Rolle darf den Rollenmarker nicht überschreiben', () => {
+    // Gegenstueck zum Verb-Tabu: die Spec begruendet dieses mit "derselben Begruendung wie beim
+    // Zugriff auf die Steuerdateien" - dann muss der Zugriff fuer dieselbe Rollenmenge gesperrt
+    // sein. Der reviewer war es bis Runde 3 nicht und konnte sich in einem Schritt entwaffnen.
+    for (const rolle of ['implementer', 'test-author', 'reviewer']) {
+      const deps = { readRole: () => rolle }
+      expect([rolle, evaluate(bash('echo none > .harness/runs/23/active-role'), deps).blocked]).toEqual([rolle, true])
+      expect([rolle, evaluate(write('.harness/runs/23/active-role'), deps).blocked]).toEqual([rolle, true])
+    }
   })
 
   it('Ein direkt adressierter Lauf bleibt von der Prüfung unberührt', () => {

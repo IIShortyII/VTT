@@ -114,3 +114,28 @@ die Sitzung arbeitet direkt, test-first, mit `pnpm test:harness` als Gate.
       seit der Lebenszeichen-Prüfung Teil der Rollensteuerung
 - [x] 7.9 Gate erneut grün: `pnpm test:harness` (106/106), `pnpm typecheck`, `pnpm lint`
 - [ ] 7.10 Dritter Reviewer-Durchgang
+
+## 8. Nacharbeit-Runde 3 (Reviewer-Befund, vom Menschen freigegeben)
+
+- [x] 8.1 **Block:** `WORKTREE_TABOO` war überdehnt — es traf jeden `rm`/`mv` auf einen Pfad
+      *innerhalb* eines Worktrees, sperrte dem implementer also das Löschen einer eigenen
+      Quelldatei und dem test-author das Umbenennen eines Tests (beide haben kein
+      Delete-Werkzeug, das läuft zwangsläufig über Bash). Jetzt auf die Worktree-**Wurzel**
+      geankert, `\n` aus der Lücke genommen; drei Negativfälle im Test halten das fest
+- [x] 8.2 **Block:** `design.md` behauptete an zwei Stellen noch die gestrichene
+      Rundenrückgabe — D1 als Feld des Pausenzustands, D6 als geliefertes Ergebnis, zwei
+      Abschnitte unter D4, der ihre Streichung begründet
+- [x] 8.3 Das Steuerdatei-Tabu gilt jetzt für jede Rolle (Regel 0 und Write/Edit): die Spec
+      begründet das Verb-Tabu mit „derselben Begründung wie beim Zugriff auf die
+      Steuerdateien" — der galt für den `reviewer` nie, er konnte sich in einem Schritt
+      entwaffnen
+- [x] 8.4 Drift-Test um `done/Preflight grün` und `gate/rot an der Rundengrenze` erweitert —
+      die zwei Verzweigungen, die nicht am Run-State hängen. Nachgeprüft, dass der
+      Preflight-grün-Fall den Übergang `done → archived` wirklich durchläuft
+- [x] 8.5 `readRunOrFail` meldet auch ein unlesbares `status.json` sauber (nur die
+      Fehlerklasse, nicht den vollen Pfad) — dieselbe Handkorrektur-Fehlerklasse wie 6.5
+- [x] 8.6 `AGENTS.md`: Rollenableitung aus dem gesamten Run-State statt nur der Phase, plus
+      der Hinweis, dass `{ "rolle": "none" }` nach dem Fortsetzen kein Fehlschlag ist
+- [x] 8.7 Gate erneut grün: `pnpm test:harness` (107/107), `pnpm typecheck`, `pnpm lint`,
+      `openspec validate --strict`
+- [ ] 8.8 Menschlicher App-Test

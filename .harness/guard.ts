@@ -63,9 +63,17 @@ const CONTROL_VERB_TABOO = /\b(?:harness|orchestrator\.ts)\s+(?:pause|resume)\b/
 // Der Worktree ist seit add-harness-pause Teil der Rollensteuerung: die Rollenermittlung nimmt
 // seine Existenz als Lebenszeichen. Wer ihn entfernt, erklaert seinen eigenen Lauf fuer tot und
 // macht damit jeden Aufruf ohne ableitbares Issue rollenlos - also ungeprueft. Deshalb dasselbe
-// Tabu wie fuer den Rollenmarker. Bewusst nur die zerstoerenden Kommandos: `.harness/wt/` steht
-// in fast jedem legitimen Aufruf einer Rolle, dort liegt ihr Arbeitsbereich.
-const WORKTREE_TABOO = /\b(?:rm|rmdir|mv)\b[^|;&]*\.harness\/wt\/|\bgit\s+worktree\s+(?:remove|prune)\b/
+// Tabu wie fuer den Rollenmarker.
+//
+// Verboten ist die WURZEL, nicht ihr Inhalt: `.harness/wt/<issue>` (mit oder ohne Schraegstrich
+// am Ende), gefolgt von Leerzeichen, Anfuehrungszeichen oder Zeilenende. Ein Muster, das jeden
+// Pfad UNTERHALB des Worktrees erfasst, sperrte den Rollen ihren eigenen Arbeitsbereich:
+// `rm .harness/wt/23/src/veraltet.ts` (der implementer hat kein Delete-Werkzeug, das laeuft
+// zwangsläufig ueber Bash) und `mv .../tests/a.test.ts .../tests/b.test.ts` (test-author
+// benennt um) waeren geblockt - mit einer Begruendung, die den Aufrufer in die Irre schickt
+// (Review-Befund Runde 3). Auch `\n` gehoert aus der Luecke heraus, sonst verbindet ein
+// mehrzeiliges Kommando ein beliebiges `rm` mit einer spaeteren Zeile, die den Worktree nennt.
+const WORKTREE_TABOO = /\b(?:rm|rmdir|mv)\b[^|;&\n]*\.harness\/wt\/[^/\s'"]+\/?(?=[\s'"]|$)|\bgit\s+worktree\s+(?:remove|prune)\b/
 // ---------------------------------------------------------------------------------------------
 
 const norm = (p: string): string => p.replace(/\\/g, '/')
@@ -197,6 +205,13 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
   //    Der Worktree steht in derselben Regel, aus demselben Grund und ebenfalls fuer jede Rolle:
   //    seit die Rollenermittlung ihn als Lebenszeichen liest, entwaffnet sich, wer ihn entfernt.
   if (cmd && role !== '' && role !== 'none') {
+    // Die Steuerdateien selbst stehen hier und nicht mehr im Block fuer implementer/test-author:
+    // die Spec verweist fuer das Verb-Tabu auf "dieselbe Begruendung wie beim Zugriff auf die
+    // Steuerdateien" - dann muss dieser Zugriff auch fuer dieselbe Rollenmenge gesperrt sein.
+    // Sonst koennte der reviewer sich in einem Schritt entwaffnen (`echo none > ...active-role`)
+    // und danach greift fuer ihn keine Regel mehr, das Verb-Tabu eingeschlossen (Review-Befund).
+    if (CONTROL_FILE_TABOO.test(norm(cmd)))
+      return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu.' }
     if (CONTROL_VERB_TABOO.test(norm(cmd)))
       return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu — pausieren und fortsetzen ist Sache des Menschen (`pnpm harness pause <issue> "<grund>"` in seiner eigenen Shell).' }
     if (WORKTREE_TABOO.test(norm(cmd)))
@@ -206,6 +221,10 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
   // 1) Write/Edit/Read ueber file_path.
   if (path) {
     const isWrite = /Write|Edit/.test(tool)
+    // Der Rollenmarker ist fuer JEDE Rolle unantastbar, nicht nur fuer die mit Schreibbereich -
+    // ein Write darauf ist derselbe Selbstentwaffnungsschritt wie `echo none > ...` (Regel 0).
+    if (isWrite && role !== '' && role !== 'none' && CONTROL_FILE_TABOO.test(norm(path)))
+      return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu.' }
     if (role === 'implementer') {
       if (isTest(path)) return { blocked: true, message: 'Blockiert: implementer darf Testdateien nicht lesen/ändern.' }
       if (isWrite && !isSrc(path)) return { blocked: true, message: 'Blockiert: implementer schreibt nur in src/ oder prisma/.' }

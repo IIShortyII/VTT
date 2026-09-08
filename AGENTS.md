@@ -140,9 +140,14 @@ Sitzung, solange der Marker auf einer Rolle steht.
   verweigern und verweisen auf `resume`. Ohne diese Sperre würde der nächste Schrittwechsel
   den Marker über `emit()` neu setzen und die Pause stumm beenden.
 - `pnpm harness resume <issue>` beendet die Pause und stellt die Rolle des Schritts wieder
-  her, in dem der Lauf **jetzt** steht — abgeleitet aus der Phase, nicht aus einem bei `pause`
-  gesicherten Wert. Während der Pause korrigiert der Mensch den Lauf; ein gesicherter Wert
-  wäre danach womöglich die Rolle des falschen Schritts (§8.3).
+  her, in dem der Lauf **jetzt** steht — abgeleitet aus dem gesamten Run-State, nicht nur aus
+  der Phase und nicht aus einem bei `pause` gesicherten Wert. Während der Pause korrigiert der
+  Mensch den Lauf; ein gesicherter Wert wäre danach womöglich die Rolle des falschen Schritts
+  (§8.3).
+- **`{ "rolle": "none" }` nach dem Fortsetzen ist kein Fehlschlag.** Verlangt der nächste
+  Schritt einen Zustandsübergang — rotes Gate, offene Test-Findings, vorliegendes
+  Review-Ergebnis, abgelehnter App-Test —, bleibt der Marker absichtlich rollenlos: den
+  Übergang samt Rundenzähler vollzieht `next`, nicht `resume`.
 - **Der Rundenzähler bleibt unantastbar.** Kein Verb senkt ihn — auch nicht für eine Runde, die
   nachweislich nur eine kaputte Umgebung gemessen hat. Ein solches Verb wäre von einem Agenten
   aufrufbar (der Guard sperrt nur, solange eine Rolle gilt; in `gate`, `app-review`, `done`,

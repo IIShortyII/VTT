@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import {
   readStatus, writeStatus, next, pause, resume, start, gate, confirmRed, confirmTestRework,
   confirmAppReview, recordReview, recordRoundSummary, runDir, worktreeDir,
-  cleanup as cleanupRun, ROLE_FOR_PHASE,
+  cleanup as cleanupRun, ROLE_FOR_PHASE, MAX_ROUNDS,
 } from '../orchestrator.js'
 import type { Status, Role, Sh } from '../orchestrator.js'
 import { makeDeps, evaluate } from '../guard.js'
@@ -237,7 +237,14 @@ describe('Fortsetzen stellt die Rolle des aktuellen Schritts wieder her', () => 
     // Automat entscheidet in 'gate' feiner als die Phase, und genau dort war die Abweichung
     // (nach gruenem Gate bleibt die Phase auf 'gate', waehrend der Reviewer-Schritt laeuft).
     // Ein Test ueber Phasen allein konnte das nicht sehen (Review-Befund).
-    const runStates: { name: string; status: Partial<Status> }[] = [
+    // Legt den Change-Ordner an, den checkPreflight() sucht - nur fuer den 'done'-Zweig, der
+    // sonst immer an 'change-dir-missing' haengenbliebe.
+    const preflightVorbereiten = (issue: string) => {
+      const dir = join(worktreeDir(issue), 'openspec', 'changes', 'x')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'tasks.md'), '- [x] alles erledigt\n')
+    }
+    const runStates: { name: string; status: Partial<Status>; preflightGruen?: boolean }[] = [
       ...(Object.keys(ROLE_FOR_PHASE) as Status['phase'][]).map(phase => ({ name: phase, status: { phase } })),
       { name: 'gate/grün, nichts offen', status: { phase: 'gate', lastGate: { green: true } } },
       { name: 'gate/grün, Test-Findings offen', status: { phase: 'gate', lastGate: { green: true }, pendingTestFindings: [{ ort: 'tests/x.test.ts' }] } },
@@ -248,11 +255,17 @@ describe('Fortsetzen stellt die Rolle des aktuellen Schritts wieder her', () => 
       { name: 'review/Ergebnis nacharbeit', status: { phase: 'review', lastReview: { recommendation: 'nacharbeit' as const, findings: [{ schwere: 'block', ort: 'src/x.ts', problem: 'x' }] } } },
       { name: 'app-review/freigegeben', status: { phase: 'app-review', lastAppReview: { freigegeben: true } } },
       { name: 'app-review/abgelehnt', status: { phase: 'app-review', lastAppReview: { freigegeben: false, feedback: 'x' } } },
+      // Die beiden Verzweigungen, die nicht am Run-State haengen, sondern am Dateisystem bzw.
+      // am Rundenzaehler - heute beide rollenlos, aber ohne sie verspraeche der Test mehr, als
+      // er prueft (Review-Befund Runde 3).
+      { name: 'done/Preflight grün', status: { phase: 'done', change: 'x' }, preflightGruen: true },
+      { name: 'gate/rot an der Rundengrenze', status: { phase: 'gate', lastGate: { green: false }, round: MAX_ROUNDS } },
     ]
 
-    for (const { name, status } of runStates) {
+    for (const { name, status, preflightGruen } of runStates) {
       const issueAutomat = freshIssue()
       const vorher = makeStatus(issueAutomat, status)
+      if (preflightGruen) preflightVorbereiten(issueAutomat)
       silenced(() => next(issueAutomat))
       const nachAutomat = readStatus(issueAutomat)
       const rolleLautAutomat = readMarker(issueAutomat)

@@ -3,7 +3,7 @@
 // reviewer) ruft der Orchestrator (Session) laut SKILL.md; dieses Skript besitzt
 // die harten Invarianten und setzt den active-role-Marker als Seiteneffekt.
 import { execSync } from 'node:child_process'
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync, cpSync } from 'node:fs'
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync, rmSync, cpSync } from 'node:fs'
 import { join, resolve as resolvePath } from 'node:path'
 import { setBoardStatus, setBoardStatusIfIssueClosed } from './board.js'
 import type { BoardStatus, GhRunner } from './board.js'
@@ -213,7 +213,7 @@ export function reviewRework(s: Status): string {
 // von src/prisma/tests gilt als 'human' (z.B. openspec/-Proposal, CI-Config, constitution.md) -
 // konservativer Default, der im Zweifel eskaliert statt eine Rolle falsch zu adressieren.
 export function scopeOfFinding(f: unknown): Scope {
-  const ort = String((f as Record<string, unknown>).ort ?? '').replace(/\\/g, '/')
+  const ort = fwd(String((f as Record<string, unknown>).ort ?? ''))
   if (/(^|\/)(src|prisma)\//.test(ort)) return 'impl'
   if (/(^|\/)tests\//.test(ort) || /\.test\.tsx?$/.test(ort)) return 'test'
   return 'human'
@@ -261,8 +261,17 @@ function seedChangeDocs(i: string, change: string) {
 // wenn sie im Hauptrepo untracked sind -
 // sind sie getrackt (z.B. versehentlich committet), koennte noch etwas darauf verweisen, dann
 // nichts loeschen.
-function removeUntrackedSourceDocs(src: string) {
-  const tracked = sh(`git ls-files --error-unmatch -- "${src}"`)
+export function removeUntrackedSourceDocs(src: string, run: Sh = sh) {
+  // Die Pfadspezifikation mit Forward-Slashes (design.md D4). Fuer PATHSPECS - anders als fuer
+  // Verzeichnisargumente - sind sie die einzige auf allen Plattformen gueltige Form; mit den
+  // Trennzeichen des Betriebssystems antwortet git "did not match any file(s) known to git",
+  // und zwar unabhaengig davon, ob die Dateien getrackt sind. Die Abfrage waere damit keine
+  // mehr: sie sagte immer "untracked", und geloescht wuerde immer.
+  //
+  // `src` bleibt nativ, weil er auch an existsSync/rmSync geht - dort ist die native Form die
+  // richtige. Ein Pfad, zwei Verwendungen, zwei Schreibweisen; die Umwandlung gehoert an die
+  // Stelle, die sie braucht.
+  const tracked = run(`git ls-files --error-unmatch -- "${fwd(src)}"`)
   if (tracked.ok) return
   rmSync(src, { recursive: true, force: true })
 }
@@ -371,8 +380,32 @@ export function parseJestFailures(i: string): Failure[] {
           // Letzte Instanz (design.md D2): enthaelt die durchgereichte Message trotz Abschneiden
           // woertlichen Testinhalt, degradiert NUR dieser Failure auf die alte Erstzeilen-Form,
           // statt den ganzen Run zu blockieren.
-          const leaked = testFiles.some(f => trimmed.includes(f)) || testLines.some(l => trimmed.includes(l))
-          out.push({ name: t.title, message: leaked ? degradeToFirstLine(i, t.title, raw) : (trimmed || firstErrorLine(raw)) })
+          // Derselbe Erkenner wie in assertNoTestLeak (design.md D1) - zwei Waechter, dieselbe
+          // Frage, eine Antwort. Was er hier ZUSAETZLICH faengt, ist die Form ohne Verzeichnis
+          // (D5): truncateAtTestReference schneidet oben bereits an tests/ bzw. tests\ ab, der
+          // blosse Dateiname aus "Cannot find module './x' from 'y.unit.test.tsx'" bleibt aber
+          // stehen.
+          const leakt = (text: string) => testFiles.some(f => testFileMention(text, f, i) !== undefined)
+            || testLines.some(l => text.includes(l))
+          // Geprueft wird, was tatsaechlich WEITERGEREICHT wird - nicht, was zuerst gebildet
+          // wurde. Der Rueckfall auf die erste Zeile greift genau dann, wenn das Kuerzen nichts
+          // uebrig liess, und das ist der Regelfall bei "Cannot find module './x' from
+          // 'tests/y.test.ts'": die Nennung steht dort in Zeile 0, truncateAtTestReference
+          // schneidet davor ab, der geprueft Text waere leer - und der Rueckfall holte
+          // anschliessend genau die Zeile zurueck, die der Waechter verhindern soll
+          // (Review-Befund Runde 1). Eine Pruefung, an der eine spaetere Ersetzung vorbeilaeuft,
+          // schuetzt die Ausgabe nicht, die beim implementer ankommt.
+          const kandidat = trimmed || firstErrorLine(raw)
+          // Auch der NAME geht in den Auftrag ("## ${f.name}" in buildImplPrompt), nicht nur
+          // die Ausgabe. Bliebe er ungeprueft, traefe ihn erst assertNoTestLeak - und das
+          // beendet den ganzen Lauf, statt diesen einen Failure zu degradieren. Kein Leak, aber
+          // die falsche Wirkung: G3 sieht hier die Degradierung vor (Review-Befund Runde 2).
+          if (leakt(t.title)) {
+            protokolliere(i, t.title, 'zurückgehalten (Szenarioname)')
+            out.push({ name: 'Szenario zurückgehalten', message: RUECKHALT_HINWEIS })
+            continue
+          }
+          out.push({ name: t.title, message: leakt(kandidat) ? degradeToFirstLine(i, t.title, raw, leakt) : kandidat })
         }
     return out
   } catch (e) {
@@ -393,11 +426,27 @@ export function truncateAtTestReference(m: string): string {
     /tests[\\/][^\s:()]+/.test(l))
   return (idx === -1 ? lines : lines.slice(0, idx)).join('\n').trim()
 }
-function degradeToFirstLine(i: string, testName: string, raw: string): string {
-  const logPath = join(runDir(i), 'leak-degradations.log')
-  const prior = existsSync(logPath) ? readFileSync(logPath, 'utf8') : ''
-  writeFileSync(logPath, `${prior}[${new Date().toISOString()}] degradiert: ${testName}\n`)
-  return firstErrorLine(raw)
+// Die Kurzform ist die erste Zeile - und genau dort steht die Nennung, wenn Jest sie in die
+// Kopfzeile schreibt ("Cannot find module './x' from 'y.unit.test.tsx'"). Eine Degradierung,
+// die den Leak mitnimmt, ist keine: dann wird der Failure ganz zurueckgehalten und nur benannt,
+// dass zurueckgehalten wurde. Der implementer verliert damit dieses eine Feedback - der Preis
+// ist niedriger als eine Preisgabe (constitution.md §2.2 vor §8.2 G3), und der Mensch findet
+// den Vorgang im Protokoll.
+const RUECKHALT_HINWEIS = 'Ausgabe zurückgehalten: sie nennt eine Testdatei (siehe leak-degradations.log).'
+// Ein zurueckgehaltener Failure kostet den implementer sein Feedback, waehrend der
+// Rundenzaehler nach §3.5 weiterlaeuft. Trifft es alle Failures einer Runde, liefe der Lauf bis
+// zur Eskalation, ohne dass der Mensch den Grund saehe - das Protokoll liest niemand von
+// allein. Deshalb zusaetzlich auf stderr, wie beim Board-Beiwerk (Review-Befund Runde 1).
+function protokolliere(i: string, testName: string, was: string) {
+  appendFileSync(join(runDir(i), 'leak-degradations.log'), `[${new Date().toISOString()}] ${was}: ${testName}\n`)
+  if (was.startsWith('zurückgehalten'))
+    console.error(`[gate] Ausgabe zu "${testName}" zurückgehalten: sie nennt eine Testdatei.`)
+}
+function degradeToFirstLine(i: string, testName: string, raw: string, leakt: (t: string) => boolean): string {
+  const kurz = firstErrorLine(raw)
+  const zurueckgehalten = leakt(kurz)
+  protokolliere(i, testName, zurueckgehalten ? 'zurückgehalten' : 'degradiert')
+  return zurueckgehalten ? RUECKHALT_HINWEIS : kurz
 }
 function firstErrorLine(m: string): string {
   return (m.split('\n').find(l => l.trim().length > 0) ?? '').trim().slice(0, 300)
@@ -505,15 +554,76 @@ function assertNoTestLeak(prompt: string, i: string, parts: ChangePart[] = []) {
   }
   const konventionen = readKonventionen(i)
   for (const f of listTestFiles(i)) {
-    if (prompt.includes(f)) fail(`Leak: Prompt referenziert Testpfad ${f}${fundstelle(f)}`)
+    const genannt = testFileMention(prompt, f, i)
+    if (genannt) fail(`Leak: Prompt referenziert Testpfad ${f}${fundstelle(genannt)}`)
     // Die Ausnahme gilt dem Inhalts-Zweig: geprueft wird eine ZEILE, und eine Zeile, die auch
-    // in den Konventionen steht, ist keine geheime. Der Pfad-Zweig darueber bleibt unberuehrt -
-    // er vergleicht volle Worktree-Pfade, die in keiner Konventionsdatei vorkommen.
+    // in den Konventionen steht, ist keine geheime. Fuer den Pfad-Zweig darueber gilt sie
+    // NICHT (normalize-path-comparisons/design.md D6): AGENTS.md nennt Testpfade als Muster
+    // (tests/<name>.unit.test.tsx), aber keine existierende Datei beim Namen. Eine Nennung, die
+    // auf eine reale Datei des Laufs passt, ist deshalb auch dann eine Preisgabe, wenn in den
+    // Konventionen ein aehnliches Muster steht.
     for (const line of readFileSync(f, 'utf8').split('\n').map(l => l.trim())
       .filter(l => l.length > 20 && !konventionen.includes(l)))
       if (prompt.includes(line)) fail(`Leak: Prompt enthält Testinhalt aus ${f}${fundstelle(line)}`)
   }
 }
+// Die eine Stelle, an der beantwortet wird, ob ein Text eine Testdatei des Laufs NENNT
+// (normalize-path-comparisons/design.md D1). Vorher stand die Antwort zweimal im Code - in
+// assertNoTestLeak und in parseJestFailures -, einmal falsch und einmal aus einem Zufall
+// richtig, und keine der beiden Stellen wusste von der anderen. Bei einer Sicherheitsnaht
+// (constitution.md §2.2, §8.1) ist das der teuerste Ort fuer eine Dopplung.
+//
+// Geprueft wird der blosse DATEINAME - und der allein genuegt, weil jede laengere Schreibweise
+// auf ihn endet (normalize-path-comparisons/design.md D2): der absolute Pfad
+// (C:\...\.harness\wt\12\tests\x.test.ts, so gibt Jest ihn aus) auf den repo-relativen, dieser
+// auf den worktree-relativen, dieser auf den Namen. Eine Liste laengerer Formen daneben waere
+// totes Gewicht; eine Mutationsprobe hat sie als solches nachgewiesen - kein Test wurde rot,
+// als sie entfiel.
+//
+// Der Name ist zugleich die Form, die in einer design.md tatsaechlich steht, und er verraet
+// dasselbe wie der Pfad: welche Testdatei existiert und wie das Verhalten geschnitten ist. Ein
+// Fehlalarm ist hier der billige Fehler (er haelt den Lauf an und nennt seit #22 die
+// Fundstelle), ein uebersehener Leak der teure.
+//
+// Case-sensitiv (D3): die Schreibweise anzugleichen waere eine Annahme ueber das Dateisystem,
+// die auf einem Linux-Laeufer falsch ist.
+//
+// Zurueckgegeben wird die gefundene Form, nicht bloss ein Wahrheitswert: assertNoTestLeak
+// braucht sie, um die Fundstelle im Change zu bestimmen.
+export function testFileMention(text: string, testFile: string, i: string): string | undefined {
+  for (const form of mentionForms(testFile, i)) if (text.includes(form)) return form
+  return undefined
+}
+// Wie kurz eine Nennung sein darf, haengt von der Datei ab (D2).
+//
+// Eine erkennbare Testdatei nennt schon ihr NAME: "user-auth.integration.test.ts" kommt in
+// gewoehnlicher Prosa nicht vor, und in einer design.md steht ohnehin er statt des Pfads.
+//
+// Fuer alles andere unter tests/ - Fixtures, Mocks, Platzhalter - gilt das nicht. Der Beleg
+// kam aus der Gegenprobe am echten Material: listTestFiles liefert auch tests/.gitkeep, und
+// ".gitkeep" steht in der proposal.md von add-user-auth ("src/ enthaelt heute nur .gitkeep").
+// Ein Erkenner, der darauf anschlaegt, haelt Auftraege an, die nichts preisgeben. Fuer solche
+// Dateien zaehlt deshalb erst die Nennung MIT Pfadanteil.
+//
+// Laengere Schreibweisen brauchen keinen eigenen Eintrag: ein absoluter Pfad endet auf den
+// repo-relativen, dieser auf den worktree-relativen, dieser auf den Namen. Genau dieser
+// Umstand traegt parseJestFailures, wo Jest absolute Pfade ausgibt.
+//
+// Case-sensitiv (D3): die Schreibweise anzugleichen waere eine Annahme ueber das Dateisystem,
+// die auf einem Linux-Laeufer falsch ist.
+const IST_TESTDATEI = /\.test\.[jt]sx?$/
+function mentionForms(testFile: string, i: string): string[] {
+  const slash = fwd(testFile)
+  const wurzel = fwd(worktreeDir(i)) + '/'
+  const wtRelativ = slash.startsWith(wurzel) ? slash.slice(wurzel.length) : slash
+  if (IST_TESTDATEI.test(slash)) return [slash.slice(slash.lastIndexOf('/') + 1)]
+  // Beide Trennzeichen LITERAL, nicht ueber `sep`: auf einem Linux-Laeufer waere sep === '/',
+  // die Backslash-Form entfiele - und ausgerechnet die design.md-Dateien dieses Repos entstehen
+  // auf Windows und koennen einen Backslash-Pfad enthalten. Ein Erkenner, der je nach Plattform
+  // nachsichtiger ist, waere keine Unabhaengigkeit von der Schreibweise (Review-Befund Runde 1).
+  return [...new Set([wtRelativ, wtRelativ.replace(/\//g, '\\')])]
+}
+const fwd = (p: string): string => p.replace(/\\/g, '/')
 // design.md D6: was in den Konventionsdateien steht, ist kein Leak. Anlass war kein
 // hypothetischer - die echte design.md zu #12 liess den Waechter an `/** @jest-environment
 // jsdom */` anschlagen, einer Zeile, die AGENTS.md fuer Komponententests VORSCHREIBT und die

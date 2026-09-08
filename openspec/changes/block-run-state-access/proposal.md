@@ -61,15 +61,23 @@ bestehenden Sperren. Die Regel ist ausschließlich zusätzlich — was heute geb
 auch danach geblockt.
 
 **Nicht im Umfang:**
-- **Eine rollenlose Inhaltssuche ohne einschränkenden Pfad** bleibt für test-author und reviewer
-  möglich und könnte den Run-State erfassen, ohne ihn zu nennen. Sie zu schließen hieße, für
-  beide Rollen eine positive Pfad-Whitelist einzuführen, wie sie der implementer hat — und für
-  den reviewer, der den gesamten Diff beurteilen muss, ist diese Whitelist „alles". Der Rest
-  wäre eine Regel, die nichts einschränkt. Für den implementer, den §2.2 tatsächlich schützt,
-  ist der Weg durch seine bestehende Whitelist bereits geschlossen; für die beiden anderen
-  Rollen geht es um die weicheren §2.1-Gründe (Tests gegen die Spec, nicht gegen die
-  Implementierung) und um die Unabhängigkeit des Urteils. Diese Grenze steht auch in der
-  `design.md` und wird nicht als geschlossen ausgegeben.
+- **Ein Zugriff, der den Run-State erfasst, ohne ihn zu nennen.** Die Sperre greift an der
+  Nennung. Offen bleiben damit: jede Suchwurzel, die Vorfahre des Run-State ist
+  (`path: '.harness'`, `path: '.'`, oder gar kein `path`) — für test-author und reviewer, denn
+  für den implementer schließt das seine bestehende Whitelist —, und Kommandos wie
+  `grep -r x .harness` oder `find . -exec cat {} \;` für **jede** Rolle. Schließen ließe sich das
+  nur durch eine positive Whitelist der Suchwurzeln, und die des reviewers — er beurteilt den
+  gesamten Diff — wäre „alles"; für Kommandos hieße es, den Effekt beliebiger Programme
+  vorherzusagen, was der Guard an keiner Stelle tut (dieselbe best-effort-Grenze wie beim
+  Testdatei-Tabu). Die Aussage lautet deshalb genau: **gegen jede Nennung** des Run-State sind
+  die drei Wege zu; gegen einen Zugriff, der ihn nicht nennt, keiner. Begründung und
+  Abgrenzung stehen in `design.md` D5; als geschlossen wird das nirgends ausgegeben.
+- **Die Reichweite der Sperre hängt an der Rollenermittlung.** Ein Run-State-Pfad nennt nie ein
+  Worktree-Segment, die Rolle kommt für diese Aufrufe also immer aus dem
+  `soleActiveRole`-Fallback. Laufen zwei Issues mit verschiedenen Rollen gleichzeitig, ist der
+  Fallback bewusst rollenlos — und die Sperre greift nicht. Das ist ererbtes, anderswo
+  begründetes Verhalten (aktuell läuft ein Issue zur Zeit), aber es begrenzt diesen Change und
+  steht deshalb hier (`design.md` D5a).
 - **Die Bash-Sperre unterscheidet nicht zwischen Lesen und Schreiben.** Ein Kommandotext lässt
   das nicht erkennen (`sed -i`, `>`, `truncate`, `chmod` sehen aus wie ein Zugriff). Der
   Rollenmarker ist über Bash deshalb weiterhin vollständig tabu — er war es schon vor diesem

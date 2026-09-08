@@ -74,6 +74,11 @@ nichts preisgeben.
 Die Ausnahme MUST NOT das Schreiben umfassen. Wer den Marker setzen kann, schaltet die Sperre
 ab, unter der er steht.
 
+Die Ausnahme und ihre Gegensicherung MUST dieselbe Reichweite haben: beide gelten für **beide**
+Schreibungen des Weges aus dem vorigen Requirement. Eine Ausnahme, die eine Schreibung kennt,
+die ihre Gegensicherung nicht kennt, öffnet in dieser Schreibung genau das, was sie
+ausdrücklich ausschließt.
+
 #### Scenario: Die Prüfung des Rollenmarkers bleibt möglich
 
 - **GIVEN** ein Lauf, dessen Rollenmarker eine Rolle trägt

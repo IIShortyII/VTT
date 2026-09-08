@@ -58,7 +58,15 @@ const TYPECHECK_COMMANDS = /\b(?:pnpm|npm|yarn|npx)\s+(?:run\s+)?typecheck(?![:\
 const SRC_ONLY_TYPECHECK = /\btypecheck:src\b|tsconfig\.src\.json/
 // Steuerdateien und -verben der Rollensteuerung. Beide Muster fuehren zur selben Ablehnung;
 // getrennt gehalten, weil das eine auf Pfade zielt und das andere auf Kommandos.
-const CONTROL_FILE_TABOO = /\.harness\/(runs\/[^/\s'"]+\/active-role|guard\.ts)\b/
+//
+// Der Weg dorthin steht in beiden Schreibungen: vom Repo-Wurzelverzeichnis aus (".harness/…")
+// und relativ aus einem Worktree heraus ("../../runs/<issue>/active-role", "../../guard.ts") -
+// dieselbe Alternative wie in RUN_STATE_PATH. Ohne sie waere die Leseausnahme fuer den
+// Rollenmarker (isRunState) breiter als die Sperre, die sie traegt: der Marker faellt in beiden
+// Schreibungen aus dem Run-State-Tabu heraus, blieb aber nur in einer davon gegen Schreiben
+// geschuetzt. Fuer den reviewer war `Write ../../runs/<i>/active-role` damit offen, fuer die
+// beiden anderen Rollen blockte nur zufaellig die Schreib-Whitelist (Review-Befund zu #34).
+const CONTROL_FILE_TABOO = /(?:\.harness\/|(?:\.\.\/)+)(?:runs\/[^/\s'"]+\/active-role|guard\.ts)\b/
 const CONTROL_VERB_TABOO = /\b(?:harness|orchestrator\.ts)\s+(?:pause|resume)\b/
 // Der Worktree ist seit add-harness-pause Teil der Rollensteuerung: die Rollenermittlung nimmt
 // seine Existenz als Lebenszeichen. Wer ihn entfernt, erklaert seinen eigenen Lauf fuer tot und

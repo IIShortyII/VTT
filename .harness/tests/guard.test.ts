@@ -573,11 +573,28 @@ describe('Run-State ist fuer jede geltende Rolle gesperrt', () => {
   it('Die Ausnahme gilt nur dem Lesen', () => {
     // Wer den Marker setzen kann, schaltet die Sperre ab, unter der er steht. Ueber Bash gibt es
     // die Ausnahme gar nicht: einem Kommandotext ist nicht anzusehen, ob er liest oder schreibt.
+    //
+    // Geprueft wird die MELDUNG, nicht nur das Blockiertsein - und beide Schreibungen des Weges.
+    // Die Ausnahme kennt seit der Gegenprobe die worktree-relative Form; ihre Gegensicherung muss
+    // dieselbe Reichweite haben, sonst ist die Ausnahme breiter als die Sperre, die sie traegt.
+    // Genau das war der Fall (Review-Befund, blockierend): fuer den reviewer war
+    // `Write ../../runs/12/active-role` offen, fuer die beiden anderen Rollen blockte nur
+    // zufaellig die Schreib-Whitelist - mit einer Meldung, die den Marker nicht nennt.
     for (const rolle of ROLLEN) {
       const deps = { readRole: () => rolle }
-      expect([rolle, evaluate(write('.harness/runs/12/active-role'), deps).blocked]).toEqual([rolle, true])
-      expect([rolle, evaluate(bash('cat .harness/runs/12/active-role'), deps).blocked]).toEqual([rolle, true])
-      expect([rolle, evaluate(bash('echo none > .harness/runs/12/active-role'), deps).blocked]).toEqual([rolle, true])
+      for (const call of [
+        write('.harness/runs/12/active-role'),
+        write('../../runs/12/active-role'),
+        bash('cat .harness/runs/12/active-role'),
+        bash('cd .harness/wt/34 && cat ../../runs/12/active-role'),
+        bash('echo none > .harness/runs/12/active-role'),
+        bash('cd .harness/wt/34 && echo none > ../../runs/12/active-role'),
+      ]) {
+        const wo = JSON.stringify(call.tool_input)
+        const result = evaluate(call, deps)
+        expect([rolle, wo, result.blocked]).toEqual([rolle, wo, true])
+        expect([rolle, wo, result.message]).toEqual([rolle, wo, expect.stringMatching(/Steuerdateien/)])
+      }
     }
   })
 

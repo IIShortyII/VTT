@@ -91,20 +91,46 @@ rollenspezifischen Blöcken. Drei Gründe:
 3. **Für den test-author gilt §2.1.** Er korrigiert Tests gegen die Spec, nie gegen die
    Implementierung — im Run-State stünde beides.
 
-### D5: Die rollenlose Suche ohne Pfad bleibt offen — und wird als offen benannt
+### D5: Was den Run-State erfasst, ohne ihn zu nennen, bleibt offen — und wird als offen benannt
 
-Ein `Grep` ohne `path` erfasst alles unterhalb des Arbeitsverzeichnisses, also auch
-`.harness/runs`, ohne den Pfad zu nennen. Für den **implementer** ist dieser Weg bereits
-geschlossen: seine Suchwurzel MUSS ein Quellpfad sein (bestehende Whitelist). Für test-author
-und reviewer ist er offen, und dieser Change schließt ihn nicht.
+Die Regel greift, wo der Run-State **genannt** wird. Ein Zugriff, der ihn nur *erfasst*, geht
+durch. Das ist keine Randerscheinung, sondern eine ganze Klasse, und sie ist breiter als die
+erste Fassung dieses Abschnitts behauptete (Review-Befund):
 
-Der Grund ist nicht Bequemlichkeit, sondern dass die Schließung nichts einschränken würde: sie
-verlangte eine positive Whitelist der zulässigen Suchwurzeln, und die des reviewers — der den
-gesamten Diff beurteilen muss — ist „alles". Eine Whitelist, die alles enthält, ist keine.
+- **Suchwerkzeuge:** jede Suchwurzel, die Vorfahre des Run-State ist — `path: '.harness'`,
+  `path: '.'`, oder gar kein `path`. Sie passieren `isRunState` und erfassen `.harness/runs`
+  trotzdem. Für den **implementer** ist das geschlossen, weil seine Suchwurzel ein Quellpfad
+  sein MUSS (bestehende Whitelist); für test-author und reviewer ist es offen.
+- **Kommandos:** `grep -r x .harness`, `find . -name '*.json' -exec cat {} \;` und
+  Verwandte nennen den Run-State nicht und treffen `RUN_STATE_TABOO` deshalb nicht. Das gilt
+  für **jede** Rolle, den implementer eingeschlossen — genau wie beim Testdatei-Tabu, das an
+  derselben Stelle best-effort ist.
 
-Diese Grenze wird ausdrücklich **nicht** als geschlossen ausgegeben (`proposal.md`, „Nicht im
-Umfang"). Sie betrifft die beiden Rollen, für die es um §2.1 und die Unabhängigkeit des Urteils
-geht — nicht den implementer, für den §2.2 gilt und dessen drei Wege vollständig zu sind.
+Geschlossen wird das nicht, und der Grund ist nicht Bequemlichkeit: für Suchwerkzeuge verlangte
+es eine positive Whitelist der zulässigen Suchwurzeln, und die des reviewers — der den gesamten
+Diff beurteilen muss — ist „alles"; eine Whitelist, die alles enthält, ist keine. Für Kommandos
+verlangte es, den Effekt eines beliebigen Programms vorherzusagen, was der Guard an keiner
+Stelle tut.
+
+Die Aussage lautet deshalb genau: **die drei Wege sind gegen jede Nennung des Run-State
+geschlossen** — bei Weg 1 und 3 vollständig, bei Weg 2 (Bash) so weit, wie eine Textprüfung
+reicht. Gegen einen Zugriff, der ihn nicht nennt, schützt keiner der drei. Das steht so auch in
+der `proposal.md` unter „Nicht im Umfang"; als geschlossen wird es nirgends ausgegeben.
+
+### D5a: Die Reichweite hängt an der Rollenermittlung
+
+Ein Run-State-Pfad trägt nie ein `.harness/wt/<issue>/`-Segment, also löst weder
+`issueFromPath` noch `issueFromCommand` ein Issue auf: die Rolle kommt für diese Aufrufe
+**immer** aus dem `soleActiveRole`-Fallback. Laufen zwei Issues mit verschiedenen Rollen
+gleichzeitig, liefert der Fallback bewusst „rollenlos", und die Sperre greift nicht.
+
+Das ist ererbtes, an anderer Stelle begründetes Verhalten (aktuell läuft ein Issue zur Zeit) und
+kein Defekt dieses Change — aber es bestimmt seine Reichweite und gehört deshalb genannt, damit
+die Sperre später nicht als unbedingt gelesen wird.
+
+**Nicht** gemacht: das Issue aus dem Run-State-Pfad selbst abzuleiten. Das koppelte die Sperre an
+den Marker des dort genannten, womöglich längst abgeschlossenen Laufs — und wäre damit schwächer
+als der Fallback, nicht stärker.
 
 ### D6: Die Reihenfolge im Guard entscheidet über die Begründung
 

@@ -80,9 +80,42 @@
       rot: der Zufallstreffer auf `jest.json` trägt den Test diesmal nicht
 - [x] 5.4 `guard.ts` ist type-stripping-tauglich geblieben (Issue #29: kein `enum`, keine
       lokalen Importe) — `.harness/tests/hook.test.ts` deckt es ab und läuft in 5.1 mit
-- [ ] 5.5 Reviewer-Subagent auf den Change ansetzen (`constitution.md` §3.3)
-- [ ] 5.6 Menschliche Freigabe einholen (§3.4 — kein App-Test, der Change berührt keinen
+- [x] 5.5 Reviewer-Subagent auf den Change ansetzen (`constitution.md` §3.3)
+
+## 6. Nacharbeit Runde 1 (Reviewer-Befunde)
+
+- [x] 6.1 **Block:** Die Rollenmarker-Ausnahme kannte beide Schreibungen des Weges, ihre
+      Gegensicherung nur eine. `CONTROL_FILE_TABOO` verlangte das Literal `.harness/` — ein
+      `Write` auf `../../runs/12/active-role` fiel über `ROLE_MARKER_PATH` aus `isRunState`
+      heraus, traf `CONTROL_FILE_TABOO` nicht und war für den `reviewer` offen; bei
+      implementer und test-author blockte nur zufällig die Schreib-Whitelist, mit einer
+      Meldung, die den Marker nicht nennt. Am laufenden Guard nachgestellt und bestätigt.
+      `CONTROL_FILE_TABOO` trägt jetzt dieselbe Präfix-Alternative wie `RUN_STATE_PATH`
+      (`../../guard.ts` fällt damit ebenfalls darunter); Requirement in `spec.md` um die
+      Gleichheit der Reichweite ergänzt
+- [x] 6.2 **Der Test trug sich selbst nicht.** „Die Ausnahme gilt nur dem Lesen" wurde
+      vollständig von `CONTROL_FILE_TABOO` getragen, prüfte nur `blocked` statt der Meldung und
+      kannte nur eine Schreibung — er wäre auch ohne die gesamte Run-State-Regel grün geblieben
+      und hat den Befund aus 6.1 genau deshalb nicht bemerkt. Jetzt beide Schreibungen, alle
+      drei Rollen, und die Ablehnung an ihrer Begründung festgenagelt. Rot bestätigt vor dem Fix
+- [x] 6.3 **D5 war enger formuliert als die Wirklichkeit.** Offen ist nicht nur die Suche ohne
+      `path`, sondern jede Suchwurzel oberhalb des Run-State (`.harness`, `.`) und, für jede
+      Rolle, jedes Kommando, das ihn erfasst ohne ihn zu nennen (`grep -r x .harness`). Die
+      Behauptung, für den implementer seien „alle drei Wege vollständig zu", war für Weg 2
+      falsch. D5 neu geschrieben, `proposal.md` nachgezogen: geschlossen ist die **Nennung**,
+      nicht der Zugriff
+- [x] 6.4 Die Abhängigkeit von der Rollenermittlung benannt (neu: D5a). Ein Run-State-Pfad löst
+      kein Issue auf, die Rolle kommt immer aus dem `soleActiveRole`-Fallback — bei zwei
+      gleichzeitig laufenden Issues mit verschiedenen Rollen greift die Sperre nicht
+- [x] 6.5 Gate erneut grün (130 Tests, Typecheck, Lint); Mutationsprobe `marker-relativ-auf`
+      ergänzt: die Präfix-Alternative in `CONTROL_FILE_TABOO` zurückdrehen macht 6.2 rot
+- [ ] 6.6 Erneuter Review nach der Nacharbeit (§3.3: jede Nacharbeit-Runde durchläuft erneut
+      Gate und erneut Review)
+
+## 7. Freigabe
+
+- [ ] 7.1 Menschliche Freigabe einholen (§3.4 — kein App-Test, der Change berührt keinen
       Anwendungscode; geprüft wird die Gegenprobe aus 5.2)
-- [ ] 5.7 Change nach `openspec/changes/archive/YYYY-MM-DD-block-run-state-access/` verschieben
+- [ ] 7.2 Change nach `openspec/changes/archive/YYYY-MM-DD-block-run-state-access/` verschieben
       **und die Capability nach `openspec/specs/` übernehmen** (beides im selben
       Branch/Commit-Bereich), dann PR mit `Closes #34` öffnen; menschlicher Merge

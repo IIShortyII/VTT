@@ -108,6 +108,14 @@ darüber, ob eine Zeile geheim ist; sie ist kein Filter und darf keiner werden.
 - **THEN** bricht der Aufbau ab, und die Meldung nennt sowohl die betroffene Testdatei als auch
   `design.md` als Fundstelle
 
+#### Scenario: Ein Treffer außerhalb der Blöcke meldet keine Fundstelle
+
+- **GIVEN** der Auftrag trägt angehängtes Gate-Feedback, dessen Text eine Zeile aus einer
+  Testdatei enthält, während keine Datei des Change diese Zeile enthält
+- **WHEN** der Harness den Auftrag für den implementer baut
+- **THEN** bricht der Aufbau ab, und die Meldung nennt die betroffene Testdatei ohne eine
+  Fundstelle im Change zu behaupten
+
 #### Scenario: Eine zitierte Konvention ist kein Leak
 
 - **GIVEN** die `design.md` eines Change zitiert wörtlich eine Zeile aus einer

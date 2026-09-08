@@ -5,7 +5,7 @@
 
 ## 1. Tests zuerst
 
-- [x] 1.1 `.harness/tests/orchestrator.test.ts` um die sieben Szenarien aus
+- [x] 1.1 `.harness/tests/orchestrator.test.ts` um die acht Szenarien aus
       `specs/harness-spec-delivery/spec.md` ergänzen, je einen Test pro Szenario: „Ein Change
       mit design.md liefert die Entscheidungen an den implementer", „Die Entscheidungen stehen
       vor den Anforderungen" (Reihenfolge über Indexvergleich, nicht über einen erwarteten
@@ -13,7 +13,8 @@
       trägt seine Quelldatei" (vier Blöcke, zwei Capabilities), „Die Test-Nacharbeit sieht
       dieselben Entscheidungen" (Vergleich der Spec-Anteile beider Prompt-Bauer),
       „Testinhalt in design.md hält den Lauf an und nennt die Datei", „Eine zitierte
-      Konvention ist kein Leak"
+      Konvention ist kein Leak", „Ein Treffer außerhalb der Blöcke meldet keine
+      Fundstelle" (in Runde 2 ergänzt, siehe 5.2)
 - [x] 1.2 Hilfsfunktion für die Testfälle: legt im Worktree eines frischen Issues einen
       Change-Ordner mit wählbaren Dateien an (`proposal.md`, `design.md`, Capabilities) und
       schreibt den Change-Namen nach `status.json`; die Ausgabe von `buildImplPrompt` /
@@ -47,7 +48,7 @@
 - [x] 3.3 Ausnahme für Konventionszeilen nach design.md D6: der Wächter überspringt jede
       Zeile, die wörtlich in `AGENTS.md` oder `constitution.md` steht — genau diese beiden
       Dateien, wörtlicher Vergleich, einmal je Aufruf gelesen; verifizieren mit dem Testfall
-      „Eine zitierte Konvention ist kein Leak" **und** mit der Gegenprobe aus 5.2, die den
+      „Eine zitierte Konvention ist kein Leak" **und** mit der Gegenprobe aus 6.2, die den
       Fehlalarm ausgelöst hat
 
 ## 4. Nacharbeit Runde 1 (Reviewer-Befunde)
@@ -73,15 +74,38 @@
       zurückgeführt (`AGENTS.md`: Testname = Szenarioname) und die Fundstellen-Zusicherung
       auf `(Fundstelle: design.md)` verschärft
 
-## 5. Abschluss
+## 5. Hinweise aus Runde 2 (Review „ok", nicht blockierend)
 
-- [x] 5.1 `pnpm test:harness` und `pnpm lint` grün
-- [x] 5.2 Gegenprobe am echten Material: für einen archivierten Change mit `design.md`
+- [x] 5.1 Der Worktree-Bezug der Konventions-Ausnahme hatte keinen Regressionsschutz — der
+      Test kopierte die Hauptrepo-Fassung in den Worktree, eine wieder das Hauptrepo lesende
+      Implementierung wäre genauso grün gewesen. Gegenprobe ergänzt: ohne die Fassung im
+      Worktree bricht der Bau ab. Das belegt zugleich die zweite Hälfte von D6
+- [x] 5.2 Achtes Szenario „Ein Treffer außerhalb der Blöcke meldet keine Fundstelle" in
+      `spec.md` und Test dazu. Die MUST-Klausel dazu stand bisher ohne Prüfung da, obwohl sie
+      der von D4 begründete Kern ist: ein Fundstellen-Fallback würde den Menschen genau dort
+      in die Irre schicken, wo er sich auf die Auskunft verlässt
+- [x] 5.3 `DESIGN` mehrzeilig, damit „der vollständige Text" prüfbar ist — mit einzeiliger
+      Fixture wäre eine Implementierung grün gewesen, die `design.md` auf ihre erste Zeile
+      kürzt (die von der Spec verbotene Auswahl innerhalb der Datei)
+- [x] 5.4 `readFileSync('AGENTS.md')` im Test an die Modulwurzel gebunden statt ans
+      Arbeitsverzeichnis des Jest-Aufrufs
+- [x] 5.5 Beide neuen Zusicherungen per Mutationsprobe geprüft: ein Fundstellen-Fallback auf
+      den ersten Block und ein Rückfall auf die Hauptrepo-Konventionen machen je genau einen
+      Test rot
+- [ ] 5.6 **Offen, eigenes Issue:** `readChangeParts` liefert bei fehlendem Change-Verzeichnis
+      still `[]`; der Auftrag entsteht dann mit leerem `# Spec`-Abschnitt und der implementer
+      arbeitet gegen nichts. Vorbestehend und nicht von diesem Change verursacht, aber gegen
+      die `AGENTS.md`-Konvention „kein stilles catch". Gehört als eigener Befund in Epic #27
+
+## 6. Abschluss
+
+- [x] 6.1 `pnpm test:harness` und `pnpm lint` grün
+- [x] 6.2 Gegenprobe am echten Material: für einen archivierten Change mit `design.md`
       (`2026-09-07-add-user-auth`) den Auftrag bauen lassen und prüfen, dass die
       Design-Entscheidungen mit Quellenzeile darin stehen und die Reihenfolge stimmt —
       **mit den echten Testdateien daneben**, damit der Leak-Wächter tatsächlich läuft (in
       dieser Konstellation ist der Fehlalarm aus D6 aufgefallen)
-- [ ] 5.3 Menschliche Freigabe einholen (`constitution.md` §3.4 — kein App-Test, der Change
-      berührt keinen Anwendungscode; geprüft wird die Ausgabe aus 5.2)
-- [ ] 5.4 Change nach `openspec/changes/archive/` verschieben (gleicher Branch/Commit-Bereich)
+- [ ] 6.3 Menschliche Freigabe einholen (`constitution.md` §3.4 — kein App-Test, der Change
+      berührt keinen Anwendungscode; geprüft wird die Ausgabe aus 6.2)
+- [ ] 6.4 Change nach `openspec/changes/archive/` verschieben (gleicher Branch/Commit-Bereich)
       und PR mit `Closes #22` öffnen; menschlicher Merge

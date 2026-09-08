@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, copyFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   readStatus, writeStatus, next, reviewRework, confirmTestRework, confirmAppReview, checkPreflight,
@@ -512,9 +512,14 @@ describe('Board-Status an den Schritten des Loops', () => {
 describe('Material aus dem OpenSpec-Change', () => {
   const CHANGE = 'ein-change'
   const PROPOSAL = 'Warum dieser Change existiert: die Sitzung verlaengert sich gleitend.'
-  const DESIGN = 'D4 - Der Cookie heisst "sid" und traegt HttpOnly, SameSite=Lax, 30 Tage.'
+  const DESIGN = 'D4 - Der Cookie heisst "sid" und traegt HttpOnly, SameSite=Lax, 30 Tage.\n'
+    + 'D5 - Gleitende Verlaengerung mit Halbwertsregel und injizierter Uhr.\n'
+    + 'D12 - Die Registrierung verraet die Kontoexistenz, der Anmeldepfad nicht.'
   const SPEC_A = '### Requirement: Anmeldung\nDer Server MUST die Sitzung serverseitig fuehren.'
   const SPEC_B = '### Requirement: Abmeldung\nDer Server MUST die Sitzung verwerfen.'
+  // Mehrzeilig, damit "der vollstaendige Text" pruefbar ist: die letzte Zeile faellt einer
+  // Kuerzung als erste zum Opfer und wird deshalb einzeln zugesichert.
+  const DESIGN_LETZTE_ZEILE = 'D12 - Die Registrierung verraet die Kontoexistenz, der Anmeldepfad nicht.'
 
   // Legt im Worktree eines Issues einen Change-Ordner mit genau den gewuenschten Dateien an und
   // traegt den Change-Namen in status.json ein - readChangeSpec liest aus dem Worktree, nicht
@@ -542,7 +547,12 @@ describe('Material aus dem OpenSpec-Change', () => {
     const issue = freshIssue()
     try {
       makeChange(issue, { design: DESIGN })
-      expect(promptVon(() => buildImplPrompt(issue))).toContain(DESIGN)
+      const prompt = promptVon(() => buildImplPrompt(issue))
+      // DESIGN ist mehrzeilig, und die THEN-Klausel verlangt den VOLLSTAENDIGEN Text: eine
+      // Implementierung, die die Datei auf ihre erste Zeile oder auf n Zeichen kuerzte - die
+      // von der Spec verbotene Auswahl innerhalb der Datei -, waere sonst hier gruen.
+      expect(prompt).toContain(DESIGN)
+      expect(prompt).toContain(DESIGN_LETZTE_ZEILE)
     } finally { cleanup(issue) }
   })
 
@@ -636,15 +646,17 @@ describe('Material aus dem OpenSpec-Change', () => {
       // statt der Konvention. Sie steht dort NICHT als eigene Zeile, sondern in Fliesstext und
       // Backticks eingebettet; ein Vergleich auf ganze Zeilen faende sie nie (design.md D6).
       const konvention = '/** @jest-environment jsdom */'
-      const agents = readFileSync('AGENTS.md', 'utf8')
+      // Nicht cwd-relativ: die Modulwurzel steht fest, das Arbeitsverzeichnis des Jest-Aufrufs
+      // nicht - sonst schiede der Test an einem ENOENT aus, waehrend der Waechter in Ordnung ist.
+      const agents = readFileSync(join(__dirname, '..', '..', 'AGENTS.md'), 'utf8')
       expect(agents).toContain(konvention)
       expect(agents.split('\n').map(l => l.trim())).not.toContain(konvention)
 
-      // Der Worktree traegt seine eigene AGENTS.md - so, wie git worktree add ihn anlegt. Nur
-      // diese Fassung zaehlt (D6): die im Hauptrepo kann weitergezogen sein.
+      // Der Worktree traegt seine eigene AGENTS.md - so, wie git worktree add ihn anlegt.
       const zitat = `D10 - Testaufbau: Docblock ${konvention} am Dateianfang.`
       makeChange(issue, { design: `${DESIGN}\n${zitat}` })
-      copyFileSync('AGENTS.md', join(worktreeDir(issue), 'AGENTS.md'))
+      const agentsImWorktree = join(worktreeDir(issue), 'AGENTS.md')
+      writeFileSync(agentsImWorktree, agents)
       const testDir = join(worktreeDir(issue), 'tests')
       mkdirSync(testDir, { recursive: true })
       writeFileSync(join(testDir, 'auth-ui.unit.test.tsx'), `${konvention}\n`)
@@ -655,6 +667,41 @@ describe('Material aus dem OpenSpec-Change', () => {
       // Variante, die spec.md dem Waechter verbietet.
       expect(prompt).toContain(DESIGN)
       expect(prompt).toContain(zitat)
+
+      // Gegenprobe zum Worktree-Bezug (D6): ohne die Fassung IM WORKTREE greift keine Ausnahme.
+      // Ohne sie waere eine Implementierung, die die Fassung des Hauptrepos liest, genauso
+      // gruen - der Test wuerde mehr behaupten, als er zeigt. Zugleich der Beleg fuer die
+      // zweite Haelfte von D6: fehlen die Dateien, faellt der Waechter auf die strengere Seite.
+      rmSync(agentsImWorktree, { force: true })
+      expect(() => promptVon(() => buildImplPrompt(issue))).toThrow(/process\.exit/)
+    } finally { exitSpy.mockRestore(); errorSpy.mockRestore(); cleanup(issue) }
+  })
+
+  // Deckt die Nebenbedingung aus spec.md ab: "Stammt er aus keinem der Bloecke, MUST die
+  // Meldung wie bisher lauten." Das ist der von design.md D4 begruendete Kern - ein Treffer im
+  // angehaengten Gate-Feedback darf keine Falschauskunft ueber eine Change-Datei erzeugen. Ein
+  // Fallback auf parts[0].quelle bliebe sonst unbemerkt und schickte den Menschen genau dort
+  // in die Irre, wo er sich auf die Auskunft verlaesst.
+  it('Ein Treffer ausserhalb der Bloecke meldet keine Fundstelle', () => {
+    const issue = freshIssue()
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`)
+    }) as never)
+    const meldungen: string[] = []
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation((...a: unknown[]) => { meldungen.push(a.map(String).join(' ')) })
+    try {
+      const geleakteZeile = "expect(res.cookies[0].name).toBe('sid') // laenger als zwanzig Zeichen"
+      const s = makeChange(issue, { design: DESIGN }) // die design.md enthaelt die Zeile NICHT
+      s.lastGate = { green: false, failures: [{ name: 'ein Szenario', message: geleakteZeile }] }
+      writeStatus(s)
+      const testDir = join(worktreeDir(issue), 'tests')
+      mkdirSync(testDir, { recursive: true })
+      writeFileSync(join(testDir, 'auth.integration.test.ts'), `${geleakteZeile}\n`)
+
+      expect(() => promptVon(() => buildImplPrompt(issue))).toThrow(/process\.exit/)
+      const meldung = meldungen.join('\n')
+      expect(meldung).toContain('auth.integration.test.ts')
+      expect(meldung).not.toContain('Fundstelle')
     } finally { exitSpy.mockRestore(); errorSpy.mockRestore(); cleanup(issue) }
   })
 })

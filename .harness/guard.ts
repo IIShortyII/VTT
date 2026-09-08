@@ -56,6 +56,24 @@ const TYPECHECK_COMMANDS = /\b(?:pnpm|npm|yarn|npx)\s+(?:run\s+)?typecheck(?![:\
 // Struktur und Mechanik ausdruecklich dem Typecheck zu, und ohne ihn fiele jeder Tippfehler
 // erst im Gate auf, dessen Runden gegen constitution.md 3.5 zaehlen.
 const SRC_ONLY_TYPECHECK = /\btypecheck:src\b|tsconfig\.src\.json/
+// Steuerdateien und -verben der Rollensteuerung. Beide Muster fuehren zur selben Ablehnung;
+// getrennt gehalten, weil das eine auf Pfade zielt und das andere auf Kommandos.
+const CONTROL_FILE_TABOO = /\.harness\/(runs\/[^/\s'"]+\/active-role|guard\.ts)\b/
+const CONTROL_VERB_TABOO = /\b(?:harness|orchestrator\.ts)\s+(?:pause|resume)\b/
+// Der Worktree ist seit add-harness-pause Teil der Rollensteuerung: die Rollenermittlung nimmt
+// seine Existenz als Lebenszeichen. Wer ihn entfernt, erklaert seinen eigenen Lauf fuer tot und
+// macht damit jeden Aufruf ohne ableitbares Issue rollenlos - also ungeprueft. Deshalb dasselbe
+// Tabu wie fuer den Rollenmarker.
+//
+// Verboten ist die WURZEL, nicht ihr Inhalt: `.harness/wt/<issue>` (mit oder ohne Schraegstrich
+// am Ende), gefolgt von Leerzeichen, Anfuehrungszeichen oder Zeilenende. Ein Muster, das jeden
+// Pfad UNTERHALB des Worktrees erfasst, sperrte den Rollen ihren eigenen Arbeitsbereich:
+// `rm .harness/wt/23/src/veraltet.ts` (der implementer hat kein Delete-Werkzeug, das laeuft
+// zwangsläufig ueber Bash) und `mv .../tests/a.test.ts .../tests/b.test.ts` (test-author
+// benennt um) waeren geblockt - mit einer Begruendung, die den Aufrufer in die Irre schickt
+// (Review-Befund Runde 3). Auch `\n` gehoert aus der Luecke heraus, sonst verbindet ein
+// mehrzeiliges Kommando ein beliebiges `rm` mit einer spaeteren Zeile, die den Worktree nennt.
+const WORKTREE_TABOO = /\b(?:rm|rmdir|mv)\b[^|;&\n]*\.harness\/wt\/[^/\s'"]+\/?(?=[\s'"]|$)|\bgit\s+worktree\s+(?:remove|prune)\b/
 // ---------------------------------------------------------------------------------------------
 
 const norm = (p: string): string => p.replace(/\\/g, '/')
@@ -81,10 +99,11 @@ export function issueFromCommand(cmd: string): string | undefined {
 // status.json (z.B. sehr alter Run ohne dieses Feld), wird konservativ "noch aktiv" angenommen.
 const TERMINAL_PHASES = new Set(['done', 'archived', 'escalated'])
 
-// runsDir ist injizierbar (Review-Befund Runde 2: Testisolation) - Tests fuer den Fallback duerfen
-// nicht gegen das echte .harness/runs/ pruefen, das durch parallele Jest-Worker (andere
-// Testdateien) oder liegen gebliebene echte Runs unkontrollierten Zustand enthalten kann.
-export function makeDeps(runsDir: string): Deps {
+// runsDir und wtDir sind injizierbar (Review-Befund Runde 2: Testisolation) - Tests fuer den
+// Fallback duerfen nicht gegen die echten .harness/runs/ und .harness/wt/ pruefen, die durch
+// parallele Jest-Worker (andere Testdateien) oder liegen gebliebene echte Runs unkontrollierten
+// Zustand enthalten koennen.
+export function makeDeps(runsDir: string, wtDir: string): Deps {
   const activeRolePath = (issue: string) => join(runsDir, issue, 'active-role')
   const readRoleForIssue = (issue: string): string => {
     const p = activeRolePath(issue)
@@ -94,7 +113,14 @@ export function makeDeps(runsDir: string): Deps {
   // .harness/runs/ nie aufgeraeumt wird. Ohne diesen Filter wuerde ein toter Marker entweder
   // faelschlich als "die eine aktive Rolle" gelten (Fehlblock fuer unbeteiligte Aufrufe) oder,
   // mit einem zweiten toten Marker, den Fallback dauerhaft und unbemerkt auf rollenlos zwingen.
+  // Zweite Bedingung (add-harness-pause/design.md D5): der Worktree als Lebenszeichen. Phase und
+  // Marker bleiben liegen, wenn ein Lauf abgebrochen wird - der Worktree ist das einzige
+  // Artefakt mit sauberem Lebenszyklus (`start` legt ihn an, `cleanup` entfernt ihn). Ein Marker
+  // ohne Worktree gehoert zu einem Lauf, der nichts hat, woran er arbeiten koennte, und darf
+  // keinem fremden Aufruf eine Rolle aufzwingen. Beobachtet an einem liegen gebliebenen
+  // Handversuch, der jeder Sitzung ohne zuordenbares Issue die Rolle `implementer` gab.
   const isRunActive = (issue: string): boolean => {
+    if (!existsSync(join(wtDir, issue))) return false
     const statusPath = join(runsDir, issue, 'status.json')
     if (!existsSync(statusPath)) return true
     try {
@@ -127,7 +153,7 @@ export function makeDeps(runsDir: string): Deps {
 // Aufrufkontext. Eine argv[1]-basierte Herleitung des Wurzelverzeichnisses waere unter
 // tsx (CLI) vs. ts-jest (Modul-Import in Tests) uneinheitlich und wuerde neue, schwerer zu
 // durchschauende Fehlerquellen schaffen, ohne einen realen Aufrufpfad abzudecken.
-export const defaultDeps: Deps = makeDeps(join('.harness', 'runs'))
+export const defaultDeps: Deps = makeDeps(join('.harness', 'runs'), join('.harness', 'wt'))
 
 function extractWriteTargets(cmd: string): string[] {
   const targets = new Set<string>()
@@ -161,9 +187,44 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
   const issue = (path && issueFromPath(path)) || (cmd && issueFromCommand(cmd)) || (searchPath && issueFromCommand(searchPath))
   const role = deps.readRole(issue)
 
+  // 0) Die Verben, die den Rollenmarker setzen (add-harness-pause/design.md D6). Steht VOR allen
+  //    uebrigen Regeln: `pnpm harness pause 12 "jest.config kaputt"` traefe sonst zuerst die
+  //    Sperre fuer Testsuite-Aufrufe (\bjest\b matcht auch in einem Begruendungstext) und wuerde
+  //    mit einer Begruendung abgelehnt, die den Aufrufer in die Irre schickt.
+  //    Bewusst fuer JEDE Rolle, auch den reviewer - wer pausieren kann, schaltet die Sperre ab,
+  //    unter der er selbst steht: `pause` schreibt `none` in den Marker, danach gilt fuer ihn
+  //    keine Regel mehr.
+  //    Der Guard kann nicht unterscheiden, ob ein Aufruf von der orchestrierenden Sitzung oder
+  //    von einem Subagenten kommt. Die Regel trifft deshalb notwendig beide: entweder darf kein
+  //    Agent pausieren oder jeder. Der vorgesehene Kanal ist die Eingabe des Menschen, die den
+  //    Guard nicht durchlaeuft (an Issue #23 nachgemessen); die Sitzung fordert das Pausieren an,
+  //    statt es auszufuehren - so steht es in AGENTS.md und in der Skill-Datei.
+  //    `resume` bleibt trotzdem erreichbar: waehrend einer Pause traegt der Marker `none`, fuer
+  //    den Aufruf gilt also keine Rolle. Kein Loch, sondern die Gegenrichtung - resume stellt
+  //    eine Rolle wieder her, statt eine abzuschalten.
+  //    Der Worktree steht in derselben Regel, aus demselben Grund und ebenfalls fuer jede Rolle:
+  //    seit die Rollenermittlung ihn als Lebenszeichen liest, entwaffnet sich, wer ihn entfernt.
+  if (cmd && role !== '' && role !== 'none') {
+    // Die Steuerdateien selbst stehen hier und nicht mehr im Block fuer implementer/test-author:
+    // die Spec verweist fuer das Verb-Tabu auf "dieselbe Begruendung wie beim Zugriff auf die
+    // Steuerdateien" - dann muss dieser Zugriff auch fuer dieselbe Rollenmenge gesperrt sein.
+    // Sonst koennte der reviewer sich in einem Schritt entwaffnen (`echo none > ...active-role`)
+    // und danach greift fuer ihn keine Regel mehr, das Verb-Tabu eingeschlossen (Review-Befund).
+    if (CONTROL_FILE_TABOO.test(norm(cmd)))
+      return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu.' }
+    if (CONTROL_VERB_TABOO.test(norm(cmd)))
+      return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu — pausieren und fortsetzen ist Sache des Menschen (`pnpm harness pause <issue> "<grund>"` in seiner eigenen Shell).' }
+    if (WORKTREE_TABOO.test(norm(cmd)))
+      return { blocked: true, message: 'Blockiert: der Worktree ist für diese Rolle tabu — die Rollenermittlung liest seine Existenz als Lebenszeichen des Laufs.' }
+  }
+
   // 1) Write/Edit/Read ueber file_path.
   if (path) {
     const isWrite = /Write|Edit/.test(tool)
+    // Der Rollenmarker ist fuer JEDE Rolle unantastbar, nicht nur fuer die mit Schreibbereich -
+    // ein Write darauf ist derselbe Selbstentwaffnungsschritt wie `echo none > ...` (Regel 0).
+    if (isWrite && role !== '' && role !== 'none' && CONTROL_FILE_TABOO.test(norm(path)))
+      return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu.' }
     if (role === 'implementer') {
       if (isTest(path)) return { blocked: true, message: 'Blockiert: implementer darf Testdateien nicht lesen/ändern.' }
       if (isWrite && !isSrc(path)) return { blocked: true, message: 'Blockiert: implementer schreibt nur in src/ oder prisma/.' }
@@ -196,7 +257,7 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
     // Die Rollen-Markerdatei darf von einer aktiven Rolle weder umgeschrieben noch
     // entfernt/geleert werden (rm, sed -i, truncate, chmod, ...) - sonst faellt der
     // Guard fuer alle Folgeaufrufe Fail-Open statt Fail-Closed zurueck.
-    if (/\.harness\/(runs\/[^/\s'"]+\/active-role|guard\.ts)\b/.test(norm(cmd)))
+    if (CONTROL_FILE_TABOO.test(norm(cmd)))
       return { blocked: true, message: 'Blockiert: die Harness-Steuerdateien sind für diese Rolle tabu.' }
 
     for (const t of extractWriteTargets(cmd)) {

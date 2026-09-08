@@ -264,33 +264,178 @@ describe('Fallback auf die einzige aktive Rolle (kein Issue aus Pfad/Kommando ab
   // gebliebene echte Runs). makeDeps mit einem eigenen tmp-Verzeichnis isoliert den Fallback
   // vollstaendig von allem anderen.
   let tmpRunsDir: string
+  let tmpWtDir: string
   let deps: ReturnType<typeof makeDeps>
 
-  beforeEach(() => { tmpRunsDir = mkdtempSync(join(tmpdir(), 'guard-test-runs-')); deps = makeDeps(tmpRunsDir) })
-  afterEach(() => rmSync(tmpRunsDir, { recursive: true, force: true }))
+  // Jeder Lauf hier bekommt einen Worktree (add-harness-pause/design.md D5): seit der
+  // Lebenszeichen-Pruefung ist ein Lauf ohne Worktree ohnehin inaktiv. Ohne ihn wuerde jeder
+  // Test dieses Blocks aus dem falschen Grund gruen - insbesondere der zum Terminal-Filter,
+  // der dann gar nicht mehr die Phase pruefte.
+  const anlegen = (issue: string, role: string, status?: object) => {
+    const dir = join(tmpRunsDir, issue)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'active-role'), role)
+    if (status) writeFileSync(join(dir, 'status.json'), JSON.stringify(status))
+    mkdirSync(join(tmpWtDir, issue), { recursive: true })
+  }
+
+  beforeEach(() => {
+    tmpRunsDir = mkdtempSync(join(tmpdir(), 'guard-test-runs-'))
+    tmpWtDir = mkdtempSync(join(tmpdir(), 'guard-test-wt-'))
+    deps = makeDeps(tmpRunsDir, tmpWtDir)
+  })
+  afterEach(() => {
+    rmSync(tmpRunsDir, { recursive: true, force: true })
+    rmSync(tmpWtDir, { recursive: true, force: true })
+  })
 
   it('wendet die Rolle des einzigen aktiven Issues auf einen relativen Pfad an', () => {
-    const dir = join(tmpRunsDir, 'issue-a')
-    mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, 'active-role'), 'implementer')
+    anlegen('issue-a', 'implementer')
     expect(evaluate(write('tests/x.test.ts'), deps).blocked).toBe(true)
     expect(evaluate(write('src/x.ts'), deps).blocked).toBe(false)
   })
 
   it('bleibt rollenlos, wenn mehrere Issues gleichzeitig eine Rolle tragen (mehrdeutig)', () => {
-    const dirA = join(tmpRunsDir, 'issue-a'); const dirB = join(tmpRunsDir, 'issue-b')
-    mkdirSync(dirA, { recursive: true }); writeFileSync(join(dirA, 'active-role'), 'implementer')
-    mkdirSync(dirB, { recursive: true }); writeFileSync(join(dirB, 'active-role'), 'test-author')
+    anlegen('issue-a', 'implementer')
+    anlegen('issue-b', 'test-author')
     expect(evaluate(write('tests/x.test.ts'), deps).blocked).toBe(false)
   })
 
   it('ignoriert den Marker eines abgeschlossenen Runs (status.json-Phase terminal)', () => {
-    const dir = join(tmpRunsDir, 'issue-done')
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'active-role'), 'implementer')
-    writeFileSync(join(dir, 'status.json'), JSON.stringify({ phase: 'done' }))
+    // Worktree vorhanden, damit ausschliesslich die terminale Phase den Lauf inaktiv macht.
+    anlegen('issue-done', 'implementer', { phase: 'done' })
     // Kein anderer aktiver Run -> ohne den Terminal-Filter waere dies faelschlich "die eine
     // aktive Rolle"; mit dem Filter bleibt der Aufruf rollenlos.
     expect(evaluate(write('tests/x.test.ts'), deps).blocked).toBe(false)
+  })
+})
+
+// --- add-harness-pause (Issue #23) ---------------------------------------------------------
+
+describe('Kein Werkzeugaufruf unter einer Rolle darf pausieren', () => {
+  const VERBEN = [
+    'pnpm harness pause 23 "jest.config kaputt"',
+    'pnpm harness resume 23',
+    'tsx .harness/orchestrator.ts pause 23 "x"',
+    'tsx .harness/orchestrator.ts resume 23',
+  ]
+
+  it('Unter jeder Rolle wird das Pausieren verweigert', () => {
+    // Alle drei Rollen, nicht nur die mit Schreibbereich: der reviewer traegt seinen Marker
+    // waehrend des gesamten Review-Schritts und koennte sich sonst als einziger entwaffnen.
+    for (const rolle of ['implementer', 'test-author', 'reviewer']) {
+      for (const cmd of VERBEN) {
+        const result = evaluate(bash(cmd), { readRole: () => rolle })
+        expect([rolle, cmd, result.blocked]).toEqual([rolle, cmd, true])
+        expect(result.message).toMatch(/Steuerdateien/)
+      }
+    }
+  })
+
+  it('Ohne geltende Rolle sind die Verben erlaubt', () => {
+    // Der reale Fall: waehrend einer Pause traegt der Marker `none`. Geprueft wird gegen den
+    // echten Fallback (makeDeps), nicht gegen ein handgereichtes readRole - der blockierende
+    // Review-Befund entstand genau daran, dass die alte Fassung eine Kombination testete, die
+    // es nicht gibt.
+    const runs = mkdtempSync(join(tmpdir(), 'guard-verb-runs-'))
+    const wt = mkdtempSync(join(tmpdir(), 'guard-verb-wt-'))
+    try {
+      const dir = join(runs, '23')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'active-role'), 'none')
+      writeFileSync(join(dir, 'status.json'), JSON.stringify({ phase: 'implement', paused: { grund: 'x', seit: 'y' } }))
+      mkdirSync(join(wt, '23'), { recursive: true })
+      const deps = makeDeps(runs, wt)
+      for (const cmd of VERBEN) expect([cmd, evaluate(bash(cmd), deps).blocked]).toEqual([cmd, false])
+    } finally {
+      rmSync(runs, { recursive: true, force: true })
+      rmSync(wt, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('Ein Lauf ohne Worktree beansprucht keine Rolle', () => {
+  // Eigene tmp-Verzeichnisse fuer runs/ UND wt/: der Lebenszeichen-Test darf weder gegen das
+  // echte .harness/runs noch gegen das echte .harness/wt pruefen (dort liegen echte Laeufe).
+  let tmpRunsDir: string
+  let tmpWtDir: string
+
+  const anlegen = (issue: string, role: string, mitWorktree: boolean) => {
+    const dir = join(tmpRunsDir, issue)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'active-role'), role)
+    writeFileSync(join(dir, 'status.json'), JSON.stringify({ phase: 'implement' }))
+    if (mitWorktree) mkdirSync(join(tmpWtDir, issue), { recursive: true })
+  }
+
+  beforeEach(() => {
+    tmpRunsDir = mkdtempSync(join(tmpdir(), 'guard-test-runs-'))
+    tmpWtDir = mkdtempSync(join(tmpdir(), 'guard-test-wt-'))
+  })
+  afterEach(() => {
+    rmSync(tmpRunsDir, { recursive: true, force: true })
+    rmSync(tmpWtDir, { recursive: true, force: true })
+  })
+
+  it('Ein Lauf ohne Worktree wird bei der Rollenermittlung übergangen', () => {
+    anlegen('issue-tot', 'implementer', false)
+    const deps = makeDeps(tmpRunsDir, tmpWtDir)
+    // Rollenlos: ein relativer Pfad loest kein Issue auf, und der einzige Marker gehoert zu
+    // einem Lauf, der nichts hat, woran er arbeiten koennte.
+    expect(evaluate(write('tests/x.test.ts'), deps).blocked).toBe(false)
+  })
+
+  it('Ein Lauf mit Worktree bleibt maßgeblich', () => {
+    anlegen('issue-lebt', 'implementer', true)
+    const deps = makeDeps(tmpRunsDir, tmpWtDir)
+    expect(evaluate(write('tests/x.test.ts'), deps).blocked).toBe(true)
+    expect(evaluate(write('src/x.ts'), deps).blocked).toBe(false)
+  })
+
+  it('Eine Rolle darf den Worktree nicht entfernen', () => {
+    // Der Worktree ist seit der Lebenszeichen-Pruefung Teil der Rollensteuerung: wer ihn
+    // entfernt, erklaert seinen eigenen Lauf fuer tot und ist danach ungeprueft.
+    for (const rolle of ['implementer', 'test-author', 'reviewer']) {
+      for (const cmd of [
+        'rm -rf .harness/wt/12',
+        'mv .harness/wt/12 /tmp/weg',
+        'git worktree remove --force .harness/wt/12',
+        'git worktree prune',
+      ]) {
+        const result = evaluate(bash(cmd), { readRole: () => rolle })
+        expect([rolle, cmd, result.blocked]).toEqual([rolle, cmd, true])
+      }
+    }
+    // Der Arbeitsbereich INNERHALB des Worktrees bleibt erreichbar - verboten ist die Wurzel,
+    // nicht ihr Inhalt. Ohne diese Faelle blieb die erste Fassung des Musters ueberdehnt und
+    // sperrte den Rollen ihren eigenen Bereich (Review-Befund Runde 3): der implementer hat kein
+    // Delete-Werkzeug, er loescht zwangslaeufig ueber Bash.
+    expect(evaluate(bash('cat .harness/wt/12/src/x.ts'), { readRole: () => 'implementer' }).blocked).toBe(false)
+    expect(evaluate(bash('rm .harness/wt/23/src/veraltet.ts'), { readRole: () => 'implementer' }).blocked).toBe(false)
+    expect(evaluate(bash('mv .harness/wt/23/tests/a.test.ts .harness/wt/23/tests/b.test.ts'), { readRole: () => 'test-author' }).blocked).toBe(false)
+    // Mehrzeilig: ein beliebiges `rm` in Zeile 1 darf sich nicht mit einer spaeteren Zeile
+    // verbinden, die den Worktree nur erwaehnt.
+    expect(evaluate(bash('rm build.log\ncd .harness/wt/23 && pnpm lint'), { readRole: () => 'implementer' }).blocked).toBe(false)
+  })
+
+  it('Eine Rolle darf den Rollenmarker nicht überschreiben', () => {
+    // Gegenstueck zum Verb-Tabu: die Spec begruendet dieses mit "derselben Begruendung wie beim
+    // Zugriff auf die Steuerdateien" - dann muss der Zugriff fuer dieselbe Rollenmenge gesperrt
+    // sein. Der reviewer war es bis Runde 3 nicht und konnte sich in einem Schritt entwaffnen.
+    for (const rolle of ['implementer', 'test-author', 'reviewer']) {
+      const deps = { readRole: () => rolle }
+      expect([rolle, evaluate(bash('echo none > .harness/runs/23/active-role'), deps).blocked]).toEqual([rolle, true])
+      expect([rolle, evaluate(write('.harness/runs/23/active-role'), deps).blocked]).toEqual([rolle, true])
+    }
+  })
+
+  it('Ein direkt adressierter Lauf bleibt von der Prüfung unberührt', () => {
+    // Kein Worktree - der Aufruf nennt sein Issue aber selbst im Pfad. Die Lebenszeichen-Pruefung
+    // gilt nur im Fallback; hier belegt der Pfad die Zustaendigkeit bereits.
+    anlegen('77', 'implementer', false)
+    const deps = makeDeps(tmpRunsDir, tmpWtDir)
+    expect(evaluate(write('.harness/wt/77/tests/x.test.ts'), deps).blocked).toBe(true)
+    expect(evaluate(write('.harness/wt/77/src/x.ts'), deps).blocked).toBe(false)
   })
 })
 

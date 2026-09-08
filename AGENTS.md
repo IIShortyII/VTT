@@ -24,6 +24,8 @@ und NPC-Tokens.
 - Harness-eigene Tests: `pnpm test:harness`
 - Board-Status setzen: `pnpm harness board <issue> <status>` — den übrigen Status setzt der
   Loop selbst (siehe Board-Status)
+- Lauf pausieren: `pnpm harness pause <issue> "<grund>"` · fortsetzen:
+  `pnpm harness resume <issue>` (siehe Pause & Fortsetzen)
 - Prisma-Client generieren: `pnpm db:generate`
 - Migrationen führt der Agent nicht aus. Er schreibt das Schema unter `prisma/`; das
   Ausführen ist menschlich (constitution.md §5.1) bzw. Sache der CI (§6.1).
@@ -122,6 +124,48 @@ Schritts — damit der Fortschritt auch außerhalb der laufenden Sitzung sichtba
 - Der Harness **liest** das Board nie. Wer eine Spalte von Hand verschiebt, ändert am Lauf
   nichts.
 - Voraussetzung: `gh` mit `project`-Scope (`gh auth refresh -s project`).
+
+## Pause & Fortsetzen
+Der Zustand zwischen den Rollen: manchmal gehört der nächste sinnvolle Schritt keiner. Eine
+kaputte `jest.config.cjs`, eine fehlende `.gitignore`-Regel, ein Befund, den
+`constitution.md` §3.3 „ohne Zuordnung zu einer Rolle" an den Menschen eskaliert — alles
+außerhalb von `src/`, `prisma/` und `tests/` ist jeder Rolle gesperrt, und damit auch der
+Sitzung, solange der Marker auf einer Rolle steht.
+
+- `pnpm harness pause <issue> "<grund>"` setzt den Rollenmarker auf `none`. Phase und
+  Rundenzähler bleiben unberührt; Grund und Zeitpunkt stehen danach im Run-State. **Der Grund
+  ist Pflicht** — eine Pause ohne Anlass wäre dieselbe undokumentierte Handkorrektur wie
+  vorher, nur mit einem Verb davor.
+- **Ein pausierter Lauf steht still.** `next`, `gate`, `confirm-*`, `record-*` und `cleanup`
+  verweigern und verweisen auf `resume`. Ohne diese Sperre würde der nächste Schrittwechsel
+  den Marker über `emit()` neu setzen und die Pause stumm beenden.
+- `pnpm harness resume <issue>` beendet die Pause und stellt die Rolle des Schritts wieder
+  her, in dem der Lauf **jetzt** steht — abgeleitet aus dem gesamten Run-State, nicht nur aus
+  der Phase und nicht aus einem bei `pause` gesicherten Wert. Während der Pause korrigiert der
+  Mensch den Lauf; ein gesicherter Wert wäre danach womöglich die Rolle des falschen Schritts
+  (§8.3).
+- **`{ "rolle": "none" }` nach dem Fortsetzen ist kein Fehlschlag.** Verlangt der nächste
+  Schritt einen Zustandsübergang — rotes Gate, offene Test-Findings, vorliegendes
+  Review-Ergebnis, abgelehnter App-Test —, bleibt der Marker absichtlich rollenlos: den
+  Übergang samt Rundenzähler vollzieht `next`, nicht `resume`.
+- **Der Rundenzähler bleibt unantastbar.** Kein Verb senkt ihn — auch nicht für eine Runde, die
+  nachweislich nur eine kaputte Umgebung gemessen hat. Ein solches Verb wäre von einem Agenten
+  aufrufbar (der Guard sperrt nur, solange eine Rolle gilt; in `gate`, `app-review`, `done`,
+  `archived` und `escalated` ist die Sitzung regulär rollenlos), und die Rundenzahl läge damit
+  im Ermessen eines Modells — genau das schließt `constitution.md` §8.1 aus.
+- **Pausiert wird an einer Schrittgrenze**, nie während ein Rollenschritt läuft: die Pause gibt
+  den Marker für *jeden* laufenden Aufruf frei, ein noch arbeitender Subagent verlöre dabei
+  seine Pfad- und Lesesperren.
+- **Pausieren ist Sache des Menschen.** Beide Verben sind jedem Werkzeugaufruf verboten, für
+  den eine Rolle gilt (`guard.ts`, Steuerdatei-Tabu) — und weil der Guard die orchestrierende
+  Sitzung nicht von einem Subagenten unterscheiden kann, gilt das notwendig für beide: dürfte
+  die Sitzung pausieren, dürfte der `implementer` es auch und hätte damit die Sperre
+  abgeschaltet, unter der er steht. Der Mensch setzt das Kommando in seiner eigenen Shell ab
+  (im Chat mit `!` davor); die läuft nicht durch den Hook. Die Sitzung *fordert* das Pausieren
+  an, statt es auszuführen.
+- `resume` kann die Sitzung selbst aufrufen: während der Pause trägt der Marker `none`, für den
+  Aufruf gilt also keine Rolle. Das ist die Gegenrichtung — eine Rolle wiederherstellen, nicht
+  eine abschalten.
 
 ## Kritische Grenzen (immer)
 - Niemals Secrets/Credentials committen oder ausgeben.

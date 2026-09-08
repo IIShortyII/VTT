@@ -225,7 +225,11 @@ export function start(i: string, change?: string, run: Sh = sh) {
   // pausierten Lauf wuerde es den Pausenzustand mitsamt Grund ueberschreiben und den Marker neu
   // setzen - der stumme Pausenabbruch, den design.md D2 verhindert.
   if (existsSync(statusPath(i))) assertNotPaused(readStatus(i))
-  const branch = `feat/${i}`
+  // Branchname folgt der AGENTS.md-Konvention feat/<issue>-<kurz>; <kurz> ist der uebergebene
+  // OpenSpec-Change-Name (OpenSpec erzwingt kebab-case, damit direkt git-ref-tauglich - keine
+  // Slug-Logik, kein gh-Aufruf fuer den Issue-Titel). Ohne Change-Name faellt es auf feat/<issue>
+  // zurueck, damit ein aelterer Aufrufweg ohne Change weiter funktioniert (setup-start-worktree #24).
+  const branch = change ? `feat/${i}-${change}` : `feat/${i}`
   run('git fetch origin main --quiet')
   run(`git worktree add -B ${branch} ${worktreeDir(i)} origin/main`) // Basis immer origin/main, nie der zufaellige HEAD des Hauptrepos
   // Der Worktree ist seit add-harness-pause das Lebenszeichen des Laufs (design.md D5). Schlaegt
@@ -235,9 +239,28 @@ export function start(i: string, change?: string, run: Sh = sh) {
   // aus einem verschluckten Fehler. Deshalb hier abbrechen, bevor Marker und Run-State entstehen.
   if (!existsSync(worktreeDir(i)))
     fail(`Worktree ${worktreeDir(i)} konnte nicht angelegt werden — kein Lauf ohne Worktree.`)
+  // Ein frischer Worktree hat kein node_modules; ohne Install scheitert das erste Gate nicht an
+  // den Tests, sondern am fehlenden Jest. Ueber run (nicht sh), damit Tests den Aufruf abfangen -
+  // dieselbe Naht wie fuer git. Plain `pnpm install`, nicht --frozen-lockfile: das ist die lokale
+  // Einrichtung (AGENTS.md reserviert --frozen-lockfile fuer CI). Der Rueckgabewert bleibt wie bei
+  // den git-Aufrufen ungeprueft; ein Fehlschlag faellt spaetestens am Gate auf (setup-start-worktree #24).
+  run('pnpm install', worktreeDir(i))
+  reportMissingEnv(i)
   if (change) seedChangeDocs(i, change)
   writeStatus({ issue: i, branch, round: 0, phase: 'red', change, rounds: [] })
   console.log(next(i))
+}
+// Melden statt Handeln (setup-start-worktree #24): existiert im Worktree eine .env.example, fehlt
+// aber die .env, wird das als benannte Vorbedingung auf der Fehlerausgabe gemeldet. start legt
+// KEINE .env an - die Datei traegt real gelesene Config/Credentials, deren Umgang constitution.md
+// §5.1 dem Menschen vorbehaelt. Kein fail(): die fehlende .env ist eine Vorbedingung fuer den
+// spaeteren App-Test (§3.4), kein Grund, den Lauf jetzt abzubrechen. Geprueft wird im Worktree -
+// dort braucht die App die Datei, und der frische Worktree traegt die getrackte .env.example von
+// origin/main, aber nie die gitignorete .env.
+function reportMissingEnv(i: string) {
+  const wt = worktreeDir(i)
+  if (existsSync(join(wt, '.env.example')) && !existsSync(join(wt, '.env')))
+    console.error(`[start] Vorbedingung: .env fehlt im Worktree ${wt}. loadConfig() braucht sie fuer den App-Test (§3.4) — aus .env.example anlegen und Werte eintragen. start legt sie nach §5.1 nicht selbst an.`)
 }
 // Der OpenSpec-Change (proposal/design/tasks/specs) entsteht per openspec-propose noch im
 // Hauptrepo, bevor `start` laeuft, und muss vor dem ersten next()-Aufruf (der die Rolle sofort

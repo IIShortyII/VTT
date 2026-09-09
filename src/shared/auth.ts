@@ -56,6 +56,22 @@ export const LoginInputSchema = z.object({
 export type LoginInput = z.infer<typeof LoginInputSchema>
 
 /**
+ * Anfragekoerper der Passwortaenderung (account-security #13, design.md D3). Das bisherige
+ * Passwort hat dieselbe Form wie beim Login (nicht leer, nicht laenger als ein gueltiges
+ * Passwort je sein kann) - eine Mindestlaenge wuerde ein Bestandskonto mit einem aelteren,
+ * kuerzeren Passwort aussperren. Das neue Passwort unterliegt derselben Regel wie bei der
+ * Registrierung.
+ */
+export const ChangePasswordInputSchema = z.object({
+  currentPassword: z
+    .string()
+    .min(1, 'Passwort wird benötigt.')
+    .max(PASSWORD_MAX_LENGTH, `Passwort darf höchstens ${PASSWORD_MAX_LENGTH} Zeichen lang sein.`),
+  newPassword: PasswordSchema,
+})
+export type ChangePasswordInput = z.infer<typeof ChangePasswordInputSchema>
+
+/**
  * Was der Server ueber einen Nutzer preisgibt - nie Hash, Salt oder Hash-Parameter
  * (constitution.md §9.2).
  */

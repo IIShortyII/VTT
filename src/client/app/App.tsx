@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import type { UserOutput } from '../../shared/auth.js'
 import { fetchCurrentUser, logout } from '../auth/api.js'
+import { ChangePasswordForm } from '../auth/ChangePasswordForm.js'
 import { LoginForm } from '../auth/LoginForm.js'
 import { RegisterForm } from '../auth/RegisterForm.js'
 
@@ -89,6 +90,7 @@ export function App() {
         <button type="button" onClick={() => void handleLogout()}>
           Abmelden
         </button>
+        <ChangePasswordForm />
       </div>
     )
   }

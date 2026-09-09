@@ -1,18 +1,21 @@
 import {
+  ChangePasswordInputSchema,
   ErrorOutputSchema,
   LoginInputSchema,
   RegisterInputSchema,
   UserOutputSchema,
+  type ChangePasswordInput,
   type LoginInput,
   type RegisterInput,
   type UserOutput,
 } from '../../shared/auth.js'
 
-// Die vier Aufrufe gegen /api/auth/*. `credentials: 'include'` ist Pflicht, sonst sendet
+// Die Aufrufe gegen /api/auth/*. `credentials: 'include'` ist Pflicht, sonst sendet
 // der Browser das Sitzungscookie nicht mit (design.md D7). Antworten werden gegen die
 // Schemas aus shared/auth.ts geprueft statt Prisma-/Server-Objekte blind durchzureichen.
 
 export type AuthResult = { ok: true; user: UserOutput } | { ok: false; message: string; field?: string }
+export type ChangePasswordResult = { ok: true } | { ok: false; message: string; field?: string }
 
 async function postJson(path: string, body: unknown): Promise<Response> {
   return fetch(path, {
@@ -75,4 +78,24 @@ export async function fetchCurrentUser(): Promise<UserOutput | null> {
 export async function logout(): Promise<boolean> {
   const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
   return response.ok
+}
+
+/**
+ * Aendert das Passwort des angemeldeten Nutzers (account-security #13, design.md D5).
+ * Dieselbe lokale Vorpruefung wie bei `register` - kein Netzaufruf bei einem zu kurzen neuen
+ * Passwort, und die `ErrorOutput`-Form des Servers wird unveraendert durchgereicht.
+ */
+export async function changePassword(input: ChangePasswordInput): Promise<ChangePasswordResult> {
+  const parsed = ChangePasswordInputSchema.safeParse(input)
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]
+    return { ok: false, message: issue.message, field: issue.path.join('.') }
+  }
+  const response = await postJson('/api/auth/password', parsed.data)
+  if (response.ok) {
+    return { ok: true }
+  }
+  const data: unknown = await response.json()
+  const error = ErrorOutputSchema.parse(data)
+  return { ok: false, message: error.message, field: error.field }
 }

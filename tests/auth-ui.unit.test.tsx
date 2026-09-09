@@ -157,3 +157,85 @@ test('Fehlgeschlagene Abmeldung wird angezeigt', async () => {
   expect(screen.getByRole('button', { name: /abmelden/i })).toBeTruthy()
   expect(screen.getByText(/angemeldet als/i)).toBeTruthy()
 })
+
+// --- Passwortänderung in der Oberfläche -----------------------------------------------------
+// Requirement "Passwortänderung in der Oberfläche" aus
+// openspec/changes/add-account-security/specs/user-auth/spec.md. Das Formular (design.md D5)
+// entsteht erst mit der Implementierung; bis dahin fehlen Felder/Meldungen — die Tests sind rot,
+// weil die erwartete Oberfläche noch nicht gerendert wird.
+
+const ANGEMELDETER_NUTZER = { id: 'nutzer-1', email: 'spieler@example.com' }
+
+// Die beiden Passwortfelder werden über ihre Bedeutung gesucht (autoComplete bzw. name aus
+// design.md D5), nicht über eine bestimmte Beschriftung.
+function bisherigesPasswortFeld(container: HTMLElement): HTMLElement | null {
+  return container.querySelector('input[autocomplete="current-password"], input[name="currentPassword"]')
+}
+
+function neuesPasswortFeld(container: HTMLElement): HTMLElement | null {
+  return container.querySelector('input[autocomplete="new-password"], input[name="newPassword"]')
+}
+
+test('Angemeldete Ansicht bietet die Passwortänderung an', async () => {
+  mockFetch([{ pfad: '/api/auth/me', antwort: antwort(200, ANGEMELDETER_NUTZER) }])
+
+  const { container } = render(<App />)
+  await screen.findByText(/angemeldet als/i)
+
+  // Neben der Abmeldung: Eingabefelder für das bisherige und das neue Passwort sowie eine
+  // Schaltfläche zum Ändern.
+  expect(bisherigesPasswortFeld(container)).not.toBeNull()
+  expect(neuesPasswortFeld(container)).not.toBeNull()
+  expect(screen.getByRole('button', { name: /ändern/i })).toBeTruthy()
+  expect(screen.getByRole('button', { name: /abmelden/i })).toBeTruthy()
+})
+
+test('Abgelehnte Passwortänderung wird angezeigt', async () => {
+  const ABLEHNUNG = 'Das bisherige Passwort ist falsch.'
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, ANGEMELDETER_NUTZER) },
+    {
+      pfad: '/api/auth/password',
+      antwort: antwort(403, { error: ABLEHNUNG, message: ABLEHNUNG, field: 'currentPassword' }),
+    },
+  ])
+
+  const { container } = render(<App />)
+  await screen.findByText(/angemeldet als/i)
+  const bisher = must(bisherigesPasswortFeld(container), 'ein Feld für das bisherige Passwort')
+  const neu = must(neuesPasswortFeld(container), 'ein Feld für das neue Passwort')
+  fireEvent.change(bisher, { target: { value: 'ein-sicheres-passwort' } })
+  fireEvent.change(neu, { target: { value: 'mein-neues-sicheres-passwort' } })
+
+  fireEvent.submit(must(bisher.closest('form'), 'ein <form> um die Passwortfelder'))
+
+  // Die Meldung des Servers wird angezeigt …
+  await waitFor(() => expect(screen.getAllByText(ABLEHNUNG).length).toBeGreaterThan(0))
+  // … und die Ansicht bleibt angemeldet (constitution.md §9.1): eine abgelehnte Änderung meldet
+  // den Nutzer nicht ab.
+  expect(screen.getByText(/angemeldet als/i)).toBeTruthy()
+})
+
+test('Erfolgreiche Passwortänderung wird bestätigt', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, ANGEMELDETER_NUTZER) },
+    { pfad: '/api/auth/password', antwort: antwort(200, { ok: true }) },
+  ])
+
+  const { container } = render(<App />)
+  await screen.findByText(/angemeldet als/i)
+  const bisher = must(bisherigesPasswortFeld(container), 'ein Feld für das bisherige Passwort')
+  const neu = must(neuesPasswortFeld(container), 'ein Feld für das neue Passwort')
+  fireEvent.change(bisher, { target: { value: 'ein-sicheres-passwort' } })
+  fireEvent.change(neu, { target: { value: 'mein-neues-sicheres-passwort' } })
+
+  fireEvent.submit(must(bisher.closest('form'), 'ein <form> um die Passwortfelder'))
+
+  // Eine Erfolgsmeldung erscheint …
+  await waitFor(() => expect(screen.getByText(/geändert/i)).toBeTruthy())
+  // … beide Passwortfelder sind geleert …
+  expect((must(bisherigesPasswortFeld(container), 'das bisherige Passwortfeld') as HTMLInputElement).value).toBe('')
+  expect((must(neuesPasswortFeld(container), 'das neue Passwortfeld') as HTMLInputElement).value).toBe('')
+  // … und die Ansicht bleibt angemeldet.
+  expect(screen.getByText(/angemeldet als/i)).toBeTruthy()
+})

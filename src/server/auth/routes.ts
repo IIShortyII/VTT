@@ -1,11 +1,11 @@
-import type { PrismaClient, User } from '@prisma/client'
+import type { Account, PrismaClient, User } from '@prisma/client'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import type { ZodIssue } from 'zod'
 
-import { LoginInputSchema, RegisterInputSchema, type UserOutput } from '../../shared/auth.js'
+import { ChangePasswordInputSchema, LoginInputSchema, RegisterInputSchema, type UserOutput } from '../../shared/auth.js'
 import type { Clock } from '../core/clock.js'
-import { getDummyHash, hashPassword, normalizeEmail, verifyPassword } from './rules.js'
-import { createSession, destroySession, resolveSession, SESSION_COOKIE_NAME } from './session.js'
+import { clearLockout, getDummyHash, hashPassword, isAccountLocked, normalizeEmail, recordFailedAttempt, verifyPassword } from './rules.js'
+import { createSession, deleteOtherSessions, destroySession, resolveSession, SESSION_COOKIE_NAME } from './session.js'
 
 // Duenne Fastify-Anbindung: Validierung an der Grenze (zod), Aufruf der reinen Regeln aus
 // rules.ts/session.ts, Uebersetzung in HTTP. Keine Geschaeftsregeln hier (design.md D1).
@@ -17,6 +17,8 @@ export interface AuthDeps {
 }
 
 const PROVIDER_PASSWORD = 'password'
+const LOGIN_FAILURE_MESSAGE = 'E-Mail oder Passwort ist falsch.'
+const CURRENT_PASSWORD_WRONG_MESSAGE = 'Das bisherige Passwort ist falsch.'
 
 function toUserOutput(user: Pick<User, 'id' | 'email'>): UserOutput {
   return { id: user.id, email: user.email }
@@ -125,7 +127,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
       // Zugangsdaten behandeln (401, gleiche Meldung), statt einen dritten, unterscheidbaren
       // Antworttyp zu erzeugen und ohne den Wert erst durch `scrypt` zu schicken
       // (Review-Runde 2).
-      return sendError(reply, 401, 'Unauthorized', 'E-Mail oder Passwort ist falsch.')
+      return sendError(reply, 401, 'Unauthorized', LOGIN_FAILURE_MESSAGE)
     }
 
     const email = normalizeEmail(parsed.data.email)
@@ -136,8 +138,30 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
     const hash = account?.passwordHash ?? (await getDummyHash())
     const valid = await verifyPassword(parsed.data.password, hash)
 
-    if (!user || !account || !valid) {
-      return sendError(reply, 401, 'Unauthorized', 'E-Mail oder Passwort ist falsch.')
+    if (!user || !account) {
+      // Unbekannte E-Mail: kein Konto, also nichts zu zaehlen (design.md D2, Requirement
+      // "Sperre nach Fehlversuchen").
+      return sendError(reply, 401, 'Unauthorized', LOGIN_FAILURE_MESSAGE)
+    }
+
+    const now = clock()
+    if (isAccountLocked(account.lockedUntil, now)) {
+      // Die Sperre ist stumm: dieselbe Antwort wie bei falschem Passwort, unabhaengig davon,
+      // ob das Passwort stimmte; kein Schreibzugriff, keine Sitzung (design.md D2,
+      // constitution.md §9.2).
+      return sendError(reply, 401, 'Unauthorized', LOGIN_FAILURE_MESSAGE)
+    }
+
+    if (!valid) {
+      const next = recordFailedAttempt({ failedLoginCount: account.failedLoginCount, lockedUntil: account.lockedUntil }, now)
+      await prisma.account.update({ where: { id: account.id }, data: next })
+      return sendError(reply, 401, 'Unauthorized', LOGIN_FAILURE_MESSAGE)
+    }
+
+    // Zeile nur schreiben, wenn sich etwas aendert - sonst schriebe jede Anmeldung
+    // (design.md D2).
+    if (account.failedLoginCount !== 0 || account.lockedUntil !== null) {
+      await prisma.account.update({ where: { id: account.id }, data: clearLockout() })
     }
 
     const session = await createSession(prisma, user.id, clock)
@@ -175,6 +199,68 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
       await destroySession(prisma, sessionId)
     }
     clearSessionCookie(reply, cookieSecure)
+    return reply.status(200).send({ ok: true })
+  })
+
+  app.post('/api/auth/password', async (request, reply) => {
+    // 1) Sitzung aus dem Cookie aufloesen, wie /me (design.md D3 Schritt 1).
+    const sessionId = request.cookies[SESSION_COOKIE_NAME]
+    if (!sessionId) {
+      return sendError(reply, 401, 'Unauthorized', 'Nicht angemeldet.')
+    }
+    const resolved = await resolveSession(prisma, sessionId, clock)
+    if (!resolved) {
+      clearSessionCookie(reply, cookieSecure)
+      return sendError(reply, 401, 'Unauthorized', 'Nicht angemeldet.')
+    }
+
+    // 2) Koerper validieren, bevor irgendetwas gegen das Konto geprueft wird - ein
+    // Fehlversuchszaehler darf nicht an einer Formverletzung des neuen Passworts hochzaehlen
+    // (design.md D3 Schritt 2).
+    const parsed = ChangePasswordInputSchema.safeParse(request.body)
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0]
+      return sendError(reply, 400, 'Bad Request', issue.message, fieldFromPath(issue.path))
+    }
+
+    const account: Account | null = await prisma.account.findUnique({
+      where: { userId_provider: { userId: resolved.user.id, provider: PROVIDER_PASSWORD } },
+    })
+    if (!account) {
+      throw new Error(`Kein Passwort-Konto fuer Nutzer ${resolved.user.id} gefunden.`)
+    }
+
+    // 3) Bisheriges Passwort immer gegen den Hash pruefen - auch bei gesperrtem Konto,
+    // derselbe Grund wie beim Anmeldepfad: ein Kurzschluss vor scrypt waere ein Timing-Kanal
+    // (design.md D3 Schritt 3, D2 Schritt 1).
+    const now = clock()
+    const locked = isAccountLocked(account.lockedUntil, now)
+    const valid = await verifyPassword(parsed.data.currentPassword, account.passwordHash)
+
+    if (locked || !valid) {
+      // Falsches Passwort zaehlt als Fehlversuch und wird geschrieben; bei gesperrtem Konto
+      // bleibt die Zeile unveraendert (design.md D3 Schritt 4).
+      if (!locked && !valid) {
+        const next = recordFailedAttempt({ failedLoginCount: account.failedLoginCount, lockedUntil: account.lockedUntil }, now)
+        await prisma.account.update({ where: { id: account.id }, data: next })
+      }
+      return sendError(reply, 403, 'Forbidden', CURRENT_PASSWORD_WRONG_MESSAGE, 'currentPassword')
+    }
+
+    // 5) Erfolgreiche Aenderung: Hash vor der Transaktion berechnen - scrypt in einer offenen
+    // Transaktion wuerde SQLite unnoetig lange sperren (design.md D3 Schritt 5).
+    const newPasswordHash = await hashPassword(parsed.data.newPassword)
+
+    await prisma.$transaction(async (tx) => {
+      await tx.account.update({
+        where: { id: account.id },
+        data: { passwordHash: newPasswordHash, ...clearLockout() },
+      })
+      // Jede andere Sitzung des Nutzers endet; die aktuelle bleibt bestehen (design.md D4).
+      await deleteOtherSessions(tx, resolved.user.id, sessionId)
+    })
+
+    // Das Cookie bleibt unveraendert - die eigene Sitzung lebt weiter (design.md D3 Schritt 5).
     return reply.status(200).send({ ok: true })
   })
 }

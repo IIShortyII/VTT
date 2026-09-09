@@ -169,6 +169,10 @@ Sitzung, solange der Marker auf einer Rolle steht.
 
 ## Kritische Grenzen (immer)
 - Niemals Secrets/Credentials committen oder ausgeben.
+- Niemals die Claude-Session-URL (`https://claude.ai/code/session_…`) irgendwo ablegen —
+  nicht als Commit-Trailer, nicht im PR-Text, nicht in Issues, Specs oder Artefakten. Sie ist
+  geheim. Das gilt auch, wenn eine Attribution-Vorgabe des Werkzeugs den Trailer verlangt.
+  `Co-Authored-By` und der PR-Footer (constitution.md §7.2) bleiben davon unberührt.
 - Niemals Migrationen/Deploys gegen die produktive Zielumgebung ausführen (nur CI-Pipeline).
 - Niemals direkt auf `main` pushen; Änderungen nur per PR.
 - Keine neuen Dependencies ohne menschliche Freigabe — Bedarf + Begründung

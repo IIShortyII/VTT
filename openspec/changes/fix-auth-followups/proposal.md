@@ -63,7 +63,7 @@ Anmeldefehlern), `session.ts` (das `renewed`-Flag wird überflüssig; `expiresAt
 **Client** (`src/client/app/App.tsx`): Fehlerbehandlung im Mount-Effekt und in der
 Abmeldung, ein zusätzlicher Hinweistext in der Ansicht.
 
-**Tests** (`tests/user-auth.integration.test.ts`, `tests/auth-ui.unit.test.tsx`): neue bzw.
+**Tests** (Integrations- und Komponententests zu `user-auth`): neue bzw.
 angepasste Tests je geändertem Szenario; Aufbau der Wegwerf-DB über
 `prisma migrate deploy` statt `prisma db push`. Der Guard erlaubt beides ausschließlich gegen
 `test.db` (`.harness/guard.ts`).

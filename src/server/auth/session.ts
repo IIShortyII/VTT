@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 
-import type { PrismaClient, User } from '@prisma/client'
+import type { Prisma, PrismaClient, User } from '@prisma/client'
 
 import type { Clock } from '../core/clock.js'
 import { computeSessionExpiry, isSessionExpired, shouldRenewSession } from './rules.js'
@@ -55,4 +55,18 @@ export async function resolveSession(prisma: PrismaClient, sessionId: string, cl
 /** Beendet eine Sitzung serverseitig. Idempotent - eine bereits geloeschte Sitzung ist kein Fehler. */
 export async function destroySession(prisma: PrismaClient, sessionId: string): Promise<void> {
   await prisma.session.deleteMany({ where: { id: sessionId } })
+}
+
+/**
+ * Beendet jede andere Sitzung eines Nutzers - die Sitzung, aus der eine Passwortaenderung
+ * erfolgte, bleibt bestehen (account-security #13, design.md D4). Nimmt einen
+ * Transaktions-Client entgegen, damit Hash-Aenderung und Sitzungs-Bereinigung zusammen oder
+ * gar nicht geschehen (design.md D3).
+ */
+export async function deleteOtherSessions(
+  tx: Pick<Prisma.TransactionClient, 'session'>,
+  userId: string,
+  currentSessionId: string,
+): Promise<void> {
+  await tx.session.deleteMany({ where: { userId, id: { not: currentSessionId } } })
 }

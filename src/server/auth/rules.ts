@@ -160,3 +160,45 @@ export function shouldRenewSession(expiresAt: Date, now: Date): boolean {
   const remaining = expiresAt.getTime() - now.getTime()
   return remaining < SESSION_TTL_MS / 2
 }
+
+// account-security (#13): Sperrregel als reine Funktionen, ohne Prisma, mit injizierter Uhr
+// (design.md D2/D6). `LockoutState` bildet genau die zwei neuen Spalten am `Account` ab.
+
+/** Schwelle: der wievielte Fehlversuch das Konto sperrt (design.md D2). */
+export const LOCKOUT_THRESHOLD = 5
+/** Sperrdauer in Millisekunden - 15 Minuten (design.md D2). */
+export const LOCKOUT_DURATION_MS = 15 * 60 * 1000
+
+export interface LockoutState {
+  failedLoginCount: number
+  lockedUntil: Date | null
+}
+
+/** Ein Konto gilt als gesperrt, solange `lockedUntil` in der Zukunft liegt. */
+export function isAccountLocked(lockedUntil: Date | null, now: Date): boolean {
+  return lockedUntil !== null && lockedUntil.getTime() > now.getTime()
+}
+
+/**
+ * Verarbeitet einen Fehlversuch. Ist das Konto zum Zeitpunkt `now` bereits gesperrt, bleibt
+ * der Zustand unveraendert - ein Fehlversuch waehrend der Sperre verlaengert sie nicht und
+ * veraendert den Zaehler nicht (design.md D2, Frage 3: sonst koennte ein Fremder das Konto
+ * dauerhaft zuhalten). Sonst wird der Zaehler um eins erhoeht; erreicht er dabei die
+ * Schwelle, wird das Konto ab `now` fuer `LOCKOUT_DURATION_MS` gesperrt und der Zaehler auf
+ * null zurueckgesetzt - er beginnt nach Ablauf der Sperre wieder bei null, nicht bei fuenf.
+ */
+export function recordFailedAttempt(state: LockoutState, now: Date): LockoutState {
+  if (isAccountLocked(state.lockedUntil, now)) {
+    return state
+  }
+  const failedLoginCount = state.failedLoginCount + 1
+  if (failedLoginCount >= LOCKOUT_THRESHOLD) {
+    return { failedLoginCount: 0, lockedUntil: new Date(now.getTime() + LOCKOUT_DURATION_MS) }
+  }
+  return { failedLoginCount, lockedUntil: null }
+}
+
+/** Zustand nach einer erfolgreichen Anmeldung bzw. Passwortaenderung: Zaehler und Sperre weg. */
+export function clearLockout(): LockoutState {
+  return { failedLoginCount: 0, lockedUntil: null }
+}

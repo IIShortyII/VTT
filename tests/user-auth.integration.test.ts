@@ -10,17 +10,11 @@
 // Der Server wird ueber `app.inject()` angesprochen — echter Fastify-Stack samt Cookie-Plugin
 // und Prisma, aber ohne Port und Netzwerk (design.md D10).
 
-import { execSync } from 'node:child_process'
-import { existsSync, rmSync } from 'node:fs'
-import * as path from 'node:path'
 import { PrismaClient } from '@prisma/client'
 
-jest.setTimeout(120_000)
+import { setupEphemeralDb } from './helpers/ephemeral-db.js'
 
-const ROOT = path.resolve(__dirname, '..')
-const DB_FILE = path.join(ROOT, 'prisma', 'test.db')
-const DB_URL = `file:${DB_FILE.replace(/\\/g, '/')}`
-const DB_ARTEFAKTE = ['', '-journal', '-wal', '-shm']
+jest.setTimeout(120_000)
 
 const DAY = 24 * 60 * 60 * 1000
 const SESSION_TTL = 30 * DAY // Laufzeit einer Sitzung laut Spec
@@ -36,6 +30,7 @@ type App = Awaited<ReturnType<CreateApp>>
 let createApp: CreateApp
 let prisma: PrismaClient
 const openApps: App[] = []
+let removeDbFiles: () => void = () => {}
 
 // --- Hilfen ---------------------------------------------------------------------------------
 
@@ -157,36 +152,12 @@ function me(app: App, sid?: string) {
     : app.inject({ method: 'GET', url: '/api/auth/me', cookies: { sid } })
 }
 
-function removeDbFiles(): void {
-  for (const suffix of DB_ARTEFAKTE) {
-    if (existsSync(DB_FILE + suffix)) rmSync(DB_FILE + suffix, { force: true })
-  }
-}
-
 // --- Wegwerf-DB -----------------------------------------------------------------------------
 
 beforeAll(async () => {
-  process.env.DATABASE_URL = DB_URL
-  // Lokaler HTTP-Testlauf: das `secure`-Attribut des Cookies bleibt aus (design.md D4).
-  process.env.COOKIE_SECURE = 'false'
-
-  // Wegwerf-DB pro Lauf: erst die Datei aus einem eventuell abgebrochenen Vorlauf entfernen,
-  // dann frisch aus prisma/migrations/ aufbauen. `migrate deploy` ist nicht destruktiv und
-  // legt die SQLite-Datei an, wenn sie fehlt — der leere Startzustand kommt aus dem
-  // geloeschten File, nicht aus einem Reset-Kommando (design.md D5).
-  removeDbFiles()
-  try {
-    execSync('pnpm exec prisma migrate deploy', {
-      cwd: ROOT,
-      env: { ...process.env, DATABASE_URL: DB_URL },
-      stdio: 'pipe',
-    })
-  } catch (error) {
-    const details = error as { stdout?: Buffer; stderr?: Buffer }
-    throw new Error(
-      `prisma migrate deploy gegen die Wegwerf-DB fehlgeschlagen:\n${details.stdout ?? ''}\n${details.stderr ?? ''}`,
-    )
-  }
+  // Suite-eigene Wegwerf-DB (prisma/user-auth.test.db): DATABASE_URL steht danach, bevor der
+  // Prisma-Client und src/server/... geladen werden (die lesen sie beim Modulstart).
+  ;({ removeDbFiles } = setupEphemeralDb('user-auth'))
 
   prisma = new PrismaClient()
   ;({ createApp } = await import('../src/server/core/app.js'))

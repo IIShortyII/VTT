@@ -31,6 +31,13 @@ model Account {
   passwordHash String
   user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // account-security (#13): Fehlversuchszaehler und Sperrzeitpunkt je Konto (nicht je
+  // Nutzer, D-alt D2: ein zweiter Provider bekaeme eigene Zaehler). Beide Spalten haben
+  // Defaults bzw. sind nullable, damit die Migration bestehende Zeilen nicht anfasst
+  // (design.md D1).
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+
   @@unique([userId, provider])
 }
 

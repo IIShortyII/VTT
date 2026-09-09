@@ -1,9 +1,10 @@
 import type { PrismaClient, User } from '@prisma/client'
 import type { FastifyInstance, FastifyReply } from 'fastify'
+import type { ZodIssue } from 'zod'
 
 import { LoginInputSchema, RegisterInputSchema, type UserOutput } from '../../shared/auth.js'
 import type { Clock } from '../core/clock.js'
-import { getDummyHash, hashPassword, normalizeEmail, SESSION_TTL_SECONDS, verifyPassword } from './rules.js'
+import { getDummyHash, hashPassword, normalizeEmail, verifyPassword } from './rules.js'
 import { createSession, destroySession, resolveSession, SESSION_COOKIE_NAME } from './session.js'
 
 // Duenne Fastify-Anbindung: Validierung an der Grenze (zod), Aufruf der reinen Regeln aus
@@ -21,13 +22,19 @@ function toUserOutput(user: Pick<User, 'id' | 'email'>): UserOutput {
   return { id: user.id, email: user.email }
 }
 
-function setSessionCookie(reply: FastifyReply, sessionId: string, cookieSecure: boolean): void {
+/**
+ * Die Cookie-Laufzeit ist keine eigene Quelle, sondern eine Projektion des
+ * Sitzungs-Ablaufzeitpunkts aus der Datenbank (design.md D1) - so holt ein Browser, dem eine
+ * verlaengernde Antwort verloren ging, die Verlaengerung mit der naechsten Antwort nach.
+ */
+function setSessionCookie(reply: FastifyReply, sessionId: string, expiresAt: Date, clock: Clock, cookieSecure: boolean): void {
+  const maxAge = Math.max(0, Math.ceil((expiresAt.getTime() - clock().getTime()) / 1000))
   reply.setCookie(SESSION_COOKIE_NAME, sessionId, {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
     secure: cookieSecure,
-    maxAge: SESSION_TTL_SECONDS,
+    maxAge,
   })
 }
 
@@ -49,6 +56,19 @@ function sendError(reply: FastifyReply, statusCode: number, error: string, messa
   })
 }
 
+/** Uebersetzt einen zod-Issue-Pfad in das `field`-Antwortfeld - bei leerem Pfad (etwa ein
+ * strukturell ungueltiger Koerper) entfaellt es, statt als leerer String zu erscheinen
+ * (design.md D3). */
+function fieldFromPath(path: ZodIssue['path']): string | undefined {
+  return path.length > 0 ? path.join('.') : undefined
+}
+
+/** Haengt eine Issue am Feld `password`? Nur dann ist ein Anmeldekoerper eine formal
+ * moegliche, aber an den Zugangsdaten scheiternde Anmeldung (design.md D3). */
+function isPasswordFormIssue(issue: ZodIssue): boolean {
+  return issue.path.length > 0 && issue.path[0] === 'password'
+}
+
 export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
   const { prisma, clock, cookieSecure } = deps
 
@@ -56,7 +76,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
     const parsed = RegisterInputSchema.safeParse(request.body)
     if (!parsed.success) {
       const issue = parsed.error.issues[0]
-      return sendError(reply, 400, 'Bad Request', issue.message, issue.path.join('.'))
+      return sendError(reply, 400, 'Bad Request', issue.message, fieldFromPath(issue.path))
     }
 
     const email = normalizeEmail(parsed.data.email)
@@ -84,24 +104,27 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
     }
 
     const session = await createSession(prisma, user.id, clock)
-    setSessionCookie(reply, session.id, cookieSecure)
+    setSessionCookie(reply, session.id, session.expiresAt, clock, cookieSecure)
     return reply.status(201).send(toUserOutput(user))
   })
 
   app.post('/api/auth/login', async (request, reply) => {
     const parsed = LoginInputSchema.safeParse(request.body)
     if (!parsed.success) {
-      const emailIssue = parsed.error.issues.find((issue) => issue.path[0] === 'email')
-      if (emailIssue) {
-        // Eine syntaktisch ungueltige E-Mail kann zu keinem Konto gehoeren - das als 400 zu
-        // melden verraet nichts ueber die Kontoexistenz.
-        return sendError(reply, 400, 'Bad Request', emailIssue.message, 'email')
+      const issues = parsed.error.issues
+      const isFailedLoginAttempt = issues.length > 0 && issues.every(isPasswordFormIssue)
+      if (!isFailedLoginAttempt) {
+        // Strukturell keine Anmeldung (kein Objekt, fehlende/ungueltige E-Mail, ...) - eine
+        // ungueltige Anfrage, keine falschen Zugangsdaten (design.md D3).
+        const issue = issues[0]
+        return sendError(reply, 400, 'Bad Request', issue.message, fieldFromPath(issue.path))
       }
-      // Das Passwort hat nicht die erwartete Form (leer oder laenger als ein gueltiges
-      // Passwort je sein kann - PASSWORD_MAX_LENGTH). Das ist garantiert keine gueltige
-      // Anmeldung; wie falsche Zugangsdaten behandeln (401, gleiche Meldung), statt einen
-      // dritten, unterscheidbaren Antworttyp zu erzeugen und ohne den Wert erst durch
-      // `scrypt` zu schicken (Review-Runde 2).
+      // Der Koerper ist ein Objekt mit gueltiger E-Mail, und nur das Passwort hat nicht die
+      // erwartete Form (leer oder laenger als ein gueltiges Passwort je sein kann -
+      // PASSWORD_MAX_LENGTH). Das ist garantiert keine gueltige Anmeldung; wie falsche
+      // Zugangsdaten behandeln (401, gleiche Meldung), statt einen dritten, unterscheidbaren
+      // Antworttyp zu erzeugen und ohne den Wert erst durch `scrypt` zu schicken
+      // (Review-Runde 2).
       return sendError(reply, 401, 'Unauthorized', 'E-Mail oder Passwort ist falsch.')
     }
 
@@ -118,7 +141,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
     }
 
     const session = await createSession(prisma, user.id, clock)
-    setSessionCookie(reply, session.id, cookieSecure)
+    setSessionCookie(reply, session.id, session.expiresAt, clock, cookieSecure)
     return reply.status(200).send(toUserOutput(user))
   })
 
@@ -130,15 +153,18 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
 
     const resolved = await resolveSession(prisma, sessionId, clock)
     if (!resolved) {
+      // "Keine Zeile" und "Zeile abgelaufen und geloescht" sind fuer den Aufrufer gleich: das
+      // vorgelegte Cookie ist in beiden Faellen wertlos und wird entwertet, so wie es die
+      // Abmeldung tut (design.md D2).
+      clearSessionCookie(reply, cookieSecure)
       return sendError(reply, 401, 'Unauthorized', 'Nicht angemeldet.')
     }
 
-    // Die Halbwertsregel hat die DB-Zeile bereits verlaengert - ohne ein frisches Cookie
-    // bliebe das im Browser wirkungslos, und ein durchgehend aktiver Nutzer wuerde trotz
-    // gueltiger Sitzung nach 30 Tagen abgemeldet (Review-Runde 2).
-    if (resolved.renewed) {
-      setSessionCookie(reply, sessionId, cookieSecure)
-    }
+    // Jede authentifizierte Antwort traegt das Cookie mit der aus der DB abgeleiteten
+    // Restlaufzeit - unabhaengig davon, ob die Halbwertsregel gerade verlaengert hat
+    // (design.md D1). Ein verlorener Verlaengerungs-Response holt sich das beim naechsten
+    // Aufruf so von selbst nach.
+    setSessionCookie(reply, sessionId, resolved.expiresAt, clock, cookieSecure)
 
     return reply.status(200).send(toUserOutput(resolved.user))
   })

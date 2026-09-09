@@ -1,9 +1,11 @@
-// Integrationstests zu openspec/changes/add-user-auth/specs/user-auth/spec.md.
+// Integrationstests zu openspec/changes/add-user-auth/specs/user-auth/spec.md und dem Delta
+// aus openspec/changes/fix-auth-followups/specs/user-auth/spec.md.
 // Ein Test je GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname.
 //
 // Sie laufen gegen die ephemere Wegwerf-DB (AGENTS.md, constitution.md §4.3): prisma/test.db
-// wird hier angelegt, per `prisma db push` migriert und am Ende wieder geloescht. Niemals
-// gegen dev.db oder eine produktive Datenbank.
+// wird hier angelegt, per `prisma migrate deploy` aus prisma/migrations/ aufgebaut und am Ende
+// wieder geloescht — derselbe Weg wie in der CI-Pipeline (design.md D5, constitution.md §6.1).
+// Niemals gegen dev.db oder eine produktive Datenbank.
 //
 // Der Server wird ueber `app.inject()` angesprochen — echter Fastify-Stack samt Cookie-Plugin
 // und Prisma, aber ohne Port und Netzwerk (design.md D10).
@@ -102,6 +104,16 @@ function cookieLifetimeMs(header: string, now: Date): number | null {
   return null
 }
 
+/**
+ * Ein Cookie ist im Browser entwertet, wenn es einen leeren Wert traegt oder seine Laufzeit
+ * abgelaufen ist (`Max-Age=0` bzw. ein Ablaufzeitpunkt in der Vergangenheit) — genau das, was
+ * die Abmeldung tut.
+ */
+function cookieEntwertet(header: string, now: Date): boolean {
+  const laufzeit = cookieLifetimeMs(header, now)
+  return sessionCookieValue(header) === '' || (laufzeit !== null && laufzeit <= 0)
+}
+
 function sidOf(res: Res): string {
   return must(
     res.cookies.find((cookie) => cookie.name === 'sid'),
@@ -125,6 +137,20 @@ function login(app: App, email: string, password: string) {
   return app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password } })
 }
 
+/**
+ * Eine Anmeldeanfrage mit einem roh vorgegebenen JSON-Koerper — fuer die Faelle, in denen der
+ * Koerper strukturell nicht dem Vertrag entspricht (kein Objekt) und deshalb kein `{ email,
+ * password }`-Objekt konstruiert werden kann.
+ */
+function loginRaw(app: App, rawJsonBody: string) {
+  return app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    headers: { 'content-type': 'application/json' },
+    payload: rawJsonBody,
+  })
+}
+
 function me(app: App, sid?: string) {
   return sid === undefined
     ? app.inject({ method: 'GET', url: '/api/auth/me' })
@@ -145,11 +171,12 @@ beforeAll(async () => {
   process.env.COOKIE_SECURE = 'false'
 
   // Wegwerf-DB pro Lauf: erst die Datei aus einem eventuell abgebrochenen Vorlauf entfernen,
-  // dann frisch anlegen. Bewusst ohne `--force-reset` — der leere Startzustand kommt aus dem
-  // geloeschten File, nicht aus einem destruktiven Migrate-Kommando.
+  // dann frisch aus prisma/migrations/ aufbauen. `migrate deploy` ist nicht destruktiv und
+  // legt die SQLite-Datei an, wenn sie fehlt — der leere Startzustand kommt aus dem
+  // geloeschten File, nicht aus einem Reset-Kommando (design.md D5).
   removeDbFiles()
   try {
-    execSync('pnpm exec prisma db push --skip-generate', {
+    execSync('pnpm exec prisma migrate deploy', {
       cwd: ROOT,
       env: { ...process.env, DATABASE_URL: DB_URL },
       stdio: 'pipe',
@@ -157,7 +184,7 @@ beforeAll(async () => {
   } catch (error) {
     const details = error as { stdout?: Buffer; stderr?: Buffer }
     throw new Error(
-      `prisma db push gegen die Wegwerf-DB fehlgeschlagen:\n${details.stdout ?? ''}\n${details.stderr ?? ''}`,
+      `prisma migrate deploy gegen die Wegwerf-DB fehlgeschlagen:\n${details.stdout ?? ''}\n${details.stderr ?? ''}`,
     )
   }
 
@@ -285,6 +312,24 @@ test('Anmeldung mit falschem Passwort', async () => {
   expect(await prisma.session.count()).toBe(sessionsBefore)
 })
 
+test('Anmeldung mit strukturell ungültigem Anfragekörper', async () => {
+  const app = await makeApp()
+  expect((await register(app, EMAIL, PASSWORD)).statusCode).toBe(201)
+  // Die Registrierung hat bereits eine Sitzung eroeffnet; die ungueltigen Anfragen duerfen
+  // keine weitere anlegen.
+  const sessionsBefore = await prisma.session.count()
+
+  // Kein Objekt: JSON `null`, ein JSON-String, ein JSON-Array. Keine dieser Formen ist eine
+  // Anmeldung, sondern eine ungueltige Anfrage — `400`, nicht `401`.
+  for (const rawBody of ['null', '"spieler@example.com"', '[]']) {
+    const res = await loginRaw(app, rawBody)
+
+    expect(res.statusCode).toBe(400)
+    expect(setCookieHeaders(res)).toHaveLength(0)
+  }
+  expect(await prisma.session.count()).toBe(sessionsBefore)
+})
+
 // --- Zurückhaltung des Servers --------------------------------------------------------------
 
 test('Unbekannte E-Mail ist von falschem Passwort nicht zu unterscheiden', async () => {
@@ -383,6 +428,10 @@ test('Abgelaufene Sitzung gilt nicht mehr', async () => {
 
   expect(res.statusCode).toBe(401)
   expect(await prisma.session.findUnique({ where: { id: sid } })).toBeNull()
+  // Die Antwort, die die abgelaufene Sitzung zurueckweist, entwertet auch das Cookie im
+  // Browser — so wie es die Abmeldung tut (`Max-Age=0` bzw. leerer Wert).
+  const cookie = must(sessionCookieHeader(res), 'ein Set-Cookie-Header, der das Cookie entwertet')
+  expect(cookieEntwertet(cookie, new Date())).toBe(true)
 })
 
 test('Aktivität in der zweiten Hälfte der Laufzeit verlängert die Sitzung', async () => {
@@ -416,10 +465,22 @@ test('Aktivität in der ersten Hälfte der Laufzeit ändert nichts', async () =>
 
   expect(res.statusCode).toBe(200)
   const session = must(await prisma.session.findUnique({ where: { id: sid } }), 'die Sitzungszeile')
+  // "Aendert nichts" bezieht sich auf die Sitzung: ihr Ablaufzeitpunkt bleibt stehen.
   expect(session.expiresAt.getTime()).toBe(vorher.getTime())
-  // Unveraendert heisst auch: kein neues Sitzungscookie, also kein Schreibzugriff auf den
-  // Browser ohne Anlass.
-  expect(sessionCookieHeader(res)).toBeUndefined()
+  // Die Laufzeit im Browser folgt trotzdem der DB: die Antwort traegt das Sitzungscookie mit
+  // der verbleibenden Restlaufzeit — kuerzer als 30 Tage und nicht laenger als der Abstand
+  // zwischen jetzt und dem unveraenderten Ablaufzeitpunkt (Toleranz im Sekundenbereich,
+  // design.md Risks). So holt ein Browser, dem eine verlaengernde Antwort verloren ging, die
+  // Verlaengerung mit der naechsten Antwort nach, statt trotz gueltiger Sitzung abgemeldet zu
+  // werden.
+  const cookie = must(sessionCookieHeader(res), 'ein Sitzungscookie mit der Restlaufzeit')
+  expect(sessionCookieValue(cookie)).toBe(sid)
+  const laufzeit = must(cookieLifetimeMs(cookie, now), 'eine ablesbare Cookie-Laufzeit')
+  const rest = vorher.getTime() - now.getTime()
+  expect(laufzeit).toBeGreaterThan(0)
+  expect(laufzeit).toBeLessThan(SESSION_TTL)
+  expect(laufzeit).toBeLessThanOrEqual(rest + 1_000)
+  expect(laufzeit).toBeGreaterThanOrEqual(rest - 2_000)
 })
 
 // --- Abmeldung ------------------------------------------------------------------------------
@@ -437,8 +498,6 @@ test('Abmeldung beendet die Sitzung', async () => {
   // Das folgende 401 kaeme auch von der geloeschten Zeile allein — die Spec verlangt
   // zusaetzlich, dass die Abmeldeantwort das Cookie im Browser entwertet.
   const cookie = must(sessionCookieHeader(logout), 'ein Set-Cookie-Header der Abmeldeantwort')
-  const laufzeit = cookieLifetimeMs(cookie, new Date())
-  const entwertet = sessionCookieValue(cookie) === '' || (laufzeit !== null && laufzeit <= 0)
-  expect(entwertet ? 'entwertet' : cookie).toBe('entwertet')
+  expect(cookieEntwertet(cookie, new Date())).toBe(true)
   expect(danach.statusCode).toBe(401)
 })

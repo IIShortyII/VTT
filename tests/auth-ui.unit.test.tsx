@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 // Komponententests zum Requirement "Anmeldeoberfläche" aus
-// openspec/changes/add-user-auth/specs/user-auth/spec.md. Ein Test je Szenario,
+// openspec/changes/add-user-auth/specs/user-auth/spec.md und dem Delta aus
+// openspec/changes/fix-auth-followups/specs/user-auth/spec.md. Ein Test je Szenario,
 // Testname = Szenarioname (constitution.md §4.1).
 //
 // Geprueft wird, *was* die Anwendung anbietet und anzeigt — nicht, wie es aussieht
@@ -30,10 +31,35 @@ function antwort(status: number, body: unknown): Response {
   } as unknown as Response
 }
 
+/** Der Pfad, den ein `fetch`-Aufruf anspricht — unabhaengig von der Eingabeform. */
+function urlOf(input: RequestInfo | URL): string {
+  return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+}
+
 /** Bedient `fetch` anhand des angefragten Pfades. */
 function mockFetch(routes: Array<{ pfad: string; antwort: Response }>): void {
   globalThis.fetch = jest.fn(async (input: RequestInfo | URL) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    const url = urlOf(input)
+    const treffer = routes.find((route) => url.includes(route.pfad))
+    return must(treffer, `eine gemockte Antwort für ${url}`).antwort
+  }) as unknown as typeof fetch
+}
+
+/**
+ * Bedient `fetch` so, dass ein bestimmter Pfad die Anfrage *verwirft* (kein HTTP-Ergebnis,
+ * sondern ein geworfener Fehler — Netzfehler, Server nicht erreichbar), waehrend die uebrigen
+ * Pfade regulaer antworten. Damit laesst sich der Fall "keine brauchbare Antwort" pruefen, den
+ * die Spec vom "Server sagt nein" (`401`) unterscheidet.
+ */
+function mockFetchMitFehler(
+  fehlerPfad: string,
+  routes: Array<{ pfad: string; antwort: Response }>,
+): void {
+  globalThis.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = urlOf(input)
+    if (url.includes(fehlerPfad)) {
+      throw new TypeError('Failed to fetch')
+    }
     const treffer = routes.find((route) => url.includes(route.pfad))
     return must(treffer, `eine gemockte Antwort für ${url}`).antwort
   }) as unknown as typeof fetch
@@ -89,4 +115,45 @@ test('Fehlgeschlagene Anmeldung wird angezeigt', async () => {
   await waitFor(() => expect(screen.getAllByText(FEHLERMELDUNG).length).toBeGreaterThan(0))
   expect(emailFeld(container)).not.toBeNull()
   expect(passwortFeld(container)).not.toBeNull()
+})
+
+test('Server beim Start nicht erreichbar', async () => {
+  // Die Abfrage des angemeldeten Nutzers beim Start scheitert ohne Antwort des Servers: die
+  // Anfrage wird mit einem Fehler verworfen. Die Anwendung darf sich davon nicht als
+  // angemeldet oder still weiterladend zeigen — der Server hat nichts bestaetigt
+  // (constitution.md §9.1).
+  mockFetchMitFehler('/api/auth/me', [])
+
+  const { container } = render(<App />)
+
+  // Das Anmeldeformular erscheint (der Besucher kommt an ein Formular, mit dem er es erneut
+  // versuchen kann) …
+  await waitFor(() => expect(emailFeld(container)).not.toBeNull())
+  expect(passwortFeld(container)).not.toBeNull()
+  // … samt einem sichtbaren Hinweis, dass der Server nicht erreichbar war …
+  expect(screen.getByText(/nicht erreichbar/i)).toBeTruthy()
+  // … und der Ladehinweis ist verschwunden (kein dauerhaftes Verharren im Ladezustand).
+  expect(screen.queryByText(/lädt/i)).toBeNull()
+})
+
+test('Fehlgeschlagene Abmeldung wird angezeigt', async () => {
+  const user = { id: 'nutzer-1', email: 'spieler@example.com' }
+  // Angemeldeter Nutzer beim Start; die Abmeldeanfrage scheitert dann ohne Antwort des
+  // Servers (Anfrage verworfen).
+  mockFetchMitFehler('/api/auth/logout', [
+    { pfad: '/api/auth/me', antwort: antwort(200, user) },
+  ])
+
+  render(<App />)
+
+  // In der angemeldeten Ansicht auf "Abmelden" gehen.
+  const abmelden = await screen.findByRole('button', { name: /abmelden/i })
+  fireEvent.click(abmelden)
+
+  // Der Fehlschlag wird sichtbar gemacht, statt lautlos zu verpuffen …
+  await waitFor(() => expect(screen.getByText(/abmelden fehlgeschlagen/i)).toBeTruthy())
+  // … und die Ansicht bleibt angemeldet: der Server hat die Abmeldung nicht bestaetigt
+  // (constitution.md §9.1).
+  expect(screen.getByRole('button', { name: /abmelden/i })).toBeTruthy()
+  expect(screen.getByText(/angemeldet als/i)).toBeTruthy()
 })

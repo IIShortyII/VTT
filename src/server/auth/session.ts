@@ -19,11 +19,10 @@ export async function createSession(prisma: PrismaClient, userId: string, clock:
 
 export interface ResolvedSession {
   user: User
-  /** War die Sitzung nach der Halbwertsregel faellig fuer eine Verlaengerung? Falls ja, hat
-   * diese Funktion `Session.expiresAt` bereits aktualisiert - der Aufrufer muss dann noch
-   * das Cookie im Browser mit frischem `maxAge` neu setzen, sonst laeuft die Anmeldung im
-   * Browser trotz gueltiger DB-Sitzung nach 30 Tagen aus (Review-Runde 2). */
-  renewed: boolean
+  /** Aktueller Ablaufzeitpunkt der Sitzung - nach der Halbwertsregel ggf. bereits verlaengert.
+   * Der Aufrufer leitet daraus die Laufzeit des Sitzungscookies ab (design.md D1); die DB
+   * bleibt damit die einzige Quelle der Laufzeit, unabhaengig davon, ob diese Aufloesung
+   * verlaengert hat oder nicht. */
   expiresAt: Date
 }
 
@@ -48,9 +47,9 @@ export async function resolveSession(prisma: PrismaClient, sessionId: string, cl
       where: { id: session.id },
       data: { expiresAt },
     })
-    return { user: session.user, renewed: true, expiresAt }
+    return { user: session.user, expiresAt }
   }
-  return { user: session.user, renewed: false, expiresAt: session.expiresAt }
+  return { user: session.user, expiresAt: session.expiresAt }
 }
 
 /** Beendet eine Sitzung serverseitig. Idempotent - eine bereits geloeschte Sitzung ist kein Fehler. */

@@ -4,7 +4,7 @@ Vorhanden aus #12/#13: Fastify-Instanz als Funktion (`createApp`, injizierbare U
 Prisma), Cookie-Sitzung (`sid`) in der DB mit `resolveSession`, der `src/`-Schnitt
 `server/ · client/ · shared/`, Client ohne Router mit den Zuständen `unbekannt/anonym/
 angemeldet`, Integrationstests über `app.inject()` gegen eine Suite-eigene Wegwerf-DB
-(`tests/helpers/ephemeral-db.ts`). `socket.io` und `socket.io-client` liegen in
+(gemeinsamer Helfer unter den Testpfaden). `socket.io` und `socket.io-client` liegen in
 `package.json`, wurden aber nie importiert.
 
 Die Entscheidungen D1 bis D7 unten sind in der Explore-Runde mit dem Menschen gefallen
@@ -289,8 +289,8 @@ Native Elemente wie in #12 D8; keine UI-Bibliothek.
 
 ### D11 — Testaufbau
 
-- **REST-Szenarien**: `app.inject()` mit Cookie aus einer Registrierung, wie in
-  `tests/user-auth.integration.test.ts`. Eigene Suite-DB (`game-session.test.db` über
+- **REST-Szenarien**: `app.inject()` mit Cookie aus einer Registrierung, nach dem Muster der
+  bestehenden Auth-Integrationssuite. Eigene Suite-DB (`game-session.test.db` über
   `setupEphemeralDb('game-session')`).
 - **Socket-Szenarien**: die App muss lauschen — `await app.listen({ port: 0, host:
   '127.0.0.1' })`, Adresse aus `app.server.address()`. Client mit `socket.io-client`: das

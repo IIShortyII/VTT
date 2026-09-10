@@ -26,7 +26,7 @@
       das ist der erwartete Grund für die Verbindungs-Szenarien; für die übrigen ebenfalls
       prüfen, dass nicht ein Timeout im Setup, sondern die Verbindung/das Acknowledgement fehlt)
 - [ ] 1.3 Komponententests für die sechs Szenarien der Requirement „Sitzungsoberfläche"
-      (`tests/session-ui.unit.test.tsx`, jsdom-Docblock, `fetch` gemockt: `/api/auth/me`
+      (eigene Unit-Testdatei mit jsdom-Docblock, `fetch` gemockt: `/api/auth/me`
       liefert einen Nutzer, `/api/sessions` die Liste; Socket-Fassade
       `src/client/session/socket.ts` per `jest.mock` ersetzt, Ereignisse durch Aufruf der
       registrierten Handler ausgelöst); verifizieren, dass sie rot sind, weil Liste, Raum und

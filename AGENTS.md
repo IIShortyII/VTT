@@ -92,7 +92,15 @@ Bibliothek im Projekt sie mitbringt.
 - Typecheck läuft durchgehend mit `tsc --incremental` (tsBuildInfo im Run-Verzeichnis unter
   `.harness/runs/<issue>/`, nicht im Worktree — vermeidet Commit-Rauschen).
 - Fehlerfeedback an den Implementer enthält die vollständige Matcher-Ausgabe (Diff,
-  DOM-Ausgabe) bis zur Codeframe-/Stacktrace-Grenze, nie Testquellcode.
+  DOM-Ausgabe) bis zur Codeframe-/Stacktrace-Grenze, nie Testquellcode. Jest-Fehler, die nur
+  in `failureDetails` stehen (ts-jest-`TSError`) oder eine Suite gar nicht laden lassen,
+  werden ebenso ausgewertet.
+- Typecheck- und Lint-Befunde gehen mit ins Feedback: außerhalb von `tests/` vollständig
+  (Pfad, Zeile, Meldung bzw. Regel), unter `tests/` nur als Zählung („N Typfehler in
+  Testdateien"). ESLint schreibt dafür `--format json` in den Run-State.
+- Ist das Gate **ausschließlich** wegen Testdateien rot (Jest grün, jeder Typecheck-/Lint-Befund
+  unter `tests/`), geht die Nacharbeit an den test-author statt an den implementer — mit
+  demselben Rundenverbrauch (constitution.md §3.5).
 
 ## Board-Status
 Der Harness setzt den Status des Issues auf dem GitHub-Project „VTT" **zu Beginn** jedes

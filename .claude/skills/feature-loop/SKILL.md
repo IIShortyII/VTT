@@ -87,4 +87,6 @@ Der Rundenzähler (max 3, Implementer-, test-author- und App-Test-Nacharbeit zus
 und die Gate-Reihenfolge liegen im Skript; halte dich an dessen Verdikt. Ein Reviewer-Finding,
 dessen Block-Findings ausschließlich Testpfade betreffen, führt automatisch zu
 `invoke-test-author-rework` statt `invoke-implementer` — das entscheidet `pnpm harness next`,
-nicht die Session.
+nicht die Session. Dasselbe gilt für ein rotes Gate, das ausschließlich an Testdateien
+scheitert (Jest grün, jeder Typecheck-/Lint-Befund unter `tests/`): auch das routet `next`
+an den test-author, mit demselben Rundenverbrauch.

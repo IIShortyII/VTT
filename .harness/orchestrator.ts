@@ -4,7 +4,7 @@
 // die harten Invarianten und setzt den active-role-Marker als Seiteneffekt.
 import { execSync } from 'node:child_process'
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync, rmSync, cpSync } from 'node:fs'
-import { join, resolve as resolvePath } from 'node:path'
+import { join, relative, resolve as resolvePath } from 'node:path'
 import { setBoardStatus, setBoardStatusIfIssueClosed } from './board.js'
 import type { BoardStatus, GhRunner } from './board.js'
 
@@ -14,6 +14,9 @@ const ROLES: Role[] = ['test-author', 'implementer', 'reviewer', 'none']
 export type Role = 'test-author' | 'implementer' | 'reviewer' | 'none'
 type Scope = 'impl' | 'test' | 'human'
 export type Failure = { name: string; message: string }
+// Ein Befund aus Typecheck oder Lint (add-gate-feedback/design.md D1): `file` worktree-relativ mit
+// Forward-Slashes; ohne `file` ist es ein Fehler des Werkzeugs selbst (Optionsfehler, Konfiguration).
+export type ToolFailure = { tool: 'typecheck' | 'lint'; file?: string; message: string }
 export type RoundRecord = {
   round: number; role: Role; summary?: unknown; geänderte_dateien?: string[]
   gateGreen?: boolean; reviewRecommendation?: 'ok' | 'nacharbeit'
@@ -25,7 +28,8 @@ export type Pause = { grund: string; seit: string }
 export type Status = {
   issue: string; branch: string; round: number; change?: string
   phase: 'red' | 'implement' | 'gate' | 'review' | 'rework-tests' | 'app-review' | 'done' | 'archived' | 'escalated'
-  lastGate?: { green: boolean; failures?: Failure[] }
+  // jestGreen explizit (design.md D5): eine leere Failure-Liste heisst nicht, dass Jest gruen war.
+  lastGate?: { green: boolean; failures?: Failure[]; tools?: ToolFailure[]; jestGreen?: boolean }
   lastReview?: { recommendation: 'ok' | 'nacharbeit'; findings: unknown[] }
   lastAppReview?: { freigegeben: boolean; feedback?: string }
   rounds?: RoundRecord[]
@@ -147,7 +151,14 @@ export function next(i: string): string {
     case 'rework-tests': return emit(i, 'invoke-test-author-rework', 'test-author')
     case 'gate':
       if (!s.lastGate) return emit(i, 'run-gate')
-      if (!s.lastGate.green) return reworkImplementer(s)
+      // add-gate-feedback/design.md D4: Rot ausschliesslich aus Testdateien (Jest gruen, jeder
+      // Typecheck-/Lint-Befund unter tests/) geht an den test-author - derselbe Uebergang wie bei
+      // rein testbezogenen Review-Findings, mit demselben Rundenverbrauch. Alles andere bleibt die
+      // Implementer-Runde: ein roter Jest-Lauf hat immer eine Implementierungsseite.
+      if (!s.lastGate.green)
+        return onlyTestSideRed(s.lastGate)
+          ? reworkTo(s, 'rework-tests', 'invoke-test-author-rework', 'test-author')
+          : reworkImplementer(s)
       // Gemischte Block-Findings aus einer vorherigen Review-Runde: die test-scoped Findings
       // wurden geparkt (design.md D1) und muessen behoben sein, BEVOR der Reviewer erneut
       // laeuft - sonst reviewt Opus zweimal denselben Stand (kein Rundenverbrauch, da Teil
@@ -215,8 +226,21 @@ export function reviewRework(s: Status): string {
 export function scopeOfFinding(f: unknown): Scope {
   const ort = fwd(String((f as Record<string, unknown>).ort ?? ''))
   if (/(^|\/)(src|prisma)\//.test(ort)) return 'impl'
-  if (/(^|\/)tests\//.test(ort) || /\.test\.tsx?$/.test(ort)) return 'test'
+  if (isTestPath(ort)) return 'test'
   return 'human'
+}
+// Die eine Antwort auf "gehoert dieser Pfad dem test-author?" (add-gate-feedback/design.md D2) -
+// fuer Review-Findings wie fuer Werkzeugbefunde. Der human-Zweig von scopeOfFinding gilt fuer
+// Werkzeugbefunde bewusst nicht: ein Gate-Befund ausserhalb aller Rollenbereiche ist ein rotes
+// Gate wie jedes andere und geht den bestehenden Weg ueber die Implementer-Runde.
+export function isTestPath(p: string): boolean {
+  const f = fwd(p)
+  return /(^|\/)tests\//.test(f) || /\.test\.tsx?$/.test(f)
+}
+export function onlyTestSideRed(g: NonNullable<Status['lastGate']>): boolean {
+  const tools = g.tools ?? []
+  // jestGreen explizit, nie ueber failures.length (design.md D5).
+  return g.jestGreen === true && tools.length > 0 && tools.every(t => t.file !== undefined && isTestPath(t.file))
 }
 
 // --- Verbs ---
@@ -349,7 +373,9 @@ export function gate(i: string, run: Sh = sh) {
   // Alte jest.json aus einer vorherigen Runde nie stehen lassen: schlaegt der Jest-Prozess
   // dieser Runde fehl, ohne selbst eine Datei zu schreiben (Crash, Config-Fehler), wuerden
   // sonst veraltete Failures einer frueheren Runde als aktuelles Gate-Feedback interpretiert.
+  const eslintOut = join(process.cwd(), runDir(i), 'eslint.json')
   if (existsSync(jestOut)) rmSync(jestOut)
+  if (existsSync(eslintOut)) rmSync(eslintOut) // gleicher Grund wie jest.json (add-gate-feedback/design.md D1)
   // design.md D4: Runde 0/1 = Volllauf als Referenzlauf; ab Runde 2 (zweite Nacharbeit) zuerst
   // eine `--onlyFailures`-Abkuerzung - bleibt sie rot, spart das den Volllauf von typecheck/lint
   // fuer diese Runde. Gruen wird NUR nach bestaetigtem Volllauf gemeldet (§3.2 bleibt unveraendert).
@@ -359,7 +385,7 @@ export function gate(i: string, run: Sh = sh) {
     // wuerde ohne dieses Flag faelschlich mit "No failed test found" als Fehlschlag durchgehen.
     const quick = run(`pnpm test --onlyFailures --passWithNoTests --json --outputFile="${jestOut}"`, wt)
     if (!quick.ok) {
-      recordGateResult(s, false, parseJestFailures(i))
+      recordGateResult(s, { green: false, jestGreen: false, failures: jestFailuresOrFallback(i, false) })
       console.log(next(i))
       return
     }
@@ -367,17 +393,80 @@ export function gate(i: string, run: Sh = sh) {
   // Kein "--"-Trenner: pnpm reicht nachgestellte Argumente an das Skript durch, ohne dass
   // eine Disambiguierung noetig waere - mit "--" wuerde pnpm den Trenner selbst mit an tsc
   // weiterreichen (tsc bricht dann mit "error TS5023: Unknown compiler option '--'" ab).
-  const tc = run(`pnpm typecheck --incremental --tsBuildInfoFile "${tsBuildInfo}"`, wt)
-  const lint = run('pnpm lint', wt)
+  // --pretty false: das maschinenlesbare Zeilenformat, das parseTscOutput liest (add-gate-feedback/design.md D1).
+  const tc = run(`pnpm typecheck --incremental --tsBuildInfoFile "${tsBuildInfo}" --pretty false`, wt)
+  // ESLint schreibt sein JSON in den Run-State, nicht in den Worktree (design.md D1).
+  const lint = run(`pnpm lint --format json --output-file "${eslintOut}"`, wt)
   const test = run(`pnpm test --json --outputFile="${jestOut}"`, wt)
   const green = tc.ok && lint.ok && test.ok
-  recordGateResult(s, green, green ? undefined : parseJestFailures(i))
+  if (green) { recordGateResult(s, { green, jestGreen: true }); console.log(next(i)); return }
+  const tools = [
+    ...toolFailuresOrFallback('typecheck', tc, parseTscOutput(tc.out)),
+    ...toolFailuresOrFallback('lint', lint, parseEslintJson(i)),
+  ]
+  recordGateResult(s, { green, jestGreen: test.ok, tools, failures: jestFailuresOrFallback(i, test.ok) })
   console.log(next(i))
 }
-function recordGateResult(s: Status, green: boolean, failures?: Failure[]) {
-  s.lastGate = { green, failures }
-  updateLastRound(s, { gateGreen: green })
+// Ein rotes Werkzeug ohne zuordenbaren Befund (Optionsfehler, Konfiguration, Absturz) hinterlaesst
+// einen Befund ohne Datei aus der ersten Zeile seiner Ausgabe - "Gate: rot" ohne Zeile gibt es
+// nicht mehr (add-gate-feedback/design.md D1).
+function toolFailuresOrFallback(tool: ToolFailure['tool'], r: { ok: boolean; out: string }, parsed: ToolFailure[]): ToolFailure[] {
+  if (r.ok || parsed.length > 0) return parsed
+  return [{ tool, message: firstToolLine(r.out) || `${tool} rot ohne auswertbare Ausgabe.` }]
+}
+// Dasselbe fuer Jest: rot ohne Szenario-Failure darf keine leere Liste sein (design.md D5). Den
+// Absturz vor dem Schreiben von jest.json faengt parseJestFailures selbst.
+function jestFailuresOrFallback(i: string, jestOk: boolean): Failure[] {
+  const failures = parseJestFailures(i)
+  if (jestOk || failures.length > 0) return failures
+  return [{ name: 'gate', message: 'Jest rot, aber keine auswertbaren Szenario-Failures in der Jest-Ausgabe.' }]
+}
+function recordGateResult(s: Status, g: NonNullable<Status['lastGate']>) {
+  s.lastGate = g
+  updateLastRound(s, { gateGreen: g.green })
   s.phase = 'gate'; writeStatus(s)
+}
+// --- Werkzeugbefunde (add-gate-feedback/design.md D1) ---
+// pnpm-Rauschen ist keine Werkzeugausgabe: die Skript-Kopfzeile ("$ tsc --noEmit" bzw. aelter
+// "> pkg@1.0.0 lint ...") und der Trailer ("[ELIFECYCLE] Command failed ..." bzw. ohne Klammern).
+// tsc beendet Zeilen unter Windows teils mit CR - deshalb \r?\n und das Abschneiden am Zeilenende.
+function toolLines(out: string): string[] {
+  return stripAnsi(out).split(/\r?\n/).map(l => l.replace(/\s+$/, ''))
+    .filter(l => l.trim() !== '' && !/^[>$]\s/.test(l) && !/^\s*\[?(ELIFECYCLE|ERR_PNPM|WARN)\]?\b/.test(l))
+}
+function firstToolLine(out: string): string { return (toolLines(out)[0] ?? '').trim().slice(0, 300) }
+// tsc: `pfad(zeile,spalte): error TSnnnn: meldung`, mehrzeilige Meldungen eingerueckt darunter.
+// Pfade relativ zum Aufrufverzeichnis (dem Worktree) und mit Forward-Slashes, auch unter Windows.
+// Eine Zeile mit `error TS`, aber ohne Pfad, ist ein Fehler von tsc selbst (Optionsfehler).
+const TSC_LINE = /^(\S.*?)\((\d+),(\d+)\): error TS\d+: /
+export function parseTscOutput(out: string): ToolFailure[] {
+  const found: ToolFailure[] = []
+  for (const line of toolLines(out)) {
+    const m = TSC_LINE.exec(line)
+    if (m) { found.push({ tool: 'typecheck', file: fwd(m[1]), message: line }); continue }
+    if (/^error TS\d+/.test(line)) { found.push({ tool: 'typecheck', message: line }); continue }
+    if (/^\s/.test(line) && found.length > 0) found[found.length - 1].message += `\n${line}`
+  }
+  return found
+}
+// ESLint --format json: je Datei `filePath` (absolut) und `messages`; nur severity 2 macht
+// `eslint .` rot. Der Pfad wird gegen den absoluten Worktree relativiert. Eine fehlende Datei
+// (ESLint kam nicht bis zur Ausgabe) ergibt keine Befunde - den Rueckfall bildet der Aufrufer.
+type EslintEntry = { filePath: string; messages?: { ruleId?: string | null; severity: number; message: string; line?: number; column?: number }[] }
+export function parseEslintJson(i: string): ToolFailure[] {
+  const p = join(runDir(i), 'eslint.json')
+  if (!existsSync(p)) return []
+  let entries: EslintEntry[]
+  try { entries = JSON.parse(readFileSync(p, 'utf8')) as EslintEntry[] }
+  catch (e) { return [{ tool: 'lint', message: `Lint-Ausgabe nicht auswertbar (${(e as Error).name}).` }] } // nur die Fehlerklasse, wie parseJestFailures
+  const wt = resolvePath(worktreeDir(i))
+  const found: ToolFailure[] = []
+  for (const e of entries) for (const m of e.messages ?? []) {
+    if (m.severity !== 2) continue
+    const file = fwd(relative(wt, e.filePath))
+    found.push({ tool: 'lint', file, message: `${file}:${m.line ?? 0}:${m.column ?? 0}  ${m.ruleId ?? 'error'}  ${m.message}` })
+  }
+  return found
 }
 const CODEFRAME_LIMIT = 4000
 export function parseJestFailures(i: string): Failure[] {
@@ -386,30 +475,32 @@ export function parseJestFailures(i: string): Failure[] {
   // (Review-Befund) statt ein - wenn auch generisches - rotes Gate-Ergebnis zu liefern.
   try {
     const j = JSON.parse(readFileSync(join(runDir(i), 'jest.json'), 'utf8'))
-    const testFiles = listTestFiles(i)
-    // Inhalts-Matching (Zeile-fuer-Zeile-Vergleich) nur gegen plausible Quelldateien, nicht
-    // gegen JEDE Datei unter tests/: Snapshots/Fixtures enthalten regulaer lange Zeilen, die bei
-    // Matcher-Fehlern (Snapshot-Diff, DOM-Dump) legitim in der Ausgabe auftauchen und sonst jeden
-    // solchen Failure unnoetig auf die Erstzeilen-Form degradieren wuerden (Review-Befund Runde 2).
-    // Das PFAD-Matching bleibt bewusst auf ALLE Dateien unter tests/ (nicht nur Quelldateien).
-    const sourceLikeFiles = testFiles.filter(f => /\.(ts|tsx|js|jsx|cjs|mjs)$/.test(f) && !/__snapshots__/.test(f))
-    const testLines = sourceLikeFiles.flatMap(f => readFileSync(f, 'utf8').split('\n').map(l => l.trim()).filter(l => l.length > 20))
+    const leakt = makeLeakDetector(i)
     const out: Failure[] = []
-    for (const file of j.testResults ?? [])
-      for (const t of file.assertionResults ?? [])
+    for (const file of j.testResults ?? []) {
+      const assertions = file.assertionResults ?? []
+      // Eine Suite, die nicht laedt, hat keine Szenarien, an denen ein Befund haengen koennte; ihr
+      // Grund steht in testResults[].message (add-gate-feedback/design.md D6). Fester Name statt
+      // Dateiname - der waere ein Testpfad. Nicht truncateAtTestReference: die Suite-Meldung nennt
+      // die Testdatei in der KOPFZEILE, ein Abschneiden dort liesse den Modulfehler unter src/
+      // dahinter verschwinden - deshalb zeilenweise gesiebt (scrubSuiteMessage).
+      if (file.status === 'failed' && assertions.length === 0 && typeof file.message === 'string' && file.message.trim() !== '') {
+        const kandidat = scrubSuiteMessage(file.message).slice(0, CODEFRAME_LIMIT) || firstErrorLine(file.message)
+        out.push({ name: SUITE_FAILURE_NAME, message: leakt(kandidat) ? degradeToFirstLine(i, SUITE_FAILURE_NAME, file.message, leakt) : kandidat })
+        continue
+      }
+      for (const t of assertions)
         if (t.status === 'failed') {
-          const raw = (t.failureMessages ?? []).join('\n')
+          // failureDetails als Ersatz fuer leere failureMessages (design.md D6): ts-jest legt einen
+          // TSError dort ab (diagnosticText), failureMessages bleibt leer - bei #6 waren das 62
+          // Szenarionamen ohne eine einzige Zeile.
+          const messages = (t.failureMessages ?? []).join('\n')
+          const raw = messages.trim() !== '' ? messages
+            : ((t.failureDetails ?? []) as unknown[]).map(detailText).filter(d => d !== '').join('\n')
           const trimmed = truncateAtTestReference(raw).slice(0, CODEFRAME_LIMIT)
           // Letzte Instanz (design.md D2): enthaelt die durchgereichte Message trotz Abschneiden
           // woertlichen Testinhalt, degradiert NUR dieser Failure auf die alte Erstzeilen-Form,
-          // statt den ganzen Run zu blockieren.
-          // Derselbe Erkenner wie in assertNoTestLeak (design.md D1) - zwei Waechter, dieselbe
-          // Frage, eine Antwort. Was er hier ZUSAETZLICH faengt, ist die Form ohne Verzeichnis
-          // (D5): truncateAtTestReference schneidet oben bereits an tests/ bzw. tests\ ab, der
-          // blosse Dateiname aus "Cannot find module './x' from 'y.unit.test.tsx'" bleibt aber
-          // stehen.
-          const leakt = (text: string) => testFiles.some(f => testFileMention(text, f, i) !== undefined)
-            || testLines.some(l => text.includes(l))
+          // statt den ganzen Run zu blockieren. Der Erkenner: makeLeakDetector.
           // Geprueft wird, was tatsaechlich WEITERGEREICHT wird - nicht, was zuerst gebildet
           // wurde. Der Rueckfall auf die erste Zeile greift genau dann, wenn das Kuerzen nichts
           // uebrig liess, und das ist der Regelfall bei "Cannot find module './x' from
@@ -430,12 +521,47 @@ export function parseJestFailures(i: string): Failure[] {
           }
           out.push({ name: t.title, message: leakt(kandidat) ? degradeToFirstLine(i, t.title, raw, leakt) : kandidat })
         }
+    }
     return out
   } catch (e) {
     // Nur die Fehlerklasse, nicht die volle Meldung: ein ENOENT/SyntaxError-Text kann den vollen
     // (potenziell Testpfad enthaltenden) Dateipfad einschliessen (Review-Befund Runde 2).
     return [{ name: 'gate', message: `Gate-Ausgabe nicht auswertbar (${(e as Error).name}).` }]
   }
+}
+const SUITE_FAILURE_NAME = 'Testsuite konnte nicht geladen werden'
+function detailText(d: unknown): string {
+  if (typeof d === 'string') return d
+  const r = (d ?? {}) as Record<string, unknown>
+  const text = r.diagnosticText ?? r.message
+  return typeof text === 'string' ? text : ''
+}
+// Suite-Meldung zeilenweise sieben: Testreferenzen und Codeframe-Zeilen fallen weg, am ersten
+// Stacktrace-Eintrag ist Schluss. Bleibt, was eine Rolle brauchen kann: der Grund unter src/.
+function scrubSuiteMessage(m: string): string {
+  const kept: string[] = []
+  for (const l of m.split('\n')) {
+    if (/^\s+at\s/.test(l)) break
+    if (/^\s*>?\s*\d+\s*\|/.test(l) || /tests[\\/][^\s:()]+/.test(l)) continue
+    kept.push(l)
+  }
+  return kept.join('\n').trim()
+}
+// Der eine Erkenner fuer "nennt dieser Text eine Testdatei oder zitiert ihren Inhalt" - fuer
+// Jest-Failures wie fuer Werkzeugbefunde (add-gate-feedback/design.md D3). Derselbe wie in
+// assertNoTestLeak (normalize-path-comparisons/design.md D1): zwei Waechter, dieselbe Frage, eine
+// Antwort. Was er ZUSAETZLICH zu truncateAtTestReference faengt, ist die Form ohne Verzeichnis
+// (D5): der blosse Dateiname aus "Cannot find module './x' from 'y.unit.test.tsx'".
+// Inhalts-Matching (Zeile-fuer-Zeile-Vergleich) nur gegen plausible Quelldateien, nicht gegen
+// JEDE Datei unter tests/: Snapshots/Fixtures enthalten regulaer lange Zeilen, die bei
+// Matcher-Fehlern (Snapshot-Diff, DOM-Dump) legitim in der Ausgabe auftauchen und sonst jeden
+// solchen Failure unnoetig auf die Erstzeilen-Form degradieren wuerden (Review-Befund Runde 2).
+// Das PFAD-Matching bleibt bewusst auf ALLE Dateien unter tests/ (nicht nur Quelldateien).
+function makeLeakDetector(i: string): (text: string) => boolean {
+  const testFiles = listTestFiles(i)
+  const sourceLikeFiles = testFiles.filter(f => /\.(ts|tsx|js|jsx|cjs|mjs)$/.test(f) && !/__snapshots__/.test(f))
+  const testLines = sourceLikeFiles.flatMap(f => readFileSync(f, 'utf8').split('\n').map(l => l.trim()).filter(l => l.length > 20))
+  return (text: string) => testFiles.some(f => testFileMention(text, f, i) !== undefined) || testLines.some(l => text.includes(l))
 }
 // Schneidet Jest-Failure-Messages VOR dem Codeframe ab: Jest zeigt bei Matcher-Fehlern
 // standardmaessig einen Quellcode-Ausschnitt der Testdatei (nummerierte Zeilen mit "|"), bevor
@@ -489,7 +615,8 @@ export function buildImplPrompt(i: string) {
     fail(`Kein Material im erwarteten Change-Verzeichnis ${join(worktreeDir(i), 'openspec', 'changes', s.change ?? i)} — Verzeichnis fehlt oder der Change-Name in status.json ist falsch.`)
   const spec = formatChangeParts(parts)
   const gateFeedback = s.lastGate && !s.lastGate.green
-    ? s.lastGate.failures!.map(f => `## ${f.name}\n${f.message}`).join('\n\n') : ''
+    ? (s.lastGate.failures ?? []).map(f => `## ${f.name}\n${f.message}`).join('\n\n') : ''
+  const toolFeedback = s.lastGate && !s.lastGate.green ? formatToolFeedbackForImplementer(i, s.lastGate.tools ?? []) : ''
   const reviewFeedback = s.lastReview && s.lastReview.recommendation === 'nacharbeit'
     ? formatReviewFindings((s.lastReview.findings as unknown[]).filter(f => scopeOfFinding(f) === 'impl')) : ''
   // Kostentreiber 3 aus proposal.md ("Rework ohne Gedaechtnis"): eine Ablehnung im menschlichen
@@ -506,9 +633,43 @@ Du siehst die Tests nicht. Ziel: grünes Gate (Tests + Typecheck + Lint).
 ${spec}
 
 # Konventionen
-Siehe AGENTS.md und constitution.md.${gateFeedback ? `\n\n# Fehlgeschlagene Szenarien (vollständige Matcher-Ausgabe, kein Testcode)\n${gateFeedback}` : ''}${reviewFeedback ? `\n\n# Reviewer-Findings aus vorheriger Runde (beheben)\n${reviewFeedback}` : ''}${appReviewFeedback ? `\n\n# Ablehnung aus dem menschlichen App-Test (beheben)\n${appReviewFeedback}` : ''}${history}`
+Siehe AGENTS.md und constitution.md.${gateFeedback ? `\n\n# Fehlgeschlagene Szenarien (vollständige Matcher-Ausgabe, kein Testcode)\n${gateFeedback}` : ''}${toolFeedback ? `\n\n# Typecheck / Lint (rot)\n${toolFeedback}` : ''}${reviewFeedback ? `\n\n# Reviewer-Findings aus vorheriger Runde (beheben)\n${reviewFeedback}` : ''}${appReviewFeedback ? `\n\n# Ablehnung aus dem menschlichen App-Test (beheben)\n${appReviewFeedback}` : ''}${history}`
   assertNoTestLeak(prompt, i, parts) // G1: bricht ab bei Testpfad/-inhalt
   console.log(prompt)
+}
+// add-gate-feedback/design.md D3: Befunde ausserhalb tests/ vollstaendig (Leak-geprueft), die
+// unter tests/ nur als Zaehlung je Werkzeug - Pfad, Symbol, Zeile und Regel einer Testdatei sind
+// dasselbe Material, das parseJestFailures zurueckhaelt. Der Satz dazu, damit der implementer
+// weiss, warum das Gate nach seiner Nacharbeit rot bleiben kann - und dass es nicht an ihm liegt.
+function formatToolFeedbackForImplementer(i: string, tools: ToolFailure[]): string {
+  const leakt = makeLeakDetector(i)
+  const testseitig = (t: ToolFailure) => t.file !== undefined && isTestPath(t.file)
+  const eigene = tools.filter(t => !testseitig(t))
+  const fremde = tools.filter(testseitig)
+  const bloecke = (['typecheck', 'lint'] as const).flatMap(tool => {
+    const rows = eigene.filter(t => t.tool === tool)
+    if (rows.length === 0) return []
+    return [`## ${tool}\n${rows.map(t => {
+      if (!leakt(t.message)) return t.message
+      // Gleiche Wirkung wie bei einem Jest-Failure: dieser eine Befund faellt weg, der Lauf nicht.
+      protokolliere(i, `${tool} ${t.file ?? ''}`.trim(), 'zurückgehalten (Werkzeugbefund)')
+      return RUECKHALT_HINWEIS
+    }).join('\n')}`]
+  })
+  const n = (tool: ToolFailure['tool']) => fremde.filter(t => t.tool === tool).length
+  const zaehlung = [n('typecheck') > 0 ? `${n('typecheck')} Typfehler` : '', n('lint') > 0 ? `${n('lint')} Lint-Fehler` : '']
+    .filter(Boolean).join(' und ')
+  if (zaehlung) bloecke.push(`Außerdem: ${zaehlung} in Testdateien — nicht dein Bereich, behebt der test-author.`)
+  return bloecke.join('\n\n')
+}
+// Fuer den test-author ungefiltert (design.md D7): Tests sind fuer ihn sichtbar, kein Leak in
+// dieser Richtung. Nur die testseitigen Befunde - die uebrigen gehoeren dem implementer.
+function formatToolFeedbackForTestAuthor(tools: ToolFailure[]): string {
+  const eigene = tools.filter(t => t.file !== undefined && isTestPath(t.file))
+  return (['typecheck', 'lint'] as const).flatMap(tool => {
+    const rows = eigene.filter(t => t.tool === tool)
+    return rows.length === 0 ? [] : [`## ${tool}\n${rows.map(t => t.message).join('\n')}`]
+  }).join('\n\n')
 }
 // test-author korrigiert Tests gegen die SPEC, nie gegen die Implementierung (constitution.md
 // §2.1-Abgrenzung, design.md D1) - der Prompt enthaelt deshalb Spec + Findings, aber keinen
@@ -519,16 +680,16 @@ export function buildTestReworkPrompt(i: string) {
   const spec = readChangeSpec(i, s)
   const findings = (s.pendingTestFindings ?? []).filter(f => scopeOfFinding(f) !== 'human')
   const feedback = formatReviewFindings(findings)
+  // add-gate-feedback/design.md D4: auf der testseitigen Gate-Route gibt es keine Reviewer-Findings,
+  // dafuer die Typecheck-/Lint-Befunde - beide Abschnitte nur, wenn sie etwas tragen.
+  const toolFeedback = s.lastGate && !s.lastGate.green ? formatToolFeedbackForTestAuthor(s.lastGate.tools ?? []) : ''
   const prompt =
 `Korrigiere die folgenden Tests ausschließlich gegen die Spezifikation unten - nicht gegen die
 aktuelle Implementierung. Bestätige anschließend, ob die geänderten Tests gegen den aktuellen
 Stand grün laufen.
 
 # Spec
-${spec}
-
-# Reviewer-Findings zu den Tests (beheben)
-${feedback}`
+${spec}${feedback ? `\n\n# Reviewer-Findings zu den Tests (beheben)\n${feedback}` : ''}${toolFeedback ? `\n\n# Typecheck / Lint in Testdateien (beheben)\n${toolFeedback}` : ''}`
   console.log(prompt)
 }
 // design.md D3: schema-gebundene Zusammenfassung jeder Runde (test-author ODER implementer),

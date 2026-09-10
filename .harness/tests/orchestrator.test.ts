@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve as resolvePath } from 'node:path'
 import {
   readStatus, writeStatus, next, reviewRework, confirmTestRework, confirmAppReview, checkPreflight,
   scopeOfFinding, parseJestFailures, recordRoundSummary, recordReview, runDir, worktreeDir,
@@ -1017,5 +1017,210 @@ describe('start richtet den frischen Worktree ein (harness-worktree-setup)', () 
     const add = calls.find(c => c.cmd.startsWith('git worktree add'))
     expect(add!.cmd).toContain(`-B feat/${issue} `)
     expect(readStatus(issue).branch).toBe(`feat/${issue}`)
+  })
+})
+
+describe('Gate-Feedback aus jeder Quelle (harness-gate-feedback)', () => {
+  const CHANGE = 'gate-change'
+  // Der Auftrag an den implementer braucht Change-Material (harness-spec-delivery); der Inhalt
+  // ist hier gleichgueltig, er darf nur nicht leer sein.
+  function makeChangeMaterial(issue: string) {
+    const dir = join(worktreeDir(issue), 'openspec', 'changes', CHANGE)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'proposal.md'), 'Warum: das Gate soll seinen Grund nennen.')
+  }
+  function promptVon(bauen: () => void): string {
+    const zeilen: string[] = []
+    const spy = jest.spyOn(console, 'log').mockImplementation((...a: unknown[]) => { zeilen.push(a.map(String).join(' ')) })
+    try { bauen() } finally { spy.mockRestore() }
+    return zeilen.join('\n')
+  }
+  // Stellvertreter fuer die drei Werkzeuge des Gates: liefert tsc-Text, schreibt eslint.json
+  // bzw. jest.json in den Run-State - so, wie die echten Werkzeuge es taeten.
+  type Werkzeuge = {
+    tsc?: string; tscOk?: boolean
+    eslint?: unknown[] | null; lintOk?: boolean; lintOut?: string
+    jest?: unknown; jestOk?: boolean
+  }
+  function gateMit(issue: string, w: Werkzeuge) {
+    const sh: Sh = (cmd) => {
+      if (cmd.includes('typecheck')) return { ok: w.tscOk ?? true, out: w.tsc ?? '' }
+      if (cmd.includes('lint')) {
+        if (w.eslint !== null) writeFileSync(join(runDir(issue), 'eslint.json'), JSON.stringify(w.eslint ?? []))
+        return { ok: w.lintOk ?? true, out: w.lintOut ?? '' }
+      }
+      if (cmd.includes('test')) {
+        writeFileSync(join(runDir(issue), 'jest.json'), JSON.stringify(w.jest ?? { testResults: [] }))
+        return { ok: w.jestOk ?? true, out: '' }
+      }
+      return { ok: true, out: '' }
+    }
+    promptVon(() => gate(issue, sh))
+    return readStatus(issue)
+  }
+  const absSrc = (issue: string, rel: string) => join(resolvePath(worktreeDir(issue)), ...rel.split('/'))
+  const lintBefund = (issue: string, rel: string, line: number, ruleId: string, message: string, severity = 2) => ({
+    filePath: absSrc(issue, rel), messages: [{ ruleId, severity, message, line, column: 3 }], errorCount: 1, warningCount: 0,
+  })
+  const TSC_SRC = "src/server/session.ts(12,5): error TS2322: Type 'string' is not assignable to type 'number'."
+  const TSC_TEST_A = "tests/session.integration.test.ts(3,10): error TS2307: Cannot find module './helpers' or its corresponding type declarations."
+  const TSC_TEST_B = "tests/session.integration.test.ts(8,22): error TS2459: Module declares 'openSession' locally, but it is not exported."
+  const TOOL_TEST = (message: string, tool: 'typecheck' | 'lint' = 'typecheck') => ({ tool, file: 'tests/session.integration.test.ts', message })
+
+  describe('Ein rotes Gate nennt seinen Grund aus jeder Quelle', () => {
+    const issue = freshIssue()
+    afterEach(() => cleanup(issue))
+
+    it('Ein Typfehler im Quellpfad erreicht den implementer mit Pfad, Zeile und Meldung', () => {
+      makeStatus(issue, { change: CHANGE, phase: 'implement' })
+      makeChangeMaterial(issue)
+      // So, wie pnpm es liefert: Skript-Kopfzeile, CRLF aus tsc unter Windows, eingerueckte
+      // Folgezeile der Meldung, ELIFECYCLE-Trailer.
+      const folgezeile = "  Type 'undefined' is not assignable to type 'number'."
+      const s = gateMit(issue, { tsc: `$ tsc --noEmit --incremental\n${TSC_SRC}\r\n${folgezeile}\r\n[ELIFECYCLE] Command failed with exit code 2.\n`, tscOk: false })
+      expect(s.lastGate?.green).toBe(false)
+      const prompt = promptVon(() => buildImplPrompt(issue))
+      expect(prompt).toContain('src/server/session.ts')
+      expect(prompt).toContain('(12,5)')
+      expect(prompt).toContain("Type 'string' is not assignable to type 'number'")
+      expect(prompt).toContain(folgezeile)
+      expect(prompt).not.toContain('ELIFECYCLE')
+      expect(prompt).not.toContain('$ tsc')
+    })
+
+    it('Ein Lint-Fehler im Quellpfad erreicht den implementer mit Pfad, Zeile und Regel', () => {
+      makeStatus(issue, { change: CHANGE, phase: 'implement' })
+      makeChangeMaterial(issue)
+      const s = gateMit(issue, { eslint: [lintBefund(issue, 'src/client/App.tsx', 7, 'no-unused-vars', "'foo' is defined but never used.")], lintOk: false })
+      expect(s.lastGate?.green).toBe(false)
+      const prompt = promptVon(() => buildImplPrompt(issue))
+      expect(prompt).toContain('src/client/App.tsx')
+      expect(prompt).toMatch(/\b7\b/)
+      expect(prompt).toContain('no-unused-vars')
+      expect(prompt).toContain("'foo' is defined but never used.")
+    })
+
+    it('Ein Werkzeugfehler ohne Datei ergibt einen Befund ohne Datei', () => {
+      makeStatus(issue, { phase: 'implement' })
+      const s = gateMit(issue, { eslint: null, lintOk: false, lintOut: '$ eslint . --format json --output-file x\n\nOops! Something went wrong! :(\nESLint: 9.0.0\nConfigError: ...\n[ELIFECYCLE] Command failed with exit code 2.\n' })
+      expect(s.lastGate?.green).toBe(false)
+      const lint = (s.lastGate?.tools ?? []).filter(t => t.tool === 'lint')
+      expect(lint).toHaveLength(1)
+      expect(lint[0].file).toBeUndefined()
+      expect(lint[0].message).toBe('Oops! Something went wrong! :(')
+    })
+
+    it('Der Jest-Ausgang steht explizit im Run-State', () => {
+      makeStatus(issue, { phase: 'implement' })
+      const s = gateMit(issue, { jest: { testResults: [] }, jestOk: false })
+      expect(s.lastGate?.green).toBe(false)
+      expect(s.lastGate?.jestGreen).toBe(false)
+      expect((s.lastGate?.failures ?? []).length).toBeGreaterThan(0) // kein rotes Gate ohne Befund
+    })
+  })
+
+  describe('Der implementer sieht Testbefunde nur als Zählung', () => {
+    const issue = freshIssue()
+    afterEach(() => cleanup(issue))
+
+    it('Ein Typfehler in einer Testdatei erscheint beim implementer nur als Zahl', () => {
+      makeStatus(issue, { change: CHANGE, phase: 'implement' })
+      makeChangeMaterial(issue)
+      gateMit(issue, { tsc: [TSC_SRC, TSC_TEST_A, TSC_TEST_B, ''].join('\n'), tscOk: false })
+      const prompt = promptVon(() => buildImplPrompt(issue))
+      expect(prompt).toContain(TSC_SRC)
+      expect(prompt).toContain('2 Typfehler in Testdateien')
+      expect(prompt).not.toContain('session.integration.test.ts')
+      expect(prompt).not.toContain('(3,10)')
+      expect(prompt).not.toContain("Cannot find module './helpers'")
+      expect(prompt).not.toContain('openSession')
+    })
+
+    it('Ein Quellbefund, der eine Testdatei nennt, wird zurückgehalten', () => {
+      makeStatus(issue, { change: CHANGE, phase: 'implement' })
+      makeChangeMaterial(issue)
+      mkdirSync(join(worktreeDir(issue), 'tests'), { recursive: true })
+      writeFileSync(join(worktreeDir(issue), 'tests', 'foo.unit.test.ts'), 'it("x", () => {})\n')
+      const leck = "src/index.ts(1,1): error TS6059: File 'tests/foo.unit.test.ts' is not under 'rootDir'."
+      gateMit(issue, { tsc: `${leck}\n`, tscOk: false })
+      const exitSpy = jest.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit') }) as never)
+      try {
+        const prompt = promptVon(() => buildImplPrompt(issue))
+        expect(prompt).not.toContain('foo.unit.test.ts')
+        expect(prompt).toContain('zurückgehalten')
+        expect(exitSpy).not.toHaveBeenCalled()
+      } finally { exitSpy.mockRestore() }
+      expect(readFileSync(join(runDir(issue), 'leak-degradations.log'), 'utf8')).toContain('zurückgehalten')
+    })
+  })
+
+  describe('Ausschließlich testseitiges Rot geht an den test-author', () => {
+    const issue = freshIssue()
+    afterEach(() => cleanup(issue))
+
+    it('Typfehler nur in Testdateien gehen an den test-author', () => {
+      makeStatus(issue, { round: 1, phase: 'gate', lastGate: { green: false, failures: [], jestGreen: true, tools: [TOOL_TEST(TSC_TEST_A), TOOL_TEST(TSC_TEST_B)] } })
+      const action = JSON.parse(next(issue)).action
+      expect(action).toBe('invoke-test-author-rework')
+      expect(readFileSync(join(runDir(issue), 'active-role'), 'utf8')).toBe('test-author')
+      expect(readStatus(issue).round).toBe(2)
+      const prompt = promptVon(() => buildTestReworkPrompt(issue))
+      expect(prompt).toContain(TSC_TEST_A)
+      expect(prompt).toContain(TSC_TEST_B)
+    })
+
+    it('Lint-Fehler nur in Testdateien gehen ebenso an den test-author', () => {
+      makeStatus(issue, { round: 1, phase: 'gate', lastGate: { green: false, failures: [], jestGreen: true, tools: [TOOL_TEST('tests/session.integration.test.ts:4:1  no-unused-vars  x', 'lint')] } })
+      expect(JSON.parse(next(issue)).action).toBe('invoke-test-author-rework')
+      expect(readStatus(issue).round).toBe(2)
+    })
+
+    it('Gemischte Befunde bleiben eine Implementer-Runde', () => {
+      makeStatus(issue, { round: 1, phase: 'gate', lastGate: { green: false, failures: [], jestGreen: true, tools: [{ tool: 'typecheck', file: 'src/server/session.ts', message: TSC_SRC }, TOOL_TEST(TSC_TEST_A)] } })
+      expect(JSON.parse(next(issue)).action).toBe('invoke-implementer')
+    })
+
+    it('Rotes Jest mit Testbefunden bleibt eine Implementer-Runde', () => {
+      makeStatus(issue, { round: 1, phase: 'gate', lastGate: { green: false, failures: [{ name: 'x', message: 'y' }], jestGreen: false, tools: [TOOL_TEST(TSC_TEST_A)] } })
+      expect(JSON.parse(next(issue)).action).toBe('invoke-implementer')
+    })
+
+    it('Die Eskalationsgrenze gilt auch für die testseitige Route', () => {
+      makeStatus(issue, { round: MAX_ROUNDS, phase: 'gate', lastGate: { green: false, failures: [], jestGreen: true, tools: [TOOL_TEST(TSC_TEST_A)] } })
+      expect(JSON.parse(next(issue)).action).toBe('escalate')
+      expect(readStatus(issue).phase).toBe('escalated')
+      expect(readStatus(issue).round).toBe(MAX_ROUNDS)
+    })
+  })
+
+  describe('Jest-Befunde außerhalb von failureMessages werden gelesen', () => {
+    const issue = freshIssue()
+    afterEach(() => cleanup(issue))
+
+    it('Ein TSError aus failureDetails erreicht den implementer mit Diagnose', () => {
+      mkdirSync(runDir(issue), { recursive: true })
+      const diagnostic = "src/server/index.ts:14:3 - error TS2769: No overload matches this call.\n  Overload 1 of 2 gave the following error."
+      writeFileSync(join(runDir(issue), 'jest.json'), JSON.stringify({ testResults: [{ status: 'failed', assertionResults: [{
+        status: 'failed', title: 'GIVEN eine Sitzung WHEN sie geöffnet wird THEN existiert sie',
+        failureMessages: [], failureDetails: [{ name: 'TSError', diagnosticCodes: [2769], diagnosticText: diagnostic }],
+      }] }] }))
+      const failures = parseJestFailures(issue)
+      expect(failures).toHaveLength(1)
+      expect(failures[0].name).toBe('GIVEN eine Sitzung WHEN sie geöffnet wird THEN existiert sie')
+      expect(failures[0].message).toContain('src/server/index.ts:14:3')
+      expect(failures[0].message).toContain('TS2769: No overload matches this call.')
+    })
+
+    it('Eine nicht ladbare Suite ergibt einen Befund mit ihrer Meldung', () => {
+      mkdirSync(runDir(issue), { recursive: true })
+      const message = "  ● Test suite failed to run\n\n    Cannot find module '../src/server/app.js' from 'tests/app.integration.test.ts'\n\n    src/server/index.ts:2:24 - error TS2307: Cannot find module './app.js'."
+      writeFileSync(join(runDir(issue), 'jest.json'), JSON.stringify({ testResults: [{ status: 'failed', name: 'C:/wt/tests/app.integration.test.ts', message, assertionResults: [] }] }))
+      const failures = parseJestFailures(issue)
+      expect(failures).toHaveLength(1)
+      expect(failures[0].name).toBe('Testsuite konnte nicht geladen werden')
+      expect(failures[0].message).toContain('Test suite failed to run')
+      expect(failures[0].message).toContain('src/server/index.ts:2:24') // der Modulfehler hinter der Kopfzeile bleibt erhalten
+      expect(failures[0].message).not.toContain('app.integration.test.ts')
+    })
   })
 })

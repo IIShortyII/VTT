@@ -4,18 +4,20 @@ import type { UserOutput } from '../../shared/auth.js'
 import { fetchCurrentUser, logout } from '../auth/api.js'
 import { LoginForm } from '../auth/LoginForm.js'
 import { RegisterForm } from '../auth/RegisterForm.js'
+import { MapLibrary } from '../map/MapLibrary.js'
 import { SessionList } from '../session/SessionList.js'
 import { SessionRoom } from '../session/SessionRoom.js'
 
 // Kein Router: der Auth-Zustand entscheidet, welche Ansicht erscheint (design.md D7/D10).
 // "unbekannt" ist kein Detail, sondern verhindert, dass beim Reload fuer einen Moment das
 // Loginformular aufblitzt. Innerhalb der angemeldeten Ansicht entscheidet `sessionView`
-// zwischen der Sitzungsliste und der Raumansicht (design.md D10, Non-Goal "kein Router").
+// zwischen Sitzungsliste, Raumansicht und Kartenbibliothek (design.md D9, map-library #49) -
+// kein Router (design.md D10, Non-Goal "kein Router").
 type AuthState = { status: 'unbekannt' } | { status: 'anonym' } | { status: 'angemeldet'; user: UserOutput }
 
 type AuthView = 'login' | 'register'
 
-type SessionView = { view: 'liste' } | { view: 'raum'; sessionId: string }
+type SessionView = { view: 'liste' } | { view: 'raum'; sessionId: string } | { view: 'bibliothek' }
 
 const SERVER_UNREACHABLE_MESSAGE = 'Der Server ist nicht erreichbar.'
 
@@ -103,6 +105,9 @@ export function App() {
         />
       )
     }
+    if (sessionView.view === 'bibliothek') {
+      return <MapLibrary onBack={() => setSessionView({ view: 'liste' })} />
+    }
     return (
       <SessionList
         user={state.user}
@@ -111,6 +116,7 @@ export function App() {
           setHinweis(null)
           setSessionView({ view: 'raum', sessionId })
         }}
+        onOpenLibrary={() => setSessionView({ view: 'bibliothek' })}
         onLogout={() => void handleLogout()}
       />
     )

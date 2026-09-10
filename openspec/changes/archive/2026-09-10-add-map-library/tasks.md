@@ -6,7 +6,7 @@
 
 ## 1. Tests (test-author)
 
-- [ ] 1.1 Integrationstests für die 18 REST-Szenarien der Requirements „Kartenrouten
+- [x] 1.1 Integrationstests für die 18 REST-Szenarien der Requirements „Kartenrouten
       verlangen eine Anmeldung", „Karte anlegen", „Meine Karten", „Karte ändern",
       „Kartenbild hochladen", „Kartenbild abrufen" und „Karte löschen" — `app.inject()` mit
       Cookie aus einer Registrierung, eigene Suite-DB über den bestehenden Wegwerf-DB-Helfer,
@@ -17,12 +17,12 @@
       → `404` statt `201`/`200`), nicht aus Setup-Gründen (§3.1). Hinweis: bis die Migration
       aus 2.1 existiert, fehlt die Tabelle — Tests, die sie lesen, scheitern dann an
       Prisma-Typen bzw. am Datenbankzugriff; beim Rot-Bestätigen unterscheiden
-- [ ] 1.2 Unit-Tests für die 11 Szenarien der Requirement „Rastergeometrie" gegen
+- [x] 1.2 Unit-Tests für die 11 Szenarien der Requirement „Rastergeometrie" gegen
       `src/shared/grid.ts` (`cellCenter`, `cellAt`, `cellCorners`, `cellRange`; Vergleich auf
       zwei Nachkommastellen) und die 3 Szenarien der Requirement „Sicht mit Schwenken und
       Zoomen" gegen `src/client/map/viewport.ts` (`zoomAt`, `panBy`); verifizieren, dass sie
       rot sind, weil die Module fehlen
-- [ ] 1.3 Komponententests für die 8 Szenarien der Requirement „Bibliotheksoberfläche"
+- [x] 1.3 Komponententests für die 8 Szenarien der Requirement „Bibliotheksoberfläche"
       (eigene Unit-Testdatei mit jsdom-Docblock; `fetch` gemockt nach Pfad und Methode, `PUT`-
       Body und `Content-Type` im Mock festgehalten; Canvas-Fassade `src/client/map/canvas.ts`
       per Modul-Mock ersetzt, Handle mit `setGrid`/`setImage`/`destroy` als `jest.fn`;
@@ -32,7 +32,7 @@
 
 ## 2. Schema (implementer)
 
-- [ ] 2.1 `prisma/schema.prisma`: Modell `GameMap` und Gegenrelation `maps` an `User` nach
+- [x] 2.1 `prisma/schema.prisma`: Modell `GameMap` und Gegenrelation `maps` an `User` nach
       design.md D1; Migrationsdatei `prisma/migrations/<stamp>_add-map-library/migration.sql`
       nach dem Muster der bestehenden Migrationen von Hand (eine Tabelle, Index auf
       `ownerId`, Fremdschlüssel mit `ON DELETE CASCADE`); verifizieren mit `pnpm db:generate`
@@ -40,11 +40,11 @@
 
 ## 3. Gemeinsamer Vertrag und Geometrie (implementer)
 
-- [ ] 3.1 `src/shared/map.ts`: `GRID_TYPES`, `GridSchema` (Grenzen aus der Spec),
+- [x] 3.1 `src/shared/map.ts`: `GRID_TYPES`, `GridSchema` (Grenzen aus der Spec),
       `DEFAULT_GRID`, `IMAGE_MIME_TYPES`, `MAX_IMAGE_BYTES`, `CreateMapInputSchema`,
       `UpdateMapInputSchema` (mindestens `name` oder `grid`), `MapSummarySchema`
       (design.md D5); kein serverseitiger Import; verifizieren mit `pnpm typecheck:src`
-- [ ] 3.2 `src/shared/grid.ts`: `cellCenter`, `cellAt`, `cellCorners`, `cellRange` für
+- [x] 3.2 `src/shared/grid.ts`: `cellCenter`, `cellAt`, `cellCorners`, `cellRange` für
       `quadrat`, `hex-spitz` (odd-r) und `hex-flach` (odd-q) nach design.md D6 — Umkreisradius
       `size/√3`, Ecken in Zeichenreihenfolge, Punkt→Zelle bei Hex über Axialkoordinaten und
       Würfelrundung, Zellbereich vollständig (bei Hex mit Rand); verifiziert durch die
@@ -52,16 +52,16 @@
 
 ## 4. Server (implementer)
 
-- [ ] 4.1 `src/server/core/config.ts`: `uploadDir` aus `UPLOAD_DIR` (Default
+- [x] 4.1 `src/server/core/config.ts`: `uploadDir` aus `UPLOAD_DIR` (Default
       `./data/uploads`, absolut aufgelöst); verifizieren mit `pnpm typecheck:src`
-- [ ] 4.2 `src/server/map/storage.ts`: `detectSignature` (PNG/JPEG/WebP), `writeImage`
+- [x] 4.2 `src/server/map/storage.ts`: `detectSignature` (PNG/JPEG/WebP), `writeImage`
       (Dateiname `<mapId>-<token>.<ext>`, Token aus `crypto.randomBytes`), `removeImage`
       (`ENOENT` protokolliert, sonst weiterwerfen), `imagePath`; alles mit injiziertem
       Verzeichnis über `node:fs/promises` (design.md D2); verifizieren mit `pnpm typecheck:src`
-- [ ] 4.3 `src/server/map/rules.ts`: `findOwnMap(prisma, userId, id)` mit Besitzer in der
+- [x] 4.3 `src/server/map/rules.ts`: `findOwnMap(prisma, userId, id)` mit Besitzer in der
       `where`-Klausel, `toMapSummary(map)` (vier Rasterspalten → `grid`, `hasImage`),
       Umrechnung `grid` → Spalten (design.md D1, D4); verifizieren mit `pnpm typecheck:src`
-- [ ] 4.4 `src/server/map/routes.ts`: `GET /api/maps` (eigene Karten nach `createdAt`),
+- [x] 4.4 `src/server/map/routes.ts`: `GET /api/maps` (eigene Karten nach `createdAt`),
       `POST /api/maps` (`400` + `field: 'name'`, `201`, Standardraster), `PATCH /api/maps/:id`
       (`400` + `field` aus dem zod-Pfad, `404` mit einer Meldung für fremd/unbekannt, `200`),
       `PUT /api/maps/:id/image` (Header-Prüfung → `415`, leerer Body → `400`, Signatur → `400`,
@@ -70,7 +70,7 @@
       `Content-Type` und `Cache-Control: private, no-store`), `DELETE /api/maps/:id` (`404`,
       sonst DB-Zeile dann Datei, `204`); Sitzungsauflösung wie in `session/routes.ts`
       (design.md D3, D4); verifiziert durch die REST-Szenarien im Gate
-- [ ] 4.5 `src/server/core/app.ts`: Content-Type-Parser für die drei Bildtypen mit
+- [x] 4.5 `src/server/core/app.ts`: Content-Type-Parser für die drei Bildtypen mit
       `parseAs: 'buffer'` und `bodyLimit: MAX_IMAGE_BYTES`; Option `uploadDir` (Default aus
       `loadConfig()`); `onReady` legt das Verzeichnis rekursiv an;
       `registerMapRoutes(app, { prisma, clock, uploadDir })` (design.md D2, D3); verifizieren
@@ -78,14 +78,14 @@
 
 ## 5. Client (implementer)
 
-- [ ] 5.1 `src/client/map/viewport.ts`: `View`, `panBy`, `zoomAt`, `clampScale` auf
+- [x] 5.1 `src/client/map/viewport.ts`: `View`, `panBy`, `zoomAt`, `clampScale` auf
       `[0.1, 8]` (design.md D7), ohne PixiJS-Import; verifiziert durch die Sicht-Szenarien im
       Gate
-- [ ] 5.2 `src/client/map/api.ts`: `listMaps`, `createMap`, `updateMap`, `uploadMapImage`
+- [x] 5.2 `src/client/map/api.ts`: `listMaps`, `createMap`, `updateMap`, `uploadMapImage`
       (`PUT` mit `body: file` und `Content-Type` aus `file.type`), `deleteMap`, `mapImageUrl`;
       `credentials: 'include'`, Antworten durch die `shared/`-Schemas geparst, Fehlerform wie
       `client/session/api.ts` (design.md D9); verifizieren mit `pnpm typecheck:src`
-- [ ] 5.3 `src/client/map/canvas.ts`: einziges Modul mit `pixi.js`-Import;
+- [x] 5.3 `src/client/map/canvas.ts`: einziges Modul mit `pixi.js`-Import;
       `createMapCanvas(container, { imageUrl, grid })` → Handle `setGrid`/`setImage`/`destroy`
       — `Application.init` mit `resizeTo`, Sprite über `Assets.load` mit Zähler-Query und
       `Assets.unload` beim Wechsel, `Graphics`-Raster aus `cellRange` + `cellCorners`,
@@ -93,33 +93,33 @@
       `destroy` genau einmal mit `app.destroy(true, { children: true, texture: true })`
       (design.md D8); verifizieren mit `pnpm typecheck:src` und `pnpm lint`; Verhalten im
       App-Test
-- [ ] 5.4 `src/client/map/MapCanvas.tsx`: `ref`-Element, `useEffect` lädt die Fassade per
+- [x] 5.4 `src/client/map/MapCanvas.tsx`: `ref`-Element, `useEffect` lädt die Fassade per
       dynamischem `import()` und erzeugt den Canvas (kein statischer Import von `canvas.ts`
       — sonst hängt `pixi.js` an der Importkette der `App`), `cancelled`-Flag für Unmount vor
       Auflösung, `setGrid`/`setImage` bei Prop-Änderung,
       `destroy` im Cleanup (design.md D9); verifiziert durch die Szenarien „Karte öffnen",
       „Gespeichertes Raster kommt vom Server" und „Verlassen gibt die Kartenansicht frei"
-- [ ] 5.5 `src/client/map/MapLibrary.tsx`: Liste mit Namen und „ohne Bild"-Kennzeichen,
+- [x] 5.5 `src/client/map/MapLibrary.tsx`: Liste mit Namen und „ohne Bild"-Kennzeichen,
       Formular „Neue Karte" (Name + Dateiwahl mit `accept`), Detailansicht mit `MapCanvas`,
       Formular für Name/Typ/Zellgröße/Versatz, „Bild ersetzen", „Löschen" → „Wirklich
       löschen", „Zurück"; Meldungen des Servers als `role="alert"`; Canvas zeigt nur
       Serverantworten (design.md D9); verifiziert durch die übrigen Bibliotheks-Szenarien
-- [ ] 5.6 `src/client/session/SessionList.tsx` (Schaltfläche „Kartenbibliothek",
+- [x] 5.6 `src/client/session/SessionList.tsx` (Schaltfläche „Kartenbibliothek",
       `onOpenLibrary`) und `src/client/app/App.tsx` (Zustand `bibliothek`, `MapLibrary` mit
       `onBack`); bestehende Szenarien der Sitzungs- und Anmeldeoberfläche bleiben grün;
       verifiziert im Gate
 
 ## 6. Abschluss
 
-- [ ] 6.1 Gate grün (Typecheck, Lint, komplette Jest-Suite inkl. der bestehenden Tests),
+- [x] 6.1 Gate grün (Typecheck, Lint, komplette Jest-Suite inkl. der bestehenden Tests),
       Review „ok"
-- [ ] 6.2 Session (rollenlos nach dem Review): `data/` in `.gitignore`, `UPLOAD_DIR` in
+- [x] 6.2 Session (rollenlos nach dem Review): `data/` in `.gitignore`, `UPLOAD_DIR` in
       `.env.example` dokumentieren; verifizieren mit `git status` (kein Upload im Index)
-- [ ] 6.3 App-Test durch den Menschen: Bibliothek öffnen, Karte mit PNG anlegen, Raster
+- [x] 6.3 App-Test durch den Menschen: Bibliothek öffnen, Karte mit PNG anlegen, Raster
       `quadrat` auf ein Kartenbild einpassen (Größe, Versatz), auf `hex-spitz` und `hex-flach`
       umschalten und prüfen, dass das Raster die Ausrichtung des Bildes trifft, Schwenken per
       Ziehen, Zoomen per Mausrad um den Zeiger, Bild ersetzen (neues Bild sichtbar, alte Datei
       weg), zehnmal zwischen Liste und Karte wechseln ohne WebGL-Warnung in der Konsole,
       Löschen mit Rückfrage, Bild-URL in einem zweiten, nicht angemeldeten Tab → `401`
-- [ ] 6.4 Change nach `openspec/changes/archive/YYYY-MM-DD-add-map-library/` verschieben
+- [x] 6.4 Change nach `openspec/changes/archive/YYYY-MM-DD-add-map-library/` verschieben
       und PR mit `Closes #49` öffnen (constitution.md §3.6)

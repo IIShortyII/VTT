@@ -29,3 +29,7 @@ dist/
 # OS / Crash-Artefakte
 .DS_Store
 *.stackdump
+
+# Kartenbilder der Kartenbibliothek (map-library #49): lokale Ablage neben der DB,
+# Pfad aus UPLOAD_DIR (Default ./data/uploads). Nutzerdaten, nie im Repo.
+data/

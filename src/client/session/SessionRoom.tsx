@@ -117,7 +117,7 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
         role: ack.session.role,
         code: ack.session.code,
         participants: ack.participants,
-        map: ack.map,
+        map: ack.map ?? null,
       })
       const self = ack.participants.find((participant) => participant.userId === currentUserId)
       setAliasInput(self?.alias ?? '')
@@ -211,7 +211,7 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
           role: ack.session.role,
           code: ack.session.code,
           participants: ack.participants,
-          map: ack.map,
+          map: ack.map ?? null,
         })
         const self = ack.participants.find((participant) => participant.userId === currentUserId)
         setAliasInput(self?.alias ?? '')

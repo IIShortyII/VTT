@@ -293,13 +293,13 @@ Native Elemente wie in #12 D8; keine UI-Bibliothek.
   `tests/user-auth.integration.test.ts`. Eigene Suite-DB (`game-session.test.db` über
   `setupEphemeralDb('game-session')`).
 - **Socket-Szenarien**: die App muss lauschen — `await app.listen({ port: 0, host:
-  '127.0.0.1' })`, Adresse aus `app.server.address()`. Client mit `socket.io-client`:
-  `io(url, { extraHeaders: { cookie: \`sid=${sid}\` }, transports: ['websocket'],
-  reconnection: false, autoConnect: false })`. `extraHeaders` wird nur in Node ausgewertet —
-  genau richtig für den Test; im Browser schickt der Browser das Cookie selbst.
-  `reconnection: false`, damit ein vom Test getrennter Socket nicht heimlich zurückkommt und
-  ein Szenario verfälscht. Ereignisse werden über `once`-Promises mit Timeout eingesammelt,
-  nie über `setTimeout`-Schlaf.
+  '127.0.0.1' })`, Adresse aus `app.server.address()`. Client mit `socket.io-client`: das
+  Cookie geht als `cookie`-Eintrag in `extraHeaders` mit (`sid=<id>`), der Transport wird auf
+  WebSocket beschränkt, automatisches Wiederverbinden und automatisches Verbinden sind aus.
+  `extraHeaders` wird nur in Node ausgewertet — genau richtig für den Test; im Browser schickt
+  der Browser das Cookie selbst. Wiederverbinden aus, damit ein vom Test getrennter Socket
+  nicht heimlich zurückkommt und ein Szenario verfälscht. Ereignisse werden über
+  `once`-Promises mit Timeout eingesammelt, nie über `setTimeout`-Schlaf.
 - **Unerwartete Ereignisse sichtbar machen**: für „kein `session:status`"-Aussagen (Verlust
   in `geoeffnet`) einen Listener registrieren, der bei Eintreffen den Test scheitern lässt,
   und stattdessen auf das *erwartete* `session:participants` warten — kein blindes Warten.

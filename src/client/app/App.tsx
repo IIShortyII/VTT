@@ -2,16 +2,20 @@ import { useEffect, useState } from 'react'
 
 import type { UserOutput } from '../../shared/auth.js'
 import { fetchCurrentUser, logout } from '../auth/api.js'
-import { ChangePasswordForm } from '../auth/ChangePasswordForm.js'
 import { LoginForm } from '../auth/LoginForm.js'
 import { RegisterForm } from '../auth/RegisterForm.js'
+import { SessionList } from '../session/SessionList.js'
+import { SessionRoom } from '../session/SessionRoom.js'
 
-// Kein Router: der Auth-Zustand entscheidet, welche Ansicht erscheint (design.md D7). Drei
-// Zustaende - "unbekannt" ist kein Detail, sondern verhindert, dass beim Reload fuer einen
-// Moment das Loginformular aufblitzt.
+// Kein Router: der Auth-Zustand entscheidet, welche Ansicht erscheint (design.md D7/D10).
+// "unbekannt" ist kein Detail, sondern verhindert, dass beim Reload fuer einen Moment das
+// Loginformular aufblitzt. Innerhalb der angemeldeten Ansicht entscheidet `sessionView`
+// zwischen der Sitzungsliste und der Raumansicht (design.md D10, Non-Goal "kein Router").
 type AuthState = { status: 'unbekannt' } | { status: 'anonym' } | { status: 'angemeldet'; user: UserOutput }
 
 type AuthView = 'login' | 'register'
+
+type SessionView = { view: 'liste' } | { view: 'raum'; sessionId: string }
 
 const SERVER_UNREACHABLE_MESSAGE = 'Der Server ist nicht erreichbar.'
 
@@ -25,8 +29,10 @@ export function App() {
   const [view, setView] = useState<AuthView>('login')
   // Fehler, die keine Antwort des Servers sind (Netzfehler, kaputte Antwortform) - kommt hier
   // eine Antwort an, entscheidet der Server (constitution.md §9.1); scheitert die Anfrage
-  // selbst, bleibt nur dieser Hinweis (design.md D4).
+  // selbst, bleibt nur dieser Hinweis (design.md D4). Traegt nach `session:ended` auch den
+  // entsprechenden Hinweis der Sitzungsliste (Requirement "Sitzungsoberflaeche").
   const [hinweis, setHinweis] = useState<string | null>(null)
+  const [sessionView, setSessionView] = useState<SessionView>({ view: 'liste' })
 
   useEffect(() => {
     let cancelled = false
@@ -68,6 +74,7 @@ export function App() {
       const success = await logout()
       if (success) {
         setState({ status: 'anonym' })
+        setSessionView({ view: 'liste' })
         return
       }
       const user = await fetchCurrentUser()
@@ -83,15 +90,28 @@ export function App() {
   }
 
   if (state.status === 'angemeldet') {
+    if (sessionView.view === 'raum') {
+      return (
+        <SessionRoom
+          sessionId={sessionView.sessionId}
+          onLeave={() => setSessionView({ view: 'liste' })}
+          onEnded={(message) => {
+            setHinweis(message)
+            setSessionView({ view: 'liste' })
+          }}
+        />
+      )
+    }
     return (
-      <div>
-        <p>Angemeldet als {state.user.email}</p>
-        {hinweis !== null && <p role="alert">{hinweis}</p>}
-        <button type="button" onClick={() => void handleLogout()}>
-          Abmelden
-        </button>
-        <ChangePasswordForm />
-      </div>
+      <SessionList
+        user={state.user}
+        hinweis={hinweis}
+        onEnter={(sessionId) => {
+          setHinweis(null)
+          setSessionView({ view: 'raum', sessionId })
+        }}
+        onLogout={() => void handleLogout()}
+      />
     )
   }
 

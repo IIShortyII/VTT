@@ -260,8 +260,10 @@ bestehenden Szenarien der Sitzungsoberfläche bleiben unberührt.
   Fassade; nur der Typ `MapCanvasHandle` darf statisch (`import type`) bezogen werden. Ein `cancelled`-Flag verhindert, dass ein nach dem
   Unmount aufgelöstes `createMapCanvas` einen verwaisten Canvas hinterlässt (dann sofort
   `destroy`).
-- `client/map/MapLibrary.tsx`: Zustand `liste` (Karten mit Name und „ohne Bild"-Kennzeichen,
-  Formular „Neue Karte" mit Name und `<input type="file" accept="image/png,image/jpeg,
+- `client/map/MapLibrary.tsx`: Zustand `liste` (Karten mit Name und „ohne Bild"-Kennzeichen;
+  jede Karte wird über eine Schaltfläche geöffnet, deren zugänglicher Name der Kartenname
+  ist — kein generischer „Öffnen"-Knopf, damit „Taverne öffnen" in Spec, Test und
+  Oberfläche dasselbe Element meint; Formular „Neue Karte" mit Name und `<input type="file" accept="image/png,image/jpeg,
   image/webp">`) und `detail` mit `MapCanvas`, Formular (Name, Typ als `<select>`, Zellgröße,
   Versatz x/y, „Speichern"), „Bild ersetzen" (Dateiwahl löst den Upload aus), „Löschen" →
   zweite Schaltfläche „Wirklich löschen" (kein `window.confirm`: nicht testbar ohne Mock,

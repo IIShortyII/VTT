@@ -130,13 +130,13 @@ endet, bleibt Mitglied und wird `online: false`.
 
 #### Scenario: Teilnehmerliste enthält Nutzername und Alias, aber keine E-Mail
 
-- **GIVEN** ein Spielleiter mit Nutzernamen `dm`, der seine Spielsitzung (`geoeffnet`)
+- **GIVEN** ein Spielleiter mit Nutzernamen `meister`, der seine Spielsitzung (`geoeffnet`)
   betreten hat, und ein Spieler-Mitglied mit Nutzernamen `sam`, dessen Mitgliedschaft den
   Alias `Gandalf` trägt
 - **WHEN** der Spieler `session:enter` sendet
 - **THEN** enthält `participants` im Acknowledgement des Spielers und im nächsten
   `session:participants` beim Spielleiter den Eintrag `{ username: "sam", alias:
-  "Gandalf" }` und den Eintrag `{ username: "dm" }` ohne Feld `alias`, und kein Eintrag in
+  "Gandalf" }` und den Eintrag `{ username: "meister" }` ohne Feld `alias`, und kein Eintrag in
   beiden Listen trägt ein Feld `email`
 
 ### Requirement: Sitzungsoberfläche
@@ -211,10 +211,10 @@ und einen Hinweis zeigen.
 #### Scenario: Teilnehmer werden mit Alias oder Nutzername benannt
 
 - **GIVEN** die Anwendung hat den Raum betreten, und das Acknowledgement nennt zwei
-  Teilnehmer: `{ username: "sam", alias: "Gandalf der Graue" }` und `{ username: "dm" }`
+  Teilnehmer: `{ username: "sam", alias: "Gandalf der Graue" }` und `{ username: "meister" }`
   ohne Alias
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** zeigt die Teilnehmerliste `Gandalf der Graue` und `dm`, aber nicht `sam`
+- **THEN** zeigt die Teilnehmerliste `Gandalf der Graue` und `meister`, aber nicht `sam`
 
 #### Scenario: Eigener Alias wird als Absicht gesendet und folgt dem Server
 

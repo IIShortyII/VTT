@@ -17,11 +17,13 @@ generator client {
 // zweiter Provider spaeter danebengelegt werden kann, statt User umzubauen. Siehe
 // openspec/changes/add-user-auth/design.md D2.
 model User {
-  id        String    @id @default(cuid())
-  email     String    @unique
-  createdAt DateTime  @default(now())
-  accounts  Account[]
-  sessions  Session[]
+  id          String       @id @default(cuid())
+  email       String       @unique
+  createdAt   DateTime     @default(now())
+  accounts    Account[]
+  sessions    Session[]
+  // game-session (#6): Gegenrelation zu den Mitgliedschaften - siehe design.md D2.
+  memberships Membership[]
 }
 
 model Account {
@@ -48,5 +50,37 @@ model Session {
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
+}
+
+// game-session (#6): der dauerhafte Raum einer Spielrunde. Nicht zu verwechseln mit
+// `Session` oben (die Anmelde-Sitzung aus user-auth) - deshalb `GameSession`, in Prosa
+// "Spielsitzung" (design.md D2, Requirement "Spielsitzung erstellen"). `status` ist ein
+// String mit zod-Enum an der Grenze (`shared/session.ts`), kein Prisma-`enum` - die
+// SQLite-Enum-Unterstuetzung ist ueber Prisma-Versionen hinweg nicht verlaesslich
+// dokumentiert (design.md D2).
+model GameSession {
+  id          String       @id @default(cuid())
+  name        String
+  code        String       @unique
+  status      String
+  createdAt   DateTime     @default(now())
+  memberships Membership[]
+}
+
+// game-session (#6): dauerhafte Zuordnung Nutzer <-> Spielsitzung mit Rolle. Rolle an der
+// Mitgliedschaft, nicht am Nutzer - dieselbe Person leitet die eine Runde und spielt in der
+// anderen (design.md D2). `@@unique([sessionId, userId])` erzwingt "hoechstens einmal
+// Mitglied" in der DB, nicht im Code.
+model Membership {
+  id        String      @id @default(cuid())
+  sessionId String
+  userId    String
+  role      String
+  joinedAt  DateTime    @default(now())
+  session   GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, userId])
   @@index([userId])
 }

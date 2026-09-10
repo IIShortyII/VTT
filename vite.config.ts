@@ -13,6 +13,13 @@ export default defineConfig({
         target: `http://localhost:${SERVER_PORT}`,
         changeOrigin: true,
       },
+      // Socket.IO braucht eine eigene WebSocket-Weiterleitung (game-session #6, design.md
+      // D9) - ohne `ws: true` faellt der Client stumm auf Long-Polling zurueck, was
+      // funktioniert und deshalb unbemerkt bliebe.
+      '/socket.io': {
+        target: `http://localhost:${SERVER_PORT}`,
+        ws: true,
+      },
     },
   },
 })

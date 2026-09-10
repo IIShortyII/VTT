@@ -1,9 +1,13 @@
 import cookie from '@fastify/cookie'
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
+import { Server as SocketIOServer } from 'socket.io'
 
 import type { PrismaClient } from '@prisma/client'
 
 import { registerAuthRoutes } from '../auth/routes.js'
+import { Presence } from '../session/presence.js'
+import { registerSessionRoutes } from '../session/routes.js'
+import { registerSessionSocket } from '../session/socket.js'
 import { type Clock, systemClock } from './clock.js'
 import { loadConfig } from './config.js'
 import { prisma as defaultPrisma } from './prisma.js'
@@ -33,12 +37,28 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
 
   app.register(cookie)
 
+  // Socket.IO haengt sich an die "upgrade"- und "request"-Ereignisse des Node-Servers, den
+  // Fastify ohnehin erzeugt - app.inject() fuer die REST-Tests funktioniert daneben weiter
+  // (design.md D9). Kein `fastify-socket.io`-Plugin: neue Dependency, die nichts anderes tut.
+  const io = new SocketIOServer(app.server, { serveClient: false, path: '/socket.io' })
+  // Anwesenheit ist prozesslokal und lebt fuer die Laufzeit dieser App-Instanz (design.md D1).
+  const presence = new Presence()
+
   // Nur den geteilten Default-Client trennen, nie einen von aussen injizierten - der gehoert
   // dem Aufrufer (etwa einem Test mit einer zweiten Instanz auf derselben DB-Datei).
   app.addHook('onClose', async () => {
+    io.close()
     if (usingDefaultPrisma) {
       await prisma.$disconnect()
     }
+  })
+
+  // Beim Serverstart hat noch niemand eine Socket-Verbindung aufgebaut - eine Spielsitzung,
+  // die als `gestartet` in der DB steht (etwa nach einem Absturz ohne disconnect-Ereignis),
+  // ist dann tatsaechlich `pausiert` (design.md D5, Requirement "Abwesenheit des
+  // Spielleiters pausiert").
+  app.addHook('onReady', async () => {
+    await prisma.gameSession.updateMany({ where: { status: 'gestartet' }, data: { status: 'pausiert' } })
   })
 
   // Zentraler Fehler-Handler: kein stilles catch{} irgendwo in den Routen - ein
@@ -56,6 +76,8 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   })
 
   registerAuthRoutes(app, { prisma, clock, cookieSecure })
+  registerSessionRoutes(app, { prisma, clock, cookieSecure, io, presence })
+  registerSessionSocket(io, { prisma, clock, presence })
 
   return app
 }

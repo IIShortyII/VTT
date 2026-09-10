@@ -78,8 +78,8 @@
       Worktrees (`eslint .` lintet nur im Worktree) und ein Lese-Rennen im Leak-Erkenner
       zwischen `listTestFiles` und `readFileSync` (kein Prozess ändert Tests während des
       Auftragsbaus).
-- [ ] 7.3 Menschliche Freigabe einholen (`constitution.md` §3.4 — kein App-Test, der Change
+- [x] 7.3 Menschliche Freigabe einholen (`constitution.md` §3.4 — kein App-Test, der Change
       berührt keinen Anwendungscode; geprüft wird die Ausgabe des Gates und der Aufträge)
-- [ ] 7.4 `openspec archive add-gate-feedback --yes` (verschiebt den Change und legt
+- [x] 7.4 `openspec archive add-gate-feedback --yes` (verschiebt den Change und legt
       `openspec/specs/harness-gate-feedback/spec.md` an), dann PR mit Verweis auf #44 öffnen
       (kein `Closes` — Punkte 3, 4, 6, 7, 8 folgen in eigenen Changes); menschlicher Merge

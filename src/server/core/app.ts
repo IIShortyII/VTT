@@ -9,6 +9,7 @@ import { registerAuthRoutes } from '../auth/routes.js'
 import { registerMapRoutes } from '../map/routes.js'
 import { ensureUploadDir } from '../map/storage.js'
 import { Presence } from '../session/presence.js'
+import { registerSessionMapRoutes } from '../session/maps.js'
 import { registerSessionRoutes } from '../session/routes.js'
 import { registerSessionSocket } from '../session/socket.js'
 import { type Clock, systemClock } from './clock.js'
@@ -101,7 +102,10 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   registerAuthRoutes(app, { prisma, clock, cookieSecure })
   registerSessionRoutes(app, { prisma, clock, cookieSecure, io, presence })
   registerSessionSocket(io, { prisma, clock, presence })
-  registerMapRoutes(app, { prisma, clock, uploadDir })
+  registerMapRoutes(app, { prisma, clock, uploadDir, io })
+  // session-map (#50): Instanzrouten einer Spielsitzung (Liste, Einhaengen, Aushaengen) -
+  // `io`, weil das Aushaengen der aktiven Instanz den Raum informiert (design.md D2).
+  registerSessionMapRoutes(app, { prisma, clock, io })
 
   return app
 }

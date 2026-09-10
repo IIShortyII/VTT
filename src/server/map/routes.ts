@@ -1,17 +1,21 @@
 import type { PrismaClient } from '@prisma/client'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import type { Server } from 'socket.io'
 
 import { CreateMapInputSchema, DEFAULT_GRID, ImageMimeTypeSchema, UpdateMapInputSchema, type ImageMimeType } from '../../shared/map.js'
 import { resolveSession, SESSION_COOKIE_NAME } from '../auth/session.js'
 import type { Clock } from '../core/clock.js'
-import { findOwnMap, toMapSummary } from './rules.js'
+import { broadcastMapChanged } from '../session/active-map.js'
+import { findOwnMap, findViewableMap, toMapSummary } from './rules.js'
 import { detectSignature, readImage, removeImage, writeImage } from './storage.js'
 
 // Duenne Fastify-Anbindung fuer die Kartenbibliothek (design.md D4): jede Route laedt eine
 // Karte ausschliesslich ueber `findOwnMap` - Besitzerpruefung als Teil der Abfrage, kein `if`
 // danach (constitution.md §9.2). Alle id-bezogenen Routen (PATCH, PUT, GET, DELETE) pruefen
 // den Besitzer zuerst, bevor irgendetwas anderes an der Anfrage bewertet wird - eine fremde
-// oder unbekannte Karte verhaelt sich damit fuer jede Art von Anfrage gleich. Der
+// oder unbekannte Karte verhaelt sich damit fuer jede Art von Anfrage gleich. Ausnahme:
+// `GET .../image` (session-map #50, design.md D6) laedt ueber `findViewableMap` - zusaetzlich
+// zum Besitzer auch ein Mitglied einer Spielsitzung, deren aktive Karte diese Karte ist. Der
 // Content-Type-Parser fuer Bild-Uploads ist global in `core/app.ts` registriert (design.md
 // D3); diese Datei prueft den Header selbst gegen die erlaubte Liste.
 
@@ -19,6 +23,7 @@ export interface MapRoutesDeps {
   prisma: PrismaClient
   clock: Clock
   uploadDir: string
+  io: Server
 }
 
 interface MapIdParams {
@@ -31,6 +36,7 @@ const IMAGE_MISSING_MESSAGE = 'Diese Karte hat kein Bild.'
 const UNSUPPORTED_MEDIA_TYPE_MESSAGE = 'Nicht unterstützter Bildtyp. Erlaubt sind PNG, JPEG oder WebP.'
 const EMPTY_BODY_MESSAGE = 'Der Bildinhalt darf nicht leer sein.'
 const SIGNATURE_MISMATCH_MESSAGE = 'Der Dateiinhalt passt nicht zum angegebenen Bildtyp.'
+const MAP_MOUNTED_MESSAGE = 'Diese Karte ist in einer Spielsitzung eingehängt und kann nicht gelöscht werden.'
 
 function sendError(reply: FastifyReply, statusCode: number, error: string, message: string, field?: string): FastifyReply {
   return reply.status(statusCode).send({
@@ -65,7 +71,7 @@ async function requireUser(request: FastifyRequest, reply: FastifyReply, deps: P
 }
 
 export function registerMapRoutes(app: FastifyInstance, deps: MapRoutesDeps): void {
-  const { prisma, uploadDir } = deps
+  const { prisma, uploadDir, io } = deps
 
   app.post('/api/maps', async (request, reply) => {
     const user = await requireUser(request, reply, deps)
@@ -135,6 +141,10 @@ export function registerMapRoutes(app: FastifyInstance, deps: MapRoutesDeps): vo
     }
 
     const updated = await prisma.gameMap.update({ where: { id: map.id }, data })
+    // session-map (#50, Requirement "Aenderung der Bibliothekskarte erreicht aktive Raeume"):
+    // jeder Raum, dessen Spielsitzung diese Karte gerade aktiv hat, erhaelt die neue
+    // Darstellung - Raeume mit nur eingehaengter, nicht aktiver Karte bleiben still.
+    await broadcastMapChanged(io, prisma, updated.id)
     reply.status(200).send(toMapSummary(updated))
   })
 
@@ -147,6 +157,15 @@ export function registerMapRoutes(app: FastifyInstance, deps: MapRoutesDeps): vo
     const map = await findOwnMap(prisma, user.id, request.params.id)
     if (!map) {
       sendError(reply, 404, 'Not Found', MAP_NOT_FOUND_MESSAGE)
+      return
+    }
+
+    // session-map (#50, Requirement "Karte loeschen"): eine eingehaengte Karte wird mit `409`
+    // verweigert - erst aushaengen, dann loeschen. Der `Restrict`-Fremdschluessel ist nur der
+    // Rueckhalt, falls diese Pruefung je uebersprungen wuerde.
+    const mountedCount = await prisma.mapInstance.count({ where: { mapId: map.id } })
+    if (mountedCount > 0) {
+      sendError(reply, 409, 'Conflict', MAP_MOUNTED_MESSAGE)
       return
     }
 
@@ -216,7 +235,7 @@ export function registerMapRoutes(app: FastifyInstance, deps: MapRoutesDeps): vo
       return
     }
 
-    const map = await findOwnMap(prisma, user.id, request.params.id)
+    const map = await findViewableMap(prisma, user.id, request.params.id)
     if (!map || !map.imageFile || !map.imageType) {
       sendError(reply, 404, 'Not Found', map ? IMAGE_MISSING_MESSAGE : MAP_NOT_FOUND_MESSAGE)
       return

@@ -74,6 +74,12 @@ model GameSession {
   status      String
   createdAt   DateTime     @default(now())
   memberships Membership[]
+  // session-map (#50): eingehaengte Karteninstanzen (design.md D1) und der Zeiger auf die
+  // aktive Instanz - "hoechstens eine aktive je Spielsitzung" ist damit eine Spalte, keine
+  // Regel, die jeder Schreibpfad einhalten muss.
+  instances        MapInstance[] @relation("SessionInstances")
+  activeInstanceId String?       @unique
+  activeInstance   MapInstance?  @relation("ActiveInstance", fields: [activeInstanceId], references: [id], onDelete: SetNull)
 }
 
 // game-session (#6): dauerhafte Zuordnung Nutzer <-> Spielsitzung mit Rolle. Rolle an der
@@ -103,8 +109,7 @@ model Membership {
 // als vier Spalten statt JSON - abfragbar, migrierbar, in einer DB-Aussage direkt pruefbar
 // (design.md D1). `gridType`/`imageType` sind `String` mit zod-Enum an der Grenze
 // (`shared/map.ts`), kein Prisma-`enum` (Muster wie `GameSession.status`). `imageFile`
-// ist nullable - eine Karte ohne Bild ist ein gueltiger Zustand. Keine Relation zu
-// `GameSession` - die entsteht erst mit #50 (design.md Non-Goals).
+// ist nullable - eine Karte ohne Bild ist ein gueltiger Zustand.
 model GameMap {
   id          String   @id @default(cuid())
   ownerId     String
@@ -118,6 +123,31 @@ model GameMap {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  // session-map (#50): Gegenrelation zu den Instanzen, in denen diese Karte eingehaengt ist.
+  instances   MapInstance[]
 
   @@index([ownerId])
+}
+
+// session-map (#50): eine in eine Spielsitzung eingehaengte Bibliothekskarte (design.md D1).
+// Raster und Bild bleiben an `GameMap` - diese Instanz ist ein Verweis mit eigener Identitaet,
+// keine Kopie. Eine Karte ist je Spielsitzung hoechstens einmal eingehaengt
+// (`@@unique([sessionId, mapId])`), dieselbe Karte darf in mehreren Spielsitzungen liegen.
+// `onDelete: Cascade` an der Spielsitzung (eine geloeschte Spielsitzung nimmt ihre Instanzen
+// mit), `onDelete: Restrict` an der Karte (Loeschsperre, design.md D6 - die Route prueft
+// selbst und antwortet mit `409`; der Fremdschluessel ist nur der Rueckhalt).
+model MapInstance {
+  id        String      @id @default(cuid())
+  sessionId String
+  mapId     String
+  position  Int
+  createdAt DateTime    @default(now())
+  session   GameSession @relation("SessionInstances", fields: [sessionId], references: [id], onDelete: Cascade)
+  map       GameMap     @relation(fields: [mapId], references: [id], onDelete: Restrict)
+  // Gegenrelation zum Zeiger `GameSession.activeInstance` - nicht-null genau dann, wenn diese
+  // Instanz die aktive Karte ihrer Spielsitzung ist.
+  activeIn  GameSession? @relation("ActiveInstance")
+
+  @@unique([sessionId, mapId])
+  @@index([mapId])
 }

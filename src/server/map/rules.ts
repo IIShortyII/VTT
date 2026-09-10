@@ -2,10 +2,12 @@ import type { PrismaClient } from '@prisma/client'
 
 import { GridTypeSchema, type Grid, type MapSummary } from '../../shared/map.js'
 
-// Reine Regeln und die eine Besitzerpruefung fuer Kartenrouten (design.md D4): jede Route
-// unter /api/maps laedt eine Karte nur ueber `findOwnMap` - es gibt keinen Codepfad, der eine
-// fremde Karte in der Hand haelt (constitution.md §9.2). In #50 wird diese eine Funktion um
-// "oder Mitglied einer Spielsitzung, in der die Karte eingehaengt ist" erweitert.
+// Reine Regeln und die Ladefunktionen fuer Kartenrouten (design.md D4, D6): `findOwnMap` -
+// es gibt keinen Codepfad, der eine fremde Karte in der Hand haelt (constitution.md §9.2).
+// `findViewableMap` (session-map #50) erweitert das um "oder Mitglied einer Spielsitzung, in
+// der die Karte gerade aktiv ist" - enger als "eingehaengt" (design.md D6): eine
+// eingehaengte, aber nicht aktive Karte ist Vorbereitung des Spielleiters (§9.2) und bleibt
+// unsichtbar.
 
 /** Ausschnitt einer `GameMap`-Zeile, den `toMapSummary` braucht - lose gekoppelt an Prisma,
  * damit diese Datei ohne Testinhalt ueber die reine Form nachvollziehbar bleibt (Muster wie
@@ -47,4 +49,21 @@ export function toMapSummary(map: GameMapLike): MapSummary {
  */
 export async function findOwnMap(prisma: PrismaClient, userId: string, id: string) {
   return prisma.gameMap.findFirst({ where: { id, ownerId: userId } })
+}
+
+/**
+ * Laedt eine Karte, wenn `userId` entweder ihr Besitzer ist oder Mitglied (jeder Rolle)
+ * einer Spielsitzung, deren aktive Karte eine Instanz dieser Karte ist (session-map #50,
+ * design.md D6). Die Pruefung ist Teil der Abfrage, nicht ein `if` danach - pro Anfrage neu
+ * ausgewertet (constitution.md §9.3): ein Kartenwechsel entzieht die Berechtigung mit der
+ * naechsten Anfrage. Ohne Treffer `null`, egal ob fremd, unbekannt oder nur eingehaengt ohne
+ * aktiv zu sein - fuer den Aufrufer nicht unterscheidbar (§9.2).
+ */
+export async function findViewableMap(prisma: PrismaClient, userId: string, id: string) {
+  return prisma.gameMap.findFirst({
+    where: {
+      id,
+      OR: [{ ownerId: userId }, { instances: { some: { activeIn: { memberships: { some: { userId } } } } } }],
+    },
+  })
 }

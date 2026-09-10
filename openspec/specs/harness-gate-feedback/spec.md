@@ -1,7 +1,16 @@
 # harness-gate-feedback Specification
 
 ## Purpose
-TBD - created by archiving change add-gate-feedback. Update Purpose after archive.
+Beschreibt, was ein rotes Gate an welche Rolle meldet: dass jede der drei Gate-Quellen
+(Typecheck, Lint, Jest) einen auswertbaren Befund hinterlässt, wie Befunde nach ihrem
+Pfadbereich der Rolle zugeordnet werden, und dass ein Gate, das ausschließlich an Testdateien
+scheitert, an den test-author geht statt an den implementer.
+
+Das Gate-Feedback ist die Stelle, an der Testmaterial nachweislich schon einmal zum
+implementer durchgesickert ist (`constitution.md` §8.2 G3) — und zugleich die Stelle, an der
+ein Lauf ohne Feedback eine seiner drei Runden verliert (§3.5). Diese Capability entscheidet
+damit über beides: dass der implementer genug erfährt, um zu handeln, und nicht mehr, als er
+sehen darf.
 
 ## Requirements
 

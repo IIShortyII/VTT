@@ -22,7 +22,7 @@ CREATE UNIQUE INDEX "MapInstance_sessionId_mapId_key" ON "MapInstance"("sessionI
 CREATE INDEX "MapInstance_mapId_idx" ON "MapInstance"("mapId");
 
 -- AlterTable
-ALTER TABLE "GameSession" ADD COLUMN "activeInstanceId" TEXT;
+ALTER TABLE "GameSession" ADD COLUMN "activeInstanceId" TEXT REFERENCES "MapInstance" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- CreateIndex
 CREATE UNIQUE INDEX "GameSession_activeInstanceId_key" ON "GameSession"("activeInstanceId");

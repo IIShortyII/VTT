@@ -1,3 +1,5 @@
+import path from 'node:path'
+
 // Liest Konfiguration ausschliesslich aus der Umgebung. Ein fehlender Pflichtwert wirft
 // einen sprechenden Fehler beim Start, statt spaeter als kryptischer Fehler irgendwo tief
 // in Prisma oder Fastify aufzutauchen (openspec/changes/add-user-auth/tasks.md 1.3).
@@ -34,6 +36,13 @@ export interface Config {
   cookieSecure: boolean
   /** Port, auf dem der Fastify-Server hört. */
   port: number
+  /**
+   * Upload-Verzeichnis fuer Kartenbilder (map-library #49, design.md D2): Default
+   * `./data/uploads`, relativ zum Arbeitsverzeichnis des Servers - hier absolut aufgeloest,
+   * damit ein Start aus einem anderen Verzeichnis nicht stillschweigend einen anderen Ordner
+   * trifft.
+   */
+  uploadDir: string
 }
 
 export function loadConfig(): Config {
@@ -41,5 +50,6 @@ export function loadConfig(): Config {
     databaseUrl: env('DATABASE_URL'),
     cookieSecure: env('COOKIE_SECURE', { default: 'false' }) === 'true',
     port: Number(env('PORT', { default: '3001' })),
+    uploadDir: path.resolve(env('UPLOAD_DIR', { default: './data/uploads' })),
   }
 }

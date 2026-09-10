@@ -4,7 +4,10 @@ import { Server as SocketIOServer } from 'socket.io'
 
 import type { PrismaClient } from '@prisma/client'
 
+import { IMAGE_MIME_TYPES, MAX_IMAGE_BYTES } from '../../shared/map.js'
 import { registerAuthRoutes } from '../auth/routes.js'
+import { registerMapRoutes } from '../map/routes.js'
+import { ensureUploadDir } from '../map/storage.js'
 import { Presence } from '../session/presence.js'
 import { registerSessionRoutes } from '../session/routes.js'
 import { registerSessionSocket } from '../session/socket.js'
@@ -24,6 +27,10 @@ export interface CreateAppOptions {
    * zentrale Fehler-Handler unerwartete 5xx spurlos verschlucken (Review-Runde 2). Tests
    * duerfen bewusst `false` setzen. */
   logger?: boolean
+  /** Upload-Verzeichnis fuer Kartenbilder (map-library #49, design.md D2). Default aus
+   * `loadConfig()`; ein Test uebergibt ein eigenes Wegwerf-Verzeichnis, damit Suiten sich
+   * nicht gegenseitig Dateien ueberschreiben. */
+  uploadDir?: string
 }
 
 export function createApp(options: CreateAppOptions = {}): FastifyInstance {
@@ -32,10 +39,23 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   const usingDefaultPrisma = options.prisma === undefined
   const clock = options.clock ?? systemClock
   const cookieSecure = options.cookieSecure ?? config.cookieSecure
+  const uploadDir = options.uploadDir ?? config.uploadDir
 
   const app = Fastify({ logger: options.logger ?? true })
 
   app.register(cookie)
+
+  // Rohe Bild-Uploads (map-library #49, design.md D3): kein Multipart, der Body ist das
+  // Bild selbst. Global registriert, aber nur die Bildroute (`PUT /api/maps/:id/image`)
+  // erwartet einen Buffer - die Route prueft den Content-Type-Header selbst gegen die
+  // erlaubte Liste, statt sich auf Fastifys Ablehnung unbekannter Typen zu verlassen.
+  app.addContentTypeParser(
+    [...IMAGE_MIME_TYPES],
+    { parseAs: 'buffer', bodyLimit: MAX_IMAGE_BYTES },
+    (_request, payload, done) => {
+      done(null, payload)
+    },
+  )
 
   // Socket.IO haengt sich an die "upgrade"- und "request"-Ereignisse des Node-Servers, den
   // Fastify ohnehin erzeugt - app.inject() fuer die REST-Tests funktioniert daneben weiter
@@ -59,6 +79,9 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   // Spielleiters pausiert").
   app.addHook('onReady', async () => {
     await prisma.gameSession.updateMany({ where: { status: 'gestartet' }, data: { status: 'pausiert' } })
+    // map-library (#49, design.md D2): das Upload-Verzeichnis existiert danach garantiert -
+    // sonst wuerde der erste Upload mit einem rohen ENOENT scheitern.
+    await ensureUploadDir(uploadDir)
   })
 
   // Zentraler Fehler-Handler: kein stilles catch{} irgendwo in den Routen - ein
@@ -78,6 +101,7 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   registerAuthRoutes(app, { prisma, clock, cookieSecure })
   registerSessionRoutes(app, { prisma, clock, cookieSecure, io, presence })
   registerSessionSocket(io, { prisma, clock, presence })
+  registerMapRoutes(app, { prisma, clock, uploadDir })
 
   return app
 }

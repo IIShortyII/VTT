@@ -30,6 +30,8 @@ model User {
   sessions    Session[]
   // game-session (#6): Gegenrelation zu den Mitgliedschaften - siehe design.md D2.
   memberships Membership[]
+  // map-library (#49): Gegenrelation zu den eigenen Karten - siehe design.md D1.
+  maps        GameMap[]
 }
 
 model Account {
@@ -93,4 +95,29 @@ model Membership {
 
   @@unique([sessionId, userId])
   @@index([userId])
+}
+
+// map-library (#49): eine Karte der privaten Bibliothek eines Nutzers. `GameMap`, nicht
+// `Map` - `Map` ist ein globaler JavaScript-Typ, ein generierter Prisma-Typ dieses Namens
+// wuerde ihn in jedem Import ueberdecken (Muster wie `GameSession`, design.md D1). Raster
+// als vier Spalten statt JSON - abfragbar, migrierbar, in einer DB-Aussage direkt pruefbar
+// (design.md D1). `gridType`/`imageType` sind `String` mit zod-Enum an der Grenze
+// (`shared/map.ts`), kein Prisma-`enum` (Muster wie `GameSession.status`). `imageFile`
+// ist nullable - eine Karte ohne Bild ist ein gueltiger Zustand. Keine Relation zu
+// `GameSession` - die entsteht erst mit #50 (design.md Non-Goals).
+model GameMap {
+  id          String   @id @default(cuid())
+  ownerId     String
+  name        String
+  imageFile   String?
+  imageType   String?
+  gridType    String
+  gridSize    Int
+  gridOffsetX Int
+  gridOffsetY Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
 }

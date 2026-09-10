@@ -113,6 +113,13 @@ bisher `invoke-implementer` emittieren.
 - **WHEN** der Harness den nächsten Schritt bestimmt
 - **THEN** emittiert er `invoke-implementer`
 
+#### Scenario: Ein Werkzeugbefund ohne Datei bleibt eine Implementer-Runde
+
+- **GIVEN** das Gate ist rot, Jest ist grün, und unter den Befunden ist einer ohne Datei
+  (ein Fehler des Werkzeugs selbst)
+- **WHEN** der Harness den nächsten Schritt bestimmt
+- **THEN** emittiert er `invoke-implementer` — ein Befund ohne Datei gehört keiner Testdatei
+
 #### Scenario: Die Eskalationsgrenze gilt auch für die testseitige Route
 
 - **GIVEN** der Rundenzähler steht auf der Höchstzahl, und das Gate ist ausschließlich

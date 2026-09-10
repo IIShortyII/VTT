@@ -70,7 +70,14 @@
 
 - [x] 7.1 `pnpm test:harness`, `pnpm typecheck` und `pnpm lint` grün; `openspec validate
       add-gate-feedback --strict` valide
-- [ ] 7.2 Reviewer-Subagent (read-only) gegen den Diff; Befunde einarbeiten
+- [x] 7.2 Reviewer-Subagent (read-only) gegen den Diff: Urteil **ok**, kein blockierendes
+      Finding, drei Hinweise. Aufgenommen: Szenario „Ein Werkzeugbefund ohne Datei bleibt eine
+      Implementer-Runde" in `spec.md` plus Test (die schärfste Abgrenzung der testseitigen
+      Route; grün-von-Anfang-an, Mutationsprobe: `t.file !== undefined` aus `onlyTestSideRed`
+      entfernt → genau dieser Test rot). Nicht aufgenommen: ESLint-Pfade außerhalb des
+      Worktrees (`eslint .` lintet nur im Worktree) und ein Lese-Rennen im Leak-Erkenner
+      zwischen `listTestFiles` und `readFileSync` (kein Prozess ändert Tests während des
+      Auftragsbaus).
 - [ ] 7.3 Menschliche Freigabe einholen (`constitution.md` §3.4 — kein App-Test, der Change
       berührt keinen Anwendungscode; geprüft wird die Ausgabe des Gates und der Aufträge)
 - [ ] 7.4 `openspec archive add-gate-feedback --yes` (verschiebt den Change und legt

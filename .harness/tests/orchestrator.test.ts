@@ -1185,6 +1185,11 @@ describe('Gate-Feedback aus jeder Quelle (harness-gate-feedback)', () => {
       expect(JSON.parse(next(issue)).action).toBe('invoke-implementer')
     })
 
+    it('Ein Werkzeugbefund ohne Datei bleibt eine Implementer-Runde', () => {
+      makeStatus(issue, { round: 1, phase: 'gate', lastGate: { green: false, failures: [], jestGreen: true, tools: [TOOL_TEST(TSC_TEST_A), { tool: 'lint', message: 'Oops! Something went wrong! :(' }] } })
+      expect(JSON.parse(next(issue)).action).toBe('invoke-implementer')
+    })
+
     it('Die Eskalationsgrenze gilt auch für die testseitige Route', () => {
       makeStatus(issue, { round: MAX_ROUNDS, phase: 'gate', lastGate: { green: false, failures: [], jestGreen: true, tools: [TOOL_TEST(TSC_TEST_A)] } })
       expect(JSON.parse(next(issue)).action).toBe('escalate')

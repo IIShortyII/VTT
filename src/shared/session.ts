@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { ActiveMap } from './session-map.js'
 
 // Gemeinsamer Vertrag zwischen Client und Server (AGENTS.md: "Jedes eingehende Event wird
 // an der Grenze mit zod validiert"). Diese Datei importiert nichts Serverseitiges - kein
@@ -169,7 +170,9 @@ export const AliasInputSchema = z.object({
 export type AliasInput = z.infer<typeof AliasInputSchema>
 
 /** Acknowledgement von `session:enter`. */
-export type EnterAck = { ok: true; session: SessionSummary; participants: Participant[] } | { ok: false; message: string }
+export type EnterAck =
+  | { ok: true; session: SessionSummary; participants: Participant[]; map: ActiveMap | null }
+  | { ok: false; message: string }
 
 /** Acknowledgement von `session:transition`. */
 export type TransitionAck = { ok: true; status: GameSessionStatus } | { ok: false; message: string }

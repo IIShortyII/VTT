@@ -10,12 +10,17 @@ import {
   type Participant,
   type TransitionAction,
 } from '../../shared/session.js'
+import type { ActiveMap } from '../../shared/session-map.js'
+import { mapImageUrl } from '../map/api.js'
+import { MapCanvas } from '../map/MapCanvas.js'
+import { MapPanel } from './MapPanel.js'
 import { createSessionSocket, type SessionSocketFacade } from './socket.js'
 
-// Raumansicht (design.md D10, Requirement "Sitzungsoberflaeche"). Zustand und Teilnehmer
-// kommen ausschliesslich aus dem Acknowledgement von `enter` und den nachfolgenden
-// Server-Ereignissen - der angezeigte Zustand folgt dem Server, nie dem zuletzt geklickten
-// Uebergang (constitution.md §9.1).
+// Raumansicht (design.md D10, Requirement "Sitzungsoberflaeche"; session-map #50, Requirement
+// "Kartenansicht im Raum"). Zustand und Teilnehmer kommen ausschliesslich aus dem
+// Acknowledgement von `enter` und den nachfolgenden Server-Ereignissen - der angezeigte
+// Zustand folgt dem Server, nie dem zuletzt geklickten Uebergang oder der zuletzt
+// aktivierten Karte (constitution.md §9.1).
 
 export interface SessionRoomProps {
   sessionId: string
@@ -27,6 +32,8 @@ export interface SessionRoomProps {
 const ENDED_MESSAGE = 'Die Spielsitzung wurde beendet.'
 const REPLACED_MESSAGE = 'Diese Spielsitzung wurde an anderer Stelle geöffnet.'
 const ENTER_FAILURE_MESSAGE = 'Der Raum konnte nicht betreten werden. Bitte versuche es erneut.'
+const NO_ACTIVE_MAP_MESSAGE = 'Keine Karte aktiv'
+const MAP_CANVAS_HEIGHT = 480
 
 type RoomState =
   | { status: 'lädt' }
@@ -38,6 +45,7 @@ type RoomState =
       role: MemberRole
       code?: string
       participants: Participant[]
+      map: ActiveMap | null
     }
 
 export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: SessionRoomProps) {
@@ -50,6 +58,7 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
   // (constitution.md §9.1, Requirement "Eigener Alias wird als Absicht gesendet").
   const [aliasInput, setAliasInput] = useState('')
   const [aliasError, setAliasError] = useState<string | null>(null)
+  const [activateError, setActivateError] = useState<string | null>(null)
 
   // Betritt den Raum beim Mounten und bei einem Wechsel der `sessionId` - eine neue Fassade
   // je Betreten, getrennt beim Unmount (design.md D10: "Fassade beim Unmount trennen").
@@ -63,6 +72,11 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
     })
     socket.on('status', ({ status }) => {
       setState((prev) => (prev.status === 'bereit' ? { ...prev, sessionStatus: status } : prev))
+    })
+    // session-map (#50, Requirement "Kartenansicht im Raum"): die angezeigte Karte folgt
+    // ausschliesslich `session:map`, nie der zuletzt geklickten Schaltflaeche.
+    socket.on('map', ({ map }) => {
+      setState((prev) => (prev.status === 'bereit' ? { ...prev, map } : prev))
     })
     // Nach `replaced` MUSS die Fassade sich nicht von selbst neu verbinden oder den Raum
     // erneut betreten (Requirement "Sitzungsoberflaeche") - nur der Hinweis erscheint, ein
@@ -103,6 +117,7 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
         role: ack.session.role,
         code: ack.session.code,
         participants: ack.participants,
+        map: ack.map,
       })
       const self = ack.participants.find((participant) => participant.userId === currentUserId)
       setAliasInput(self?.alias ?? '')
@@ -140,6 +155,24 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
       })
   }
 
+  // session-map (#50, Requirement "Aktive Karte setzen"): die Absicht wird gesendet, die
+  // Anzeige folgt ausschliesslich `session:map` - das Acknowledgement liefert nur `ok`
+  // und im Fehlerfall eine Meldung (design.md D4, D7).
+  const handleActivateMap = (instanceId: string | null) => {
+    const socket = socketRef.current
+    if (!socket) {
+      return
+    }
+    socket
+      .activateMap(sessionId, instanceId)
+      .then((ack) => {
+        setActivateError(ack.ok ? null : ack.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
   const handleReconnect = () => {
     setReplaced(false)
     setState({ status: 'lädt' })
@@ -152,6 +185,9 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
     })
     socket.on('status', ({ status }) => {
       setState((prev) => (prev.status === 'bereit' ? { ...prev, sessionStatus: status } : prev))
+    })
+    socket.on('map', ({ map }) => {
+      setState((prev) => (prev.status === 'bereit' ? { ...prev, map } : prev))
     })
     socket.on('replaced', () => {
       setReplaced(true)
@@ -175,6 +211,7 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
           role: ack.session.role,
           code: ack.session.code,
           participants: ack.participants,
+          map: ack.map,
         })
         const self = ack.participants.find((participant) => participant.userId === currentUserId)
         setAliasInput(self?.alias ?? '')
@@ -245,6 +282,25 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
           ))}
         </div>
       )}
+
+      {/* session-map (#50, Requirement "Kartenansicht im Raum"): der Name folgt genau dem
+          Text "Aktive Karte: <Name>" bzw. "Keine Karte aktiv" (design.md D7). */}
+      {state.map !== null ? <p>{`Aktive Karte: ${state.map.name}`}</p> : <p>{NO_ACTIVE_MAP_MESSAGE}</p>}
+      {state.map !== null && (
+        <div style={{ width: '100%', height: MAP_CANVAS_HEIGHT }}>
+          <MapCanvas imageUrl={state.map.hasImage ? mapImageUrl(state.map.mapId) : null} grid={state.map.grid} />
+        </div>
+      )}
+
+      {state.role === 'spielleiter' && (
+        <MapPanel
+          sessionId={sessionId}
+          activeInstanceId={state.map?.instanceId ?? null}
+          onActivate={handleActivateMap}
+          activateError={activateError}
+        />
+      )}
+
       <button type="button" onClick={onLeave}>
         Zurück zur Liste
       </button>

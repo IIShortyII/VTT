@@ -14,8 +14,10 @@ import {
   type EnterAck,
   type TransitionAck,
 } from '../../shared/session.js'
+import { ActivateMapInputSchema, SESSION_MAP_EVENTS, type ActivateMapAck } from '../../shared/session-map.js'
 import { SESSION_COOKIE_NAME } from '../auth/session.js'
 import type { Clock } from '../core/clock.js'
+import { emitActiveMap, loadActiveMap } from './active-map.js'
 import { authorizeAction } from './authorize.js'
 import type { Presence } from './presence.js'
 import { broadcastParticipants, broadcastStatus, buildParticipants, emitParticipants, roomName } from './room.js'
@@ -46,6 +48,7 @@ const INVALID_PAYLOAD_MESSAGE = 'Ungültige Anfrage.'
 const GENERIC_ACK_ERROR_MESSAGE = 'Die Aktion ist fehlgeschlagen. Bitte versuche es erneut.'
 const CLOSED_SESSION_MESSAGE = 'Diese Spielsitzung ist geschlossen.'
 const TRANSITION_NOT_ALLOWED_MESSAGE = 'Dieser Übergang ist nicht erlaubt.'
+const INSTANCE_NOT_FOUND_MESSAGE = 'Karteninstanz nicht gefunden.'
 
 export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void {
   const { prisma, clock, presence } = deps
@@ -82,6 +85,13 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
 
     socket.on(SESSION_EVENTS.alias, (payload: unknown, callback: (ack: AliasAck) => void) => {
       handleAlias(socket, payload, callback).catch((error: unknown) => {
+        console.error(error)
+        callback({ ok: false, message: GENERIC_ACK_ERROR_MESSAGE })
+      })
+    })
+
+    socket.on(SESSION_MAP_EVENTS.activate, (payload: unknown, callback: (ack: ActivateMapAck) => void) => {
+      handleActivateMap(socket, payload, callback).catch((error: unknown) => {
         console.error(error)
         callback({ ok: false, message: GENERIC_ACK_ERROR_MESSAGE })
       })
@@ -145,7 +155,11 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
     emitParticipants(io, sessionId, participants)
 
     const summary = toSessionSummary(gameSession, role)
-    callback({ ok: true, session: summary, participants })
+    // session-map (#50, Requirement "Betreten liefert die aktive Karte"): die aktive Karte
+    // erreicht den Betretenden mit dem Acknowledgement - keine uebrigen Instanzen, auch nicht
+    // fuer den Spielleiter (die erhaelt er ueber die Instanzliste).
+    const map = await loadActiveMap(prisma, sessionId)
+    callback({ ok: true, session: summary, participants, map })
   }
 
   async function handleTransition(socket: Socket, payload: unknown, callback: (ack: TransitionAck) => void): Promise<void> {
@@ -218,6 +232,41 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
     await prisma.membership.update({ where: { id: authResult.membership.id }, data: { alias } })
     await broadcastParticipants(io, presence, prisma, sessionId)
     callback({ ok: true, alias })
+  }
+
+  /**
+   * `session:activate-map` (design.md D2, D4, Requirement "Aktive Karte setzen"): nur der
+   * Spielleiter, Instanz wird **mit** `sessionId` in der `where`-Klausel geladen - eine
+   * Instanz einer anderen Spielsitzung ist damit "nicht gefunden", nicht "verboten". Die
+   * Darstellung im Acknowledgement kommt aus `loadActiveMap` (dem, was der Server geladen
+   * hat), nicht aus der Payload (constitution.md §9.1).
+   */
+  async function handleActivateMap(socket: Socket, payload: unknown, callback: (ack: ActivateMapAck) => void): Promise<void> {
+    const parsed = ActivateMapInputSchema.safeParse(payload)
+    if (!parsed.success) {
+      callback({ ok: false, message: INVALID_PAYLOAD_MESSAGE })
+      return
+    }
+    const { sessionId, instanceId } = parsed.data
+
+    const authResult = await authorizeAction({ prisma, clock }, socket, sessionId, { role: 'spielleiter' })
+    if (!authResult.ok) {
+      callback({ ok: false, message: authResult.message })
+      return
+    }
+
+    if (instanceId !== null) {
+      const instance = await prisma.mapInstance.findFirst({ where: { id: instanceId, sessionId } })
+      if (!instance) {
+        callback({ ok: false, message: INSTANCE_NOT_FOUND_MESSAGE })
+        return
+      }
+    }
+
+    await prisma.gameSession.update({ where: { id: sessionId }, data: { activeInstanceId: instanceId } })
+    const map = await loadActiveMap(prisma, sessionId)
+    emitActiveMap(io, sessionId, map)
+    callback({ ok: true, map })
   }
 
   async function handleDisconnect(socket: Socket): Promise<void> {

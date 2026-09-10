@@ -4,7 +4,16 @@ import type { ZodIssue } from 'zod'
 
 import { ChangePasswordInputSchema, LoginInputSchema, RegisterInputSchema, type UserOutput } from '../../shared/auth.js'
 import type { Clock } from '../core/clock.js'
-import { clearLockout, getDummyHash, hashPassword, isAccountLocked, normalizeEmail, recordFailedAttempt, verifyPassword } from './rules.js'
+import {
+  clearLockout,
+  getDummyHash,
+  hashPassword,
+  isAccountLocked,
+  normalizeEmail,
+  recordFailedAttempt,
+  usernameKey,
+  verifyPassword,
+} from './rules.js'
 import { createSession, deleteOtherSessions, destroySession, resolveSession, SESSION_COOKIE_NAME } from './session.js'
 
 // Duenne Fastify-Anbindung: Validierung an der Grenze (zod), Aufruf der reinen Regeln aus
@@ -19,9 +28,11 @@ export interface AuthDeps {
 const PROVIDER_PASSWORD = 'password'
 const LOGIN_FAILURE_MESSAGE = 'E-Mail oder Passwort ist falsch.'
 const CURRENT_PASSWORD_WRONG_MESSAGE = 'Das bisherige Passwort ist falsch.'
+const EMAIL_TAKEN_MESSAGE = 'Diese E-Mail-Adresse ist bereits vergeben.'
+const USERNAME_TAKEN_MESSAGE = 'Dieser Nutzername ist bereits vergeben.'
 
-function toUserOutput(user: Pick<User, 'id' | 'email'>): UserOutput {
-  return { id: user.id, email: user.email }
+function toUserOutput(user: Pick<User, 'id' | 'email' | 'username'>): UserOutput {
+  return { id: user.id, email: user.email, username: user.username }
 }
 
 /**
@@ -71,6 +82,29 @@ function isPasswordFormIssue(issue: ZodIssue): boolean {
   return issue.path.length > 0 && issue.path[0] === 'password'
 }
 
+/** Ermittelt aus einem Prisma-`P2002`-Fehler, ob die verletzte Eindeutigkeit den
+ * `usernameKey` betrifft (add-username-and-alias #45, design.md D1) - `meta.target` ist je
+ * nach Treiber ein Array von Spaltennamen oder ein Indexname; beide Formen werden
+ * abgedeckt, statt sich auf eine festzulegen. */
+function uniqueConstraintTargetsUsername(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('meta' in error)) {
+    return false
+  }
+  const meta = (error as { meta?: unknown }).meta
+  if (typeof meta !== 'object' || meta === null || !('target' in meta)) {
+    return false
+  }
+  const target = (meta as { target?: unknown }).target
+  if (Array.isArray(target)) {
+    return target.includes('usernameKey')
+  }
+  return typeof target === 'string' && target.includes('usernameKey')
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2002'
+}
+
 export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
   const { prisma, clock, cookieSecure } = deps
 
@@ -84,23 +118,28 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
     const email = normalizeEmail(parsed.data.email)
     const existing = await prisma.user.findUnique({ where: { email } })
     if (existing) {
-      return sendError(reply, 409, 'Conflict', 'Diese E-Mail-Adresse ist bereits vergeben.')
+      return sendError(reply, 409, 'Conflict', EMAIL_TAKEN_MESSAGE)
     }
 
     const passwordHash = await hashPassword(parsed.data.password)
+    const username = parsed.data.username
+    const usernameNormalized = usernameKey(username)
 
     let user: User
     try {
       user = await prisma.$transaction(async (tx) => {
-        const created = await tx.user.create({ data: { email } })
+        const created = await tx.user.create({ data: { email, username, usernameKey: usernameNormalized } })
         await tx.account.create({
           data: { userId: created.id, provider: PROVIDER_PASSWORD, passwordHash },
         })
         return created
       })
     } catch (error) {
-      if (typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'P2002') {
-        return sendError(reply, 409, 'Conflict', 'Diese E-Mail-Adresse ist bereits vergeben.')
+      if (isUniqueConstraintError(error)) {
+        if (uniqueConstraintTargetsUsername(error)) {
+          return sendError(reply, 409, 'Conflict', USERNAME_TAKEN_MESSAGE, 'username')
+        }
+        return sendError(reply, 409, 'Conflict', EMAIL_TAKEN_MESSAGE)
       }
       throw error
     }

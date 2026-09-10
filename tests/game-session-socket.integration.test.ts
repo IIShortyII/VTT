@@ -1,21 +1,27 @@
-// Integrationstests zu openspec/changes/add-game-session/specs/game-session/spec.md.
-// Die 22 Socket-Szenarien der Requirements "Verbindung und Betreten des Raums",
-// "Autorisierung pro Aktion", "Teilnehmerliste in Echtzeit", "Eine Verbindung pro Nutzer und
-// Spielsitzung", "Lebenszyklus durch den Spielleiter" und "Abwesenheit des Spielleiters
-// pausiert" (tasks.md 1.2). Ein Test je GIVEN/WHEN/THEN-Szenario (constitution.md §4.1),
-// Testname = Szenarioname.
+// Integrationstests zu openspec/changes/add-game-session/specs/game-session/spec.md und dem
+// Delta openspec/changes/add-username-and-alias/specs/game-session/spec.md (Alias, #45).
+// Ein Test je GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname.
 //
 // Aufbau nach design.md D11: die App lauscht auf Port 0, ein `socket.io-client` verbindet mit
 // dem Sitzungscookie in `extraHeaders`, `reconnection: false`. Ereignisse werden ueber
 // `once`-Promises mit Timeout eingesammelt (kein `setTimeout`-Schlaf); Listener werden vor der
-// ausloesenden Aktion registriert. GIVEN-Zustaende werden direkt in die `GameSession`-Zeile
-// geschrieben, nicht ueber Uebergaenge hergestellt. Gegen die Suite-eigene Wegwerf-DB
-// (`game-session-socket.test.db`, constitution.md §4.3).
+// ausloesenden Aktion registriert. GIVEN-Zustaende werden direkt in die `GameSession`- bzw.
+// `Membership`-Zeile geschrieben, nicht ueber Uebergaenge hergestellt. Gegen die Suite-eigene
+// Wegwerf-DB (`game-session-socket.test.db`, constitution.md §4.3).
+//
+// Nutzername/Alias (#45): jede Registrierung traegt ein `username` (Helfer `usernameFromEmail`
+// bzw. ein bestimmter Wert). Die Spalte `Membership.alias` kennt der Prisma-Client erst nach
+// der Migration (tasks.md 2.1). Tests, die einen Alias direkt in die `Membership`-Zeile
+// schreiben, scheitern vorher zur Laufzeit am DB-Zugriff (unbekannte Spalte); Tests, die das
+// neue Ereignis `session:alias` senden, scheitern am ausbleibenden Acknowledgement (Timeout
+// auf dem unbekannten Ereignis) bzw. an noch enthaltenem `email`. Beide Gruende sind zulaessig
+// (§3.1), ein Setup-/Compile-Fehler nicht.
 
 import { PrismaClient } from '@prisma/client'
 import { io, type Socket } from 'socket.io-client'
 
 import { setupEphemeralDb } from './helpers/ephemeral-db.js'
+import { usernameFromEmail } from './helpers/username.js'
 
 jest.setTimeout(120_000)
 
@@ -32,6 +38,9 @@ const openSockets: Socket[] = []
 let removeDbFiles: () => void = () => {}
 
 // --- Zugriff auf die neuen Tabellen (siehe game-session.integration.test.ts) ----------------
+// `Membership.alias` ist lose typisiert (optionales Feld in `create`, `findFirst` liefert
+// einen losen Datensatz): die Spalte entsteht erst mit der Migration, die Suite bleibt aber
+// kompilierbar.
 interface GameSessionRow {
   id: string
   name: string
@@ -46,7 +55,8 @@ interface GameDb {
     deleteMany(): Promise<unknown>
   }
   membership: {
-    create(args: { data: { sessionId: string; userId: string; role: string } }): Promise<unknown>
+    create(args: { data: { sessionId: string; userId: string; role: string; alias?: string | null } }): Promise<unknown>
+    findFirst(args: { where: Record<string, unknown> }): Promise<Record<string, unknown> | null>
     count(args?: unknown): Promise<number>
     deleteMany(): Promise<unknown>
   }
@@ -169,24 +179,46 @@ function transition(socket: Socket, sessionId: string, action: string): Promise<
   return emitAck(socket, 'session:transition', { sessionId, action })
 }
 
-async function registerUser(app: App, email: string): Promise<{ sid: string; userId: string; email: string }> {
+/** Sendet `session:alias` und wartet auf das Acknowledgement (Ereignis aus #45, design.md D4). */
+function setAlias(socket: Socket, payload: unknown): Promise<Record<string, unknown>> {
+  return emitAck(socket, 'session:alias', payload)
+}
+
+async function registerUser(
+  app: App,
+  email: string,
+  username: string = usernameFromEmail(email),
+): Promise<{ sid: string; userId: string; email: string; username: string }> {
   const res = (await app.inject({
     method: 'POST',
     url: '/api/auth/register',
-    payload: { email, password: PASSWORD },
+    payload: { email, username, password: PASSWORD },
   })) as unknown as InjectRes
   if (res.statusCode !== 201) throw new Error(`Registrierung fehlgeschlagen (${res.statusCode}): ${res.body}`)
   const sid = must(res.cookies.find((c) => c.name === 'sid'), 'ein Sitzungscookie').value
   const userId = String((JSON.parse(res.body) as Record<string, unknown>).id)
-  return { sid, userId, email }
+  return { sid, userId, email, username }
 }
 
 async function createGameSession(fields: { name?: string; code: string; status: string }): Promise<GameSessionRow> {
   return db().gameSession.create({ data: { name: fields.name ?? 'Eine Runde', code: fields.code, status: fields.status } })
 }
 
-async function addMembership(sessionId: string, userId: string, role: string): Promise<void> {
-  await db().membership.create({ data: { sessionId, userId, role } })
+/** Legt eine Mitgliedschaft an — optional mit einem Alias direkt in der Zeile (GIVEN-Zustand
+ * fuer die Alias-Szenarien). Die Spalte `alias` kennt der Client erst nach der Migration. */
+async function addMembership(sessionId: string, userId: string, role: string, alias?: string): Promise<void> {
+  const data = alias === undefined ? { sessionId, userId, role } : { sessionId, userId, role, alias }
+  await db().membership.create({ data })
+}
+
+/** Liest den in der DB gespeicherten Alias einer Mitgliedschaft (lose typisiert). */
+async function aliasInDb(sessionId: string, userId: string): Promise<unknown> {
+  const row = await db().membership.findFirst({ where: { sessionId, userId } })
+  return row?.alias
+}
+
+function membershipCount(sessionId: string, userId: string): Promise<number> {
+  return db().membership.count({ where: { sessionId, userId } })
 }
 
 function statusInDb(sessionId: string): Promise<string> {
@@ -379,7 +411,7 @@ test('Neues Mitglied erscheint sofort in der Liste', async () => {
   const sl = await registerUser(app, 'sl@example.com')
   const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
   await addMembership(gs.id, sl.userId, 'spielleiter')
-  const neu = await registerUser(app, 'neu@example.com')
+  const neu = await registerUser(app, 'neu@example.com', 'sam')
 
   const slSocket = client(sl.sid)
   await connect(slSocket)
@@ -396,8 +428,12 @@ test('Neues Mitglied erscheint sofort in der Liste', async () => {
 
   const payload = await teilnehmer
   const eintrag = must(participantFor(participantsIn(payload), neu.userId), 'den neuen Nutzer in der Teilnehmerliste')
+  expect(eintrag.username).toBe('sam')
   expect(eintrag.role).toBe('spieler')
   expect(eintrag.online).toBe(false)
+  // Ohne gesetzten Alias fehlt das Feld; die E-Mail steht ab #45 in keinem Drahtformat mehr.
+  expect(eintrag).not.toHaveProperty('alias')
+  expect(eintrag).not.toHaveProperty('email')
 })
 
 test('Betreten setzt das Mitglied auf anwesend', async () => {
@@ -445,6 +481,209 @@ test('Verbindungsabbruch setzt das Mitglied auf abwesend', async () => {
   const eintrag = must(participantFor(participantsIn(payload), sp.userId), 'den Spieler weiterhin in der Liste')
   expect(eintrag.online).toBe(false)
   expect(await db().membership.count({ where: { userId: sp.userId, sessionId: gs.id } })).toBe(1)
+})
+
+test('Teilnehmerliste enthält Nutzername und Alias, aber keine E-Mail', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sp = await registerUser(app, 'sp@example.com', 'sam')
+  const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  // Alias direkt in die Mitgliedschaft (GIVEN) — Spalte erst nach der Migration.
+  await addMembership(gs.id, sp.userId, 'spieler', 'Gandalf')
+
+  const slSocket = client(sl.sid)
+  await connect(slSocket)
+  await enter(slSocket, gs.id)
+
+  const spSocket = client(sp.sid)
+  await connect(spSocket)
+  const teilnehmer = once(slSocket, 'session:participants')
+  const enterAck = await enter(spSocket, gs.id)
+  const payload = await teilnehmer
+
+  for (const list of [participantsOf(enterAck), participantsIn(payload)]) {
+    const sam = must(participantFor(list, sp.userId), 'den Spieler sam in der Liste')
+    const meister = must(participantFor(list, sl.userId), 'den Spielleiter meister in der Liste')
+    expect(sam.username).toBe('sam')
+    expect(sam.alias).toBe('Gandalf')
+    expect(meister.username).toBe('meister')
+    expect(meister).not.toHaveProperty('alias')
+    for (const p of list) expect(p).not.toHaveProperty('email')
+  }
+})
+
+// --- Alias pro Mitgliedschaft (#45) ---------------------------------------------------------
+
+test('Mitglied setzt seinen Alias', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sp = await registerUser(app, 'sp@example.com', 'sam')
+  const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sp.userId, 'spieler')
+
+  const slSocket = client(sl.sid)
+  const spSocket = client(sp.sid)
+  await connect(slSocket)
+  await connect(spSocket)
+  await enter(slSocket, gs.id)
+  await enter(spSocket, gs.id)
+
+  const teilnehmer = once(slSocket, 'session:participants')
+  const ack = await setAlias(spSocket, { sessionId: gs.id, alias: 'Gandalf der Graue' })
+
+  expect(ack.ok).toBe(true)
+  expect(ack.alias).toBe('Gandalf der Graue')
+  expect(await aliasInDb(gs.id, sp.userId)).toBe('Gandalf der Graue')
+  const eintrag = must(participantFor(participantsIn(await teilnehmer), sp.userId), 'den Spieler in der Teilnehmerliste')
+  expect(eintrag.username).toBe('sam')
+  expect(eintrag.alias).toBe('Gandalf der Graue')
+})
+
+test('Alias wird getrimmt', async () => {
+  const app = await startApp()
+  const sp = await registerUser(app, 'sp@example.com', 'sam')
+  const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  await addMembership(gs.id, sp.userId, 'spieler')
+
+  const spSocket = client(sp.sid)
+  await connect(spSocket)
+  await enter(spSocket, gs.id)
+
+  const ack = await setAlias(spSocket, { sessionId: gs.id, alias: "  Drizzt Do'Urden  " })
+
+  expect(ack.ok).toBe(true)
+  expect(ack.alias).toBe("Drizzt Do'Urden")
+  expect(await aliasInDb(gs.id, sp.userId)).toBe("Drizzt Do'Urden")
+})
+
+test('Leerer Alias setzt zurück', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sp = await registerUser(app, 'sp@example.com', 'sam')
+  const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  // GIVEN: die Mitgliedschaft traegt bereits den Alias `Gandalf` (Spalte erst nach Migration).
+  await addMembership(gs.id, sp.userId, 'spieler', 'Gandalf')
+
+  const slSocket = client(sl.sid)
+  const spSocket = client(sp.sid)
+  await connect(slSocket)
+  await connect(spSocket)
+  await enter(slSocket, gs.id)
+  await enter(spSocket, gs.id)
+
+  const teilnehmer = once(slSocket, 'session:participants')
+  const ack = await setAlias(spSocket, { sessionId: gs.id, alias: '   ' })
+
+  expect(ack.ok).toBe(true)
+  expect(ack.alias).toBeNull()
+  expect(await aliasInDb(gs.id, sp.userId)).toBeNull()
+  const eintrag = must(participantFor(participantsIn(await teilnehmer), sp.userId), 'den Spieler in der Teilnehmerliste')
+  expect(eintrag).not.toHaveProperty('alias')
+})
+
+test('Ungültiger Alias wird abgelehnt', async () => {
+  const app = await startApp()
+  const sp = await registerUser(app, 'sp@example.com', 'sam')
+  const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  // GIVEN: die Mitgliedschaft traegt den Alias `Gandalf`.
+  await addMembership(gs.id, sp.userId, 'spieler', 'Gandalf')
+
+  const spSocket = client(sp.sid)
+  await connect(spSocket)
+  await enter(spSocket, gs.id)
+
+  // Je ein Fall: 41 Zeichen, ein Zeilenumbruch im Alias, eine Payload, die kein Objekt ist.
+  const faelle: unknown[] = [
+    { sessionId: gs.id, alias: 'a'.repeat(41) },
+    { sessionId: gs.id, alias: 'Gan\ndalf' },
+    42,
+  ]
+  for (const payload of faelle) {
+    const ack = await setAlias(spSocket, payload)
+    expect(ack.ok).toBe(false)
+    expect(typeof ack.message).toBe('string')
+  }
+  expect(await aliasInDb(gs.id, sp.userId)).toBe('Gandalf')
+})
+
+test('Gleicher Alias für zwei Mitglieder ist erlaubt', async () => {
+  const app = await startApp()
+  const erster = await registerUser(app, 'erster@example.com', 'erster')
+  const zweiter = await registerUser(app, 'zweiter@example.com', 'zweiter')
+  const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  // GIVEN: die Mitgliedschaft des ersten traegt bereits den Alias `Gandalf`.
+  await addMembership(gs.id, erster.userId, 'spieler', 'Gandalf')
+  await addMembership(gs.id, zweiter.userId, 'spieler')
+
+  const zweiterSocket = client(zweiter.sid)
+  await connect(zweiterSocket)
+  await enter(zweiterSocket, gs.id)
+
+  const ack = await setAlias(zweiterSocket, { sessionId: gs.id, alias: 'Gandalf' })
+
+  expect(ack.ok).toBe(true)
+  expect(ack.alias).toBe('Gandalf')
+  expect(await aliasInDb(gs.id, erster.userId)).toBe('Gandalf')
+  expect(await aliasInDb(gs.id, zweiter.userId)).toBe('Gandalf')
+})
+
+test('Alias gilt nur in dieser Spielsitzung', async () => {
+  const app = await startApp()
+  const nutzer = await registerUser(app, 'nutzer@example.com', 'sam')
+  const a = await createGameSession({ name: 'A', code: 'AAA234', status: 'geoeffnet' })
+  const b = await createGameSession({ name: 'B', code: 'BBB234', status: 'geoeffnet' })
+  await addMembership(a.id, nutzer.userId, 'spieler')
+  await addMembership(b.id, nutzer.userId, 'spieler')
+
+  const socket = client(nutzer.sid)
+  await connect(socket)
+  await enter(socket, a.id)
+
+  const ack = await setAlias(socket, { sessionId: a.id, alias: 'Gandalf' })
+
+  expect(ack.ok).toBe(true)
+  expect(ack.alias).toBe('Gandalf')
+  expect(await aliasInDb(a.id, nutzer.userId)).toBe('Gandalf')
+  // Die Mitgliedschaft in B bleibt ohne Alias.
+  expect(await aliasInDb(b.id, nutzer.userId)).toBeNull()
+})
+
+test('Nicht-Mitglied kann keinen Alias setzen', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com')
+  const fremd = await registerUser(app, 'fremd@example.com')
+  const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+
+  const fremdSocket = client(fremd.sid)
+  await connect(fremdSocket)
+
+  const ack = await setAlias(fremdSocket, { sessionId: gs.id, alias: 'Gandalf' })
+
+  expect(ack.ok).toBe(false)
+  expect(typeof ack.message).toBe('string')
+  expect(await membershipCount(gs.id, fremd.userId)).toBe(0)
+})
+
+test('Abmeldung wirkt auf das Alias-Ereignis', async () => {
+  const app = await startApp()
+  const sp = await registerUser(app, 'sp@example.com', 'sam')
+  const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  await addMembership(gs.id, sp.userId, 'spieler')
+
+  const spSocket = client(sp.sid)
+  await connect(spSocket)
+  await enter(spSocket, gs.id)
+
+  await app.inject({ method: 'POST', url: '/api/auth/logout', cookies: { sid: sp.sid } })
+  const ack = await setAlias(spSocket, { sessionId: gs.id, alias: 'Gandalf' })
+
+  expect(ack.ok).toBe(false)
+  expect(typeof ack.message).toBe('string')
+  expect(await aliasInDb(gs.id, sp.userId)).toBeNull()
 })
 
 // --- Eine Verbindung pro Nutzer und Spielsitzung --------------------------------------------

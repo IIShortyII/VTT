@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 
-import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, type UserOutput } from '../../shared/auth.js'
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, USERNAME_MAX_LENGTH, USERNAME_MIN_LENGTH, type UserOutput } from '../../shared/auth.js'
 import { register } from './api.js'
 
 export interface RegisterFormProps {
@@ -11,6 +11,7 @@ export interface RegisterFormProps {
 const GENERIC_ERROR_MESSAGE = 'Die Registrierung ist fehlgeschlagen. Bitte versuche es erneut.'
 
 export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) {
+  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -21,7 +22,7 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
     setSubmitting(true)
     setError(null)
     try {
-      const result = await register({ email, password })
+      const result = await register({ username, email, password })
       if (result.ok) {
         onSuccess(result.user)
       } else {
@@ -39,6 +40,18 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
   return (
     <form onSubmit={(event) => void handleSubmit(event)}>
       <h1>Registrierung</h1>
+      <label htmlFor="register-username">Nutzername</label>
+      <input
+        id="register-username"
+        name="username"
+        type="text"
+        autoComplete="nickname"
+        minLength={USERNAME_MIN_LENGTH}
+        maxLength={USERNAME_MAX_LENGTH}
+        value={username}
+        onChange={(event) => setUsername(event.target.value)}
+        required
+      />
       <label htmlFor="register-email">E-Mail</label>
       <input
         id="register-email"

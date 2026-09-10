@@ -2,6 +2,7 @@ import { io, type Socket } from 'socket.io-client'
 
 import {
   SESSION_EVENTS,
+  type AliasAck,
   type EnterAck,
   type EndedEvent,
   type ParticipantsEvent,
@@ -21,6 +22,7 @@ export interface SessionSocketFacade {
   disconnect(): void
   enter(sessionId: string): Promise<EnterAck>
   transition(sessionId: string, action: TransitionAction): Promise<TransitionAck>
+  alias(sessionId: string, alias: string): Promise<AliasAck>
   on(event: 'participants', handler: (payload: ParticipantsEvent) => void): void
   on(event: 'status', handler: (payload: StatusEvent) => void): void
   on(event: 'replaced', handler: (payload: ReplacedEvent) => void): void
@@ -54,6 +56,10 @@ export function createSessionSocket(): SessionSocketFacade {
     transition: (sessionId: string, action: TransitionAction) =>
       new Promise<TransitionAck>((resolve) => {
         socket.emit(SESSION_EVENTS.transition, { sessionId, action }, (ack: TransitionAck) => resolve(ack))
+      }),
+    alias: (sessionId: string, alias: string) =>
+      new Promise<AliasAck>((resolve) => {
+        socket.emit(SESSION_EVENTS.alias, { sessionId, alias }, (ack: AliasAck) => resolve(ack))
       }),
     on: (event: string, handler: (payload: unknown) => void) => {
       socket.on(wireEventFor(event), handler as (...args: unknown[]) => void)

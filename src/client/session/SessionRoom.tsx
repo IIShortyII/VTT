@@ -1,6 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 
-import { allowedActions, type EnterAck, type GameSessionStatus, type MemberRole, type Participant, type TransitionAction } from '../../shared/session.js'
+import {
+  allowedActions,
+  displayName,
+  type AliasAck,
+  type EnterAck,
+  type GameSessionStatus,
+  type MemberRole,
+  type Participant,
+  type TransitionAction,
+} from '../../shared/session.js'
 import { createSessionSocket, type SessionSocketFacade } from './socket.js'
 
 // Raumansicht (design.md D10, Requirement "Sitzungsoberflaeche"). Zustand und Teilnehmer
@@ -10,6 +19,7 @@ import { createSessionSocket, type SessionSocketFacade } from './socket.js'
 
 export interface SessionRoomProps {
   sessionId: string
+  currentUserId: string
   onLeave: () => void
   onEnded: (message: string) => void
 }
@@ -30,10 +40,16 @@ type RoomState =
       participants: Participant[]
     }
 
-export function SessionRoom({ sessionId, onLeave, onEnded }: SessionRoomProps) {
+export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: SessionRoomProps) {
   const socketRef = useRef<SessionSocketFacade | null>(null)
   const [state, setState] = useState<RoomState>({ status: 'lädt' })
   const [replaced, setReplaced] = useState(false)
+  // Eingabefeld der eigenen Zeile (design.md D6): einmal beim Betreten mit dem aktuell
+  // gesetzten Alias vorbelegt, danach eine unabhaengige Absicht - die angezeigte Benennung
+  // (`displayName`) folgt ausschliesslich `state.participants`, nicht dieser Eingabe
+  // (constitution.md §9.1, Requirement "Eigener Alias wird als Absicht gesendet").
+  const [aliasInput, setAliasInput] = useState('')
+  const [aliasError, setAliasError] = useState<string | null>(null)
 
   // Betritt den Raum beim Mounten und bei einem Wechsel der `sessionId` - eine neue Fassade
   // je Betreten, getrennt beim Unmount (design.md D10: "Fassade beim Unmount trennen").
@@ -88,13 +104,15 @@ export function SessionRoom({ sessionId, onLeave, onEnded }: SessionRoomProps) {
         code: ack.session.code,
         participants: ack.participants,
       })
+      const self = ack.participants.find((participant) => participant.userId === currentUserId)
+      setAliasInput(self?.alias ?? '')
     }
 
     return () => {
       cancelled = true
       socket.disconnect()
     }
-  }, [sessionId])
+  }, [sessionId, currentUserId, onEnded])
 
   const handleTransition = (action: TransitionAction) => {
     const socket = socketRef.current
@@ -104,6 +122,22 @@ export function SessionRoom({ sessionId, onLeave, onEnded }: SessionRoomProps) {
     socket.transition(sessionId, action).catch((error: unknown) => {
       console.error(error)
     })
+  }
+
+  const handleAliasSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const socket = socketRef.current
+    if (!socket) {
+      return
+    }
+    socket
+      .alias(sessionId, aliasInput)
+      .then((ack: AliasAck) => {
+        setAliasError(ack.ok ? null : ack.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
   }
 
   const handleReconnect = () => {
@@ -142,6 +176,8 @@ export function SessionRoom({ sessionId, onLeave, onEnded }: SessionRoomProps) {
           code: ack.session.code,
           participants: ack.participants,
         })
+        const self = ack.participants.find((participant) => participant.userId === currentUserId)
+        setAliasInput(self?.alias ?? '')
       })
       .catch((error: unknown) => {
         console.error(error)
@@ -183,12 +219,23 @@ export function SessionRoom({ sessionId, onLeave, onEnded }: SessionRoomProps) {
       <ul>
         {state.participants.map((participant) => (
           <li key={participant.userId}>
-            <span>{participant.email}</span>
-            <span> – {participant.role}</span>
+            {/* Kein Rollen-Text pro Teilnehmer (Requirement "Sitzungsoberflaeche" nennt nur
+                Alias-oder-Nutzername und Anwesenheitskennzeichen) - "spielleiter" als
+                sichtbarer Text wuerde jeden Nutzernamen ueberdecken, der "leiter" als
+                Teilstring enthaelt. */}
+            <span>{displayName(participant)}</span>
             <span> – {participant.online ? 'anwesend' : 'abwesend'}</span>
+            {participant.userId === currentUserId && (
+              <form onSubmit={handleAliasSubmit}>
+                <label htmlFor="alias-input">Alias</label>
+                <input id="alias-input" value={aliasInput} onChange={(event) => setAliasInput(event.target.value)} />
+                <button type="submit">Alias setzen</button>
+              </form>
+            )}
           </li>
         ))}
       </ul>
+      {aliasError !== null && <p role="alert">{aliasError}</p>}
       {state.role === 'spielleiter' && (
         <div>
           {allowedActions(state.sessionStatus).map((action) => (

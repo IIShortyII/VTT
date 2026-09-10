@@ -12,15 +12,20 @@ export function roomName(gameSessionId: string): string {
   return `session:${gameSessionId}`
 }
 
-/** Mitgliedschaften aus der DB, verschnitten mit `presence.isOnline` (design.md D7). */
+/** Mitgliedschaften aus der DB, verschnitten mit `presence.isOnline` (design.md D7). Die
+ * E-Mail wird nicht selektiert - sie verlaesst den Server in keinem Drahtformat, das andere
+ * Mitspieler erreicht (constitution.md §9.2, add-username-and-alias #45, design.md D5).
+ * `alias` fehlt am Objekt, wenn die Mitgliedschaft keinen traegt - `ParticipantSchema` bildet
+ * das auf ein fehlendes Feld auf der Leitung ab. */
 export async function buildParticipants(prisma: PrismaClient, presence: Presence, gameSessionId: string): Promise<Participant[]> {
   const memberships = await prisma.membership.findMany({
     where: { sessionId: gameSessionId },
-    include: { user: { select: { id: true, email: true } } },
+    include: { user: { select: { id: true, username: true } } },
   })
   return memberships.map((membership) => ({
     userId: membership.user.id,
-    email: membership.user.email,
+    username: membership.user.username,
+    ...(membership.alias !== null ? { alias: membership.alias } : {}),
     role: MemberRoleSchema.parse(membership.role),
     online: presence.isOnline(gameSessionId, membership.user.id),
   }))

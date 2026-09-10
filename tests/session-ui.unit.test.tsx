@@ -1,13 +1,19 @@
 /** @jest-environment jsdom */
 // Komponententests zum Requirement "Sitzungsoberfläche" aus
-// openspec/changes/add-game-session/specs/game-session/spec.md (tasks.md 1.3). Ein Test je
-// GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname.
+// openspec/changes/add-game-session/specs/game-session/spec.md und dem Delta
+// openspec/changes/add-username-and-alias/specs/game-session/spec.md (#45; tasks.md 1.1/1.5).
+// Ein Test je GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname.
 //
 // Geprueft wird, *was* die Anwendung anbietet und anzeigt — nicht, wie es aussieht (AGENTS.md:
 // Rendering nimmt der menschliche App-Test ab). `fetch` ist gemockt (`/api/auth/me` liefert
 // einen Nutzer, `/api/sessions` die Liste). Die Socket-Fassade
 // `src/client/session/socket.ts` ist per `jest.mock` ersetzt; Server-Ereignisse werden durch
 // Aufruf der registrierten Handler ausgeloest (design.md D10/D11).
+//
+// Ab #45 tragen Teilnehmer `username`/`alias` statt `email`; benannt wird ueber `displayName`
+// (Alias, sonst Nutzername). Die umgestellten und die neuen Szenarien sind rot, weil die
+// Raumansicht noch `email` rendert und weder das Alias-Feld noch die `displayName`-Anzeige
+// kennt.
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
@@ -15,7 +21,8 @@ import { App } from '../src/client/app/App.js'
 
 // --- Mock der Socket-Fassade ----------------------------------------------------------------
 // Die Fassade ist die Mock-Grenze (design.md D10). `createSessionSocket` liefert ein Objekt mit
-// connect/disconnect/enter/transition/on; `on` merkt sich die Handler, `__emit` ruft sie auf.
+// connect/disconnect/enter/transition/alias/on; `on` merkt sich die Handler, `__emit` ruft sie
+// auf.
 jest.mock('../src/client/session/socket.js', () => {
   const handlers: Record<string, (payload: unknown) => void> = {}
   const facade = {
@@ -23,6 +30,7 @@ jest.mock('../src/client/session/socket.js', () => {
     disconnect: jest.fn(),
     enter: jest.fn(),
     transition: jest.fn(),
+    alias: jest.fn(),
     on: jest.fn((event: string, handler: (payload: unknown) => void) => {
       handlers[event] = handler
     }),
@@ -43,6 +51,7 @@ type SocketTestApi = {
     disconnect: jest.Mock
     enter: jest.Mock
     transition: jest.Mock
+    alias: jest.Mock
     on: jest.Mock
   }
   __handlers: Record<string, (payload: unknown) => void>
@@ -54,7 +63,7 @@ const socketMock = sessionSocketModule as unknown as SocketTestApi
 // --- fetch-Mock (wie tests/auth-ui.unit.test.tsx) -------------------------------------------
 
 const originalFetch = globalThis.fetch
-const NUTZER = { id: 'u-selbst', email: 'ich@example.com' }
+const NUTZER = { id: 'u-selbst', email: 'ich@example.com', username: 'ich' }
 
 function must<T>(value: T | null | undefined, what: string): T {
   if (value === null || value === undefined) throw new Error(`Erwartet, aber nicht vorhanden: ${what}`)
@@ -95,6 +104,18 @@ function nameFeld(container: HTMLElement): HTMLElement | null {
 function codeFeld(container: HTMLElement): HTMLElement | null {
   return container.querySelector(
     'input[name="code"], input#code, input[aria-label*="ode" i], input[placeholder*="ode" i]',
+  )
+}
+
+// Das Alias-Eingabefeld der eigenen Zeile (#45, design.md D6). Die Spec verlangt „ein
+// Eingabefeld fuer den Alias" ohne Attributvorgabe; die zugaengliche Standardform ist ein per
+// <label> zugeordnetes Feld. Zuerst ueber die Beschriftung (Text „Alias") suchen, sonst auf
+// die bisherigen Selektoren zurueckfallen.
+function aliasFeld(container: HTMLElement): HTMLElement | null {
+  const perLabel = screen.queryByLabelText(/alias/i)
+  if (perLabel) return perLabel as HTMLElement
+  return container.querySelector(
+    'input[name="alias"], input#alias, input[aria-label*="lias" i], input[placeholder*="lias" i]',
   )
 }
 
@@ -153,8 +174,8 @@ test('Raumansicht des Spielleiters', async () => {
     ok: true,
     session: { id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spielleiter', code: 'ABC234' },
     participants: [
-      { userId: 'u-a', email: 'anwesend@example.com', role: 'spieler', online: true },
-      { userId: 'u-b', email: 'abwesend@example.com', role: 'spieler', online: false },
+      { userId: 'u-a', username: 'alrik', role: 'spieler', online: true },
+      { userId: 'u-b', username: 'borgil', role: 'spieler', online: false },
     ],
   })
 
@@ -164,8 +185,9 @@ test('Raumansicht des Spielleiters', async () => {
 
   await screen.findByText(/ABC234/)
   expect(screen.getAllByText(/geoeffnet|geöffnet/i).length).toBeGreaterThan(0)
-  expect(screen.getByText(/anwesend@example\.com/)).toBeTruthy()
-  expect(screen.getByText(/abwesend@example\.com/)).toBeTruthy()
+  // Beide Teilnehmer werden mit ihrem Nutzernamen benannt (keiner traegt einen Alias).
+  expect(screen.getByText(/alrik/)).toBeTruthy()
+  expect(screen.getByText(/borgil/)).toBeTruthy()
   // Anwesenheit muss unterscheidbar sein (Text, title oder aria-label — daher innerHTML).
   expect(container.innerHTML).toMatch(/online|anwesend/i)
   expect(container.innerHTML).toMatch(/offline|abwesend/i)
@@ -188,8 +210,8 @@ test('Raumansicht des Spielers', async () => {
     ok: true,
     session: { id: 's1', name: 'Abendrunde', status: 'gestartet', role: 'spieler' },
     participants: [
-      { userId: 'u-sl', email: 'leiter@example.com', role: 'spielleiter', online: true },
-      { userId: 'u-selbst', email: 'ich@example.com', role: 'spieler', online: true },
+      { userId: 'u-sl', username: 'leiter', role: 'spielleiter', online: true },
+      { userId: 'u-selbst', username: 'ich', role: 'spieler', online: true },
     ],
   })
 
@@ -198,8 +220,8 @@ test('Raumansicht des Spielers', async () => {
   await betreten()
 
   await waitFor(() => expect(screen.getAllByText(/gestartet/i).length).toBeGreaterThan(0))
-  expect(screen.getByText(/leiter@example\.com/)).toBeTruthy()
-  expect(screen.getByText(/ich@example\.com/)).toBeTruthy()
+  expect(screen.getByText(/\bleiter\b/)).toBeTruthy()
+  expect(screen.getByText(/\bich\b/)).toBeTruthy()
   // Kein Sitzungscode und keine Schaltflaeche fuer einen Zustandsuebergang.
   expect(screen.queryByText(/code/i)).toBeNull()
   expect(screen.queryByRole('button', { name: /starten|beenden|öffnen|oeffnen|pausieren/i })).toBeNull()
@@ -216,7 +238,7 @@ test('Zustand folgt dem Server', async () => {
   socketMock.__facade.enter.mockResolvedValue({
     ok: true,
     session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
-    participants: [{ userId: 'u-selbst', email: 'ich@example.com', role: 'spieler', online: true }],
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
   })
 
   const { container } = render(<App />)
@@ -243,7 +265,7 @@ test('Ersetzte Verbindung verbindet sich nicht neu', async () => {
   socketMock.__facade.enter.mockResolvedValue({
     ok: true,
     session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
-    participants: [{ userId: 'u-selbst', email: 'ich@example.com', role: 'spieler', online: true }],
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
   })
 
   render(<App />)
@@ -276,7 +298,7 @@ test('Beendete Spielsitzung führt zur Liste zurück', async () => {
   socketMock.__facade.enter.mockResolvedValue({
     ok: true,
     session: { id: 's1', name: 'Abendrunde', status: 'gestartet', role: 'spieler' },
-    participants: [{ userId: 'u-selbst', email: 'ich@example.com', role: 'spieler', online: true }],
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
   })
 
   const { container } = render(<App />)
@@ -292,4 +314,111 @@ test('Beendete Spielsitzung führt zur Liste zurück', async () => {
   await waitFor(() => expect(screen.getByText(/beendet/i)).toBeTruthy())
   expect(nameFeld(container)).not.toBeNull()
   expect(codeFeld(container)).not.toBeNull()
+})
+
+// --- Alias in der Raumansicht (#45) ---------------------------------------------------------
+
+test('Teilnehmer werden mit Alias oder Nutzername benannt', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
+    participants: [
+      { userId: 'u-a', username: 'sam', alias: 'Gandalf der Graue', role: 'spieler', online: true },
+      { userId: 'u-b', username: 'meister', role: 'spielleiter', online: true },
+    ],
+  })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+
+  await waitFor(() => expect(screen.getByText(/Gandalf der Graue/)).toBeTruthy())
+  // Der Teilnehmer mit Alias wird mit dem Alias benannt, der ohne Alias mit dem Nutzernamen …
+  expect(screen.getByText(/\bmeister\b/)).toBeTruthy()
+  // … und der Nutzername des Alias-Traegers erscheint nicht.
+  expect(screen.queryByText(/\bsam\b/)).toBeNull()
+})
+
+test('Eigener Alias wird als Absicht gesendet und folgt dem Server', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
+    participants: [{ userId: 'u-selbst', username: 'sam', role: 'spieler', online: true }],
+  })
+  socketMock.__facade.alias.mockResolvedValue({ ok: true, alias: 'Gandalf' })
+
+  const { container } = render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+  await waitFor(() => expect(screen.getByText(/\bsam\b/)).toBeTruthy())
+
+  const feld = must(aliasFeld(container), 'ein Alias-Eingabefeld in der eigenen Zeile')
+  fireEvent.change(feld, { target: { value: 'Gandalf' } })
+  await act(async () => {
+    fireEvent.submit(must(feld.closest('form'), 'ein <form> um das Alias-Feld'))
+  })
+
+  // Die Anwendung sendet die Absicht an den Server (design.md D6) …
+  await waitFor(() => expect(socketMock.__facade.alias).toHaveBeenCalledWith('s1', 'Gandalf'))
+  // … zeigt den Nutzer aber weiterhin als `sam`, bis der Server die Liste aktualisiert (§9.1).
+  expect(screen.getByText(/\bsam\b/)).toBeTruthy()
+
+  await act(async () => {
+    socketMock.__emit('participants', {
+      sessionId: 's1',
+      participants: [{ userId: 'u-selbst', username: 'sam', alias: 'Gandalf', role: 'spieler', online: true }],
+    })
+  })
+
+  // Nach der Server-Liste wird er als `Gandalf` benannt.
+  await waitFor(() => expect(screen.getByText(/Gandalf/)).toBeTruthy())
+  expect(screen.queryByText(/\bsam\b/)).toBeNull()
+})
+
+test('Abgelehnter Alias wird angezeigt', async () => {
+  const ABLEHNUNG = 'Dieser Alias ist ungültig.'
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
+    participants: [{ userId: 'u-selbst', username: 'sam', role: 'spieler', online: true }],
+  })
+  socketMock.__facade.alias.mockResolvedValue({ ok: false, message: ABLEHNUNG })
+
+  const { container } = render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+  await waitFor(() => expect(screen.getByText(/\bsam\b/)).toBeTruthy())
+
+  const feld = must(aliasFeld(container), 'ein Alias-Eingabefeld in der eigenen Zeile')
+  fireEvent.change(feld, { target: { value: 'Gandalf' } })
+  await act(async () => {
+    fireEvent.submit(must(feld.closest('form'), 'ein <form> um das Alias-Feld'))
+  })
+
+  // Die Meldung des Servers wird angezeigt …
+  await waitFor(() => expect(screen.getAllByText(ABLEHNUNG).length).toBeGreaterThan(0))
+  // … und die Teilnehmerliste ist unveraendert (weiterhin `sam`, kein `Gandalf`).
+  expect(screen.getByText(/\bsam\b/)).toBeTruthy()
+  expect(screen.queryByText(/Gandalf/)).toBeNull()
 })

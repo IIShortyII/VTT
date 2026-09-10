@@ -1,12 +1,17 @@
 /** @jest-environment jsdom */
 // Komponententests zum Requirement "Anmeldeoberfläche" aus
 // openspec/changes/add-user-auth/specs/user-auth/spec.md und dem Delta aus
-// openspec/changes/fix-auth-followups/specs/user-auth/spec.md. Ein Test je Szenario,
-// Testname = Szenarioname (constitution.md §4.1).
+// openspec/changes/fix-auth-followups/specs/user-auth/spec.md sowie dem Requirement
+// "Registrierungsoberfläche" aus openspec/changes/add-username-and-alias/specs/user-auth/spec.md
+// (#45). Ein Test je Szenario, Testname = Szenarioname (constitution.md §4.1).
 //
 // Geprueft wird, *was* die Anwendung anbietet und anzeigt — nicht, wie es aussieht
 // (AGENTS.md: Rendering nimmt der menschliche App-Test ab). `fetch` ist gemockt, damit der
 // Server hier nur eine Antwort ist (design.md D10).
+//
+// Nutzer-Fixtures tragen ab #45 zusaetzlich `username` (die Antwort von `/api/auth/me` nennt
+// ihn). Die beiden Szenarien der Registrierungsoberfläche sind rot, weil das
+// Registrierungsformular das Nutzernamensfeld noch nicht rendert.
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { App } from '../src/client/app/App.js'
@@ -68,11 +73,22 @@ function mockFetchMitFehler(
 // Die Felder werden ueber ihre Bedeutung gesucht, nicht ueber eine bestimmte Beschriftung:
 // Typ, `name` oder `id` — irgendeines davon traegt jedes ernst gemeinte Eingabefeld.
 function emailFeld(container: HTMLElement): HTMLElement | null {
-  return container.querySelector('input[type="email"], input[name="email"], input#email')
+  return container.querySelector('input[type="email"], input[name="email"], input#email, input#register-email')
 }
 
 function passwortFeld(container: HTMLElement): HTMLElement | null {
-  return container.querySelector('input[type="password"], input[name="password"], input#password')
+  return container.querySelector('input[type="password"], input[name="password"], input#password, input#register-password')
+}
+
+// Das Nutzernamensfeld der Registrierung (#45, design.md D6): `id` `register-username`, `name`
+// `username` oder `autoComplete="nickname"`.
+function nutzernameFeld(container: HTMLElement): HTMLElement | null {
+  return container.querySelector('input[name="username"], input#register-username, input[autocomplete="nickname"]')
+}
+
+/** Wechselt aus dem Anmelde- in das Registrierungsformular (ein Umschalter, kein Router). */
+function zurRegistrierung(): void {
+  fireEvent.click(screen.getByRole('button', { name: /registrieren/i }))
 }
 
 afterEach(() => {
@@ -137,7 +153,7 @@ test('Server beim Start nicht erreichbar', async () => {
 })
 
 test('Fehlgeschlagene Abmeldung wird angezeigt', async () => {
-  const user = { id: 'nutzer-1', email: 'spieler@example.com' }
+  const user = { id: 'nutzer-1', email: 'spieler@example.com', username: 'Gandalf' }
   // Angemeldeter Nutzer beim Start; die Abmeldeanfrage scheitert dann ohne Antwort des
   // Servers (Anfrage verworfen).
   mockFetchMitFehler('/api/auth/logout', [
@@ -158,13 +174,63 @@ test('Fehlgeschlagene Abmeldung wird angezeigt', async () => {
   expect(screen.getByText(/angemeldet als/i)).toBeTruthy()
 })
 
+// --- Registrierungsoberfläche (#45) ---------------------------------------------------------
+// Requirement "Registrierungsoberfläche" aus
+// openspec/changes/add-username-and-alias/specs/user-auth/spec.md. Das Nutzernamensfeld
+// (design.md D6) entsteht erst mit der Implementierung; bis dahin fehlt es — die Tests sind
+// rot, weil das erwartete Feld nicht gerendert wird.
+
+test('Registrierungsformular zeigt das Nutzernamensfeld', async () => {
+  mockFetch([{ pfad: '/api/auth/me', antwort: antwort(401, { error: 'nicht angemeldet' }) }])
+
+  const { container } = render(<App />)
+  await waitFor(() => expect(emailFeld(container)).not.toBeNull())
+  zurRegistrierung()
+  await screen.findByText(/Registrierung/i)
+
+  // Eingabefelder für Nutzername, E-Mail und Passwort.
+  expect(nutzernameFeld(container)).not.toBeNull()
+  expect(emailFeld(container)).not.toBeNull()
+  expect(passwortFeld(container)).not.toBeNull()
+})
+
+test('Vergebener Nutzername wird angezeigt', async () => {
+  const ABLEHNUNG = 'Dieser Nutzername ist bereits vergeben.'
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(401, { error: 'nicht angemeldet' }) },
+    {
+      pfad: '/api/auth/register',
+      antwort: antwort(409, { error: ABLEHNUNG, message: ABLEHNUNG, field: 'username' }),
+    },
+  ])
+
+  const { container } = render(<App />)
+  await waitFor(() => expect(emailFeld(container)).not.toBeNull())
+  zurRegistrierung()
+  await screen.findByText(/Registrierung/i)
+
+  const nutzername = must(nutzernameFeld(container), 'ein Eingabefeld für den Nutzernamen')
+  const email = must(emailFeld(container), 'ein Eingabefeld für die E-Mail')
+  const passwort = must(passwortFeld(container), 'ein Eingabefeld für das Passwort')
+  fireEvent.change(nutzername, { target: { value: 'Gandalf' } })
+  fireEvent.change(email, { target: { value: 'spieler@example.com' } })
+  fireEvent.change(passwort, { target: { value: 'ein-sicheres-passwort' } })
+
+  fireEvent.submit(must(nutzername.closest('form'), 'ein <form> um die Registrierungsfelder'))
+
+  // Die Meldung des Servers wird angezeigt …
+  await waitFor(() => expect(screen.getAllByText(ABLEHNUNG).length).toBeGreaterThan(0))
+  // … und die Ansicht bleibt im Registrierungsformular (das Nutzernamensfeld ist weiter da).
+  expect(nutzernameFeld(container)).not.toBeNull()
+})
+
 // --- Passwortänderung in der Oberfläche -----------------------------------------------------
 // Requirement "Passwortänderung in der Oberfläche" aus
 // openspec/changes/add-account-security/specs/user-auth/spec.md. Das Formular (design.md D5)
 // entsteht erst mit der Implementierung; bis dahin fehlen Felder/Meldungen — die Tests sind rot,
 // weil die erwartete Oberfläche noch nicht gerendert wird.
 
-const ANGEMELDETER_NUTZER = { id: 'nutzer-1', email: 'spieler@example.com' }
+const ANGEMELDETER_NUTZER = { id: 'nutzer-1', email: 'spieler@example.com', username: 'Gandalf' }
 
 // Die beiden Passwortfelder werden über ihre Bedeutung gesucht (autoComplete bzw. name aus
 // design.md D5), nicht über eine bestimmte Beschriftung.

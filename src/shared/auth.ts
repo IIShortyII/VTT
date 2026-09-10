@@ -33,7 +33,48 @@ export const PasswordSchema = z.string().superRefine((value, ctx) => {
   }
 })
 
+/**
+ * Nutzername (add-username-and-alias #45, design.md D1): getrimmt, 3-24 Codepoints,
+ * Unicode-Buchstaben/-Ziffern sowie `_`, `-`, `.` - keine Leerzeichen. Die Laenge zaehlt
+ * Codepoints (`[...value].length`), nicht `String.length`, analog zum Passwort (D11). Die
+ * Einmaligkeit unabhaengig von der Schreibweise erzwingt die Datenbank ueber einen
+ * normalisierten Schluessel (`server/auth/rules.ts`, `usernameKey`), nicht dieses Schema.
+ */
+export const USERNAME_MIN_LENGTH = 3
+export const USERNAME_MAX_LENGTH = 24
+const USERNAME_PATTERN = /^[\p{L}\p{N}_.-]+$/u
+
+export const UsernameSchema = z
+  .string()
+  .transform((value) => value.trim())
+  .pipe(
+    z.string().superRefine((value, ctx) => {
+      const length = countCodepoints(value)
+      if (length < USERNAME_MIN_LENGTH) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Der Nutzername muss mindestens ${USERNAME_MIN_LENGTH} Zeichen lang sein.`,
+        })
+        return
+      }
+      if (length > USERNAME_MAX_LENGTH) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Der Nutzername darf höchstens ${USERNAME_MAX_LENGTH} Zeichen lang sein.`,
+        })
+        return
+      }
+      if (!USERNAME_PATTERN.test(value)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Der Nutzername darf nur Buchstaben, Ziffern, „_“, „-“ und „.“ enthalten - keine Leerzeichen.',
+        })
+      }
+    }),
+  )
+
 export const RegisterInputSchema = z.object({
+  username: UsernameSchema,
   email: EmailSchema,
   password: PasswordSchema,
 })
@@ -73,11 +114,13 @@ export type ChangePasswordInput = z.infer<typeof ChangePasswordInputSchema>
 
 /**
  * Was der Server ueber einen Nutzer preisgibt - nie Hash, Salt oder Hash-Parameter
- * (constitution.md §9.2).
+ * (constitution.md §9.2). `username` ist das, was andere Mitspieler sehen (#45); die E-Mail
+ * erreicht in jedem Drahtformat ausschliesslich den Nutzer selbst.
  */
 export const UserOutputSchema = z.object({
   id: z.string(),
   email: z.string(),
+  username: z.string(),
 })
 export type UserOutput = z.infer<typeof UserOutputSchema>
 

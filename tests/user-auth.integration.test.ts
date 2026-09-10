@@ -1,5 +1,6 @@
 // Integrationstests zu openspec/changes/add-user-auth/specs/user-auth/spec.md und dem Delta
-// aus openspec/changes/fix-auth-followups/specs/user-auth/spec.md.
+// aus openspec/changes/fix-auth-followups/specs/user-auth/spec.md sowie
+// openspec/changes/add-username-and-alias/specs/user-auth/spec.md (Nutzername, #45).
 // Ein Test je GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname.
 //
 // Sie laufen gegen die ephemere Wegwerf-DB (AGENTS.md, constitution.md §4.3): prisma/test.db
@@ -9,10 +10,19 @@
 //
 // Der Server wird ueber `app.inject()` angesprochen — echter Fastify-Stack samt Cookie-Plugin
 // und Prisma, aber ohne Port und Netzwerk (design.md D10).
+//
+// Nutzername (#45): jede Registrierung traegt ein Feld `username`. Der Wert ist fuer die
+// meisten Szenarien beliebig, muss aber gueltig und je Test eindeutig sein — dafuer der Helfer
+// `usernameFromEmail` (tests/helpers/username.ts). Die Spalte `User.username` kennt der
+// Prisma-Client erst nach der Migration (tasks.md 2.1); bis dahin fehlt sie im Ergebnis, und
+// die darauf gerichteten Assertions werden aus genau diesem Grund rot (§3.1) — nicht aus einem
+// Setup-Fehler. Die uebrigen (bestehenden) Tests bleiben grün, weil das heutige Schema das
+// zusaetzliche Feld ignoriert (design.md Folgeregel).
 
 import { PrismaClient } from '@prisma/client'
 
 import { setupEphemeralDb } from './helpers/ephemeral-db.js'
+import { usernameFromEmail } from './helpers/username.js'
 
 jest.setTimeout(120_000)
 
@@ -66,6 +76,16 @@ function userOf(res: Res): { id: string; email: string } {
   }
 }
 
+/**
+ * Der rohe Nutzer-Datensatz der Antwort — fuer Felder, die `userOf` nicht kennt (`username`,
+ * #45). Fehlt das Feld noch (vor der Implementierung), ist es `undefined`, und die darauf
+ * gerichtete Assertion wird aus dem erwarteten Grund rot.
+ */
+function userRecordOf(res: Res): Record<string, unknown> {
+  const body = must(asRecord(JSON.parse(res.body)), 'ein JSON-Objekt als Antwortkoerper')
+  return asRecord(body.user) ?? body
+}
+
 /** Das von der Spec geforderte Antwortfeld `field` einer 400er-Antwort. */
 function fieldOf(res: Res): unknown {
   return must(asRecord(JSON.parse(res.body)), 'ein JSON-Objekt als Antwortkoerper').field
@@ -116,6 +136,18 @@ function sidOf(res: Res): string {
   ).value
 }
 
+/**
+ * Liest die Nutzerzeile zu einer E-Mail lose typisiert aus. Die Spalte `username` kennt der
+ * Prisma-Client erst nach der Migration (tasks.md 2.1); die lose Typisierung haelt die Suite
+ * kompilierbar, ohne der DB-Aussage die Spitze zu nehmen.
+ */
+async function userRowByEmail(email: string): Promise<Record<string, unknown> | null> {
+  const loose = prisma as unknown as {
+    user: { findFirst(args: { where: { email: string } }): Promise<Record<string, unknown> | null> }
+  }
+  return loose.user.findFirst({ where: { email } })
+}
+
 async function makeApp(clock: () => Date = () => new Date()): Promise<App> {
   // `logger: false`: jede `inject()`-Antwort schriebe sonst pino-Zeilen in genau die
   // Gate-Ausgabe, aus der das Fehler-Feedback geparst wird.
@@ -124,8 +156,22 @@ async function makeApp(clock: () => Date = () => new Date()): Promise<App> {
   return app
 }
 
-function register(app: App, email: string, password: string) {
-  return app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password } })
+/**
+ * Registriert einen Nutzer. Der Nutzername ist ab #45 Pflicht; ist keiner angegeben, wird ein
+ * gueltiger, eindeutiger aus der E-Mail abgeleitet (der konkrete Wert ist fuer die meisten
+ * Szenarien belanglos).
+ */
+function register(app: App, email: string, password: string, username: string = usernameFromEmail(email)) {
+  return app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, username, password } })
+}
+
+/**
+ * Eine Registrieranfrage mit einem roh vorgegebenen Koerper — fuer die Faelle, in denen das
+ * Feld `username` fehlen soll oder einen bestimmten (auch ungueltigen) Wert traegt, ohne dass
+ * der Helfer ihn vorher ableitet.
+ */
+function registerRaw(app: App, body: Record<string, unknown>) {
+  return app.inject({ method: 'POST', url: '/api/auth/register', payload: body })
 }
 
 function login(app: App, email: string, password: string) {
@@ -180,22 +226,29 @@ afterAll(async () => {
 test('Registrierung mit unbenutzter E-Mail', async () => {
   const app = await makeApp()
 
-  const res = await register(app, EMAIL, PASSWORD)
+  const res = await register(app, EMAIL, PASSWORD, 'Gandalf')
 
   expect(res.statusCode).toBe(201)
   const user = userOf(res)
   expect(user.email).toBe(EMAIL)
   expect(user.id.length).toBeGreaterThan(0)
+  // Die Antwort nennt den angelegten Nutzernamen (Requirement "Kontoregistrierung", #45).
+  expect(userRecordOf(res).username).toBe('Gandalf')
   expect(sidOf(res).length).toBeGreaterThan(0)
   expect(await prisma.user.count({ where: { email: EMAIL } })).toBe(1)
   expect(await prisma.account.count({ where: { user: { email: EMAIL } } })).toBe(1)
+  // Genau eine Nutzerzeile zu dieser E-Mail, und ihre Zeile traegt den Nutzernamen "Gandalf".
+  expect(must(await userRowByEmail(EMAIL), 'die Nutzerzeile zur E-Mail').username).toBe('Gandalf')
 })
 
 test('Registrierung mit bereits vergebener E-Mail', async () => {
   const app = await makeApp()
-  expect((await register(app, EMAIL, PASSWORD)).statusCode).toBe(201)
+  // Erste Registrierung mit einem Nutzernamen …
+  expect((await register(app, EMAIL, PASSWORD, 'Gandalf')).statusCode).toBe(201)
 
-  const res = await register(app, EMAIL, 'ein-ganz-anderes-passwort')
+  // … die zweite mit derselben E-Mail, aber einem noch unbenutzten Nutzernamen: der Konflikt
+  // muss die E-Mail sein, nicht der Nutzername.
+  const res = await register(app, EMAIL, 'ein-ganz-anderes-passwort', 'Radagast')
 
   expect(res.statusCode).toBe(409)
   expect(setCookieHeaders(res)).toHaveLength(0)
@@ -205,6 +258,8 @@ test('Registrierung mit bereits vergebener E-Mail', async () => {
 test('Registrierung mit ungültigen Eingaben', async () => {
   const app = await makeApp()
 
+  // Gueltiger Nutzername (aus der E-Mail abgeleitet), aber ungueltige E-Mail bzw. zu kurzes
+  // Passwort — das verletzte Feld ist `email` bzw. `password`, nicht `username`.
   const badEmail = await register(app, 'keine-gueltige-adresse', PASSWORD)
   const shortPassword = await register(app, EMAIL, 'a'.repeat(14))
 
@@ -226,6 +281,74 @@ test('E-Mail wird unabhängig von der Schreibweise erkannt', async () => {
 
   expect(res.statusCode).toBe(200)
   expect(userOf(res).id).toBe(userOf(registered).id)
+})
+
+// --- Nutzername bei der Registrierung (#45) ------------------------------------------------
+
+test('Registrierung ohne Nutzernamen', async () => {
+  const app = await makeApp()
+
+  const res = await registerRaw(app, { email: EMAIL, password: PASSWORD })
+
+  expect(res.statusCode).toBe(400)
+  expect(fieldOf(res)).toBe('username')
+  expect(setCookieHeaders(res)).toHaveLength(0)
+  expect(await prisma.user.count()).toBe(0)
+})
+
+test('Registrierung mit formal ungültigem Nutzernamen', async () => {
+  const app = await makeApp()
+
+  // Je ein Fall: zu kurz (2), Leerzeichen im Inneren, zu lang (25 Buchstaben).
+  const faelle = ['Ga', 'Gandalf der Graue', 'a'.repeat(25)]
+  for (const [i, username] of faelle.entries()) {
+    const res = await registerRaw(app, { email: `spieler${i}@example.com`, username, password: PASSWORD })
+
+    expect(res.statusCode).toBe(400)
+    expect(fieldOf(res)).toBe('username')
+    expect(setCookieHeaders(res)).toHaveLength(0)
+  }
+  expect(await prisma.user.count()).toBe(0)
+})
+
+test('Nutzername wird getrimmt und in seiner Schreibweise bewahrt', async () => {
+  const app = await makeApp()
+
+  const res = await register(app, EMAIL, PASSWORD, '  Jörg_42  ')
+
+  expect(res.statusCode).toBe(201)
+  expect(userRecordOf(res).username).toBe('Jörg_42')
+  expect(must(await userRowByEmail(EMAIL), 'die Nutzerzeile zur E-Mail').username).toBe('Jörg_42')
+})
+
+test('Nutzername ist unabhängig von der Schreibweise einmalig', async () => {
+  const app = await makeApp()
+  expect((await register(app, EMAIL, PASSWORD, 'Gandalf')).statusCode).toBe(201)
+
+  // Andere, unbenutzte E-Mail, aber derselbe Nutzername in anderer Schreibweise.
+  const res = await register(app, 'zweiter@example.com', PASSWORD, 'gandalf')
+
+  expect(res.statusCode).toBe(409)
+  expect(fieldOf(res)).toBe('username')
+  expect(setCookieHeaders(res)).toHaveLength(0)
+  expect(await prisma.user.count()).toBe(1)
+})
+
+test('Anmeldung und Nutzerabfrage nennen den Nutzernamen', async () => {
+  const app = await makeApp()
+  expect((await register(app, EMAIL, PASSWORD, 'Gandalf')).statusCode).toBe(201)
+
+  const angemeldet = await login(app, EMAIL, PASSWORD)
+  const abgefragt = await me(app, sidOf(angemeldet))
+
+  expect(angemeldet.statusCode).toBe(200)
+  expect(abgefragt.statusCode).toBe(200)
+  for (const res of [angemeldet, abgefragt]) {
+    const user = userRecordOf(res)
+    expect(user.username).toBe('Gandalf')
+    expect(user.id).toBeDefined()
+    expect(user.email).toBe(EMAIL)
+  }
 })
 
 // --- Passwortablage -------------------------------------------------------------------------

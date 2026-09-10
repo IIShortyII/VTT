@@ -3,12 +3,14 @@ import type { PrismaClient } from '@prisma/client'
 import type { Server, Socket } from 'socket.io'
 
 import {
+  AliasInputSchema,
   EnterInputSchema,
   GameSessionStatusSchema,
   MemberRoleSchema,
   nextStatus,
   SESSION_EVENTS,
   TransitionInputSchema,
+  type AliasAck,
   type EnterAck,
   type TransitionAck,
 } from '../../shared/session.js'
@@ -73,6 +75,13 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
 
     socket.on(SESSION_EVENTS.transition, (payload: unknown, callback: (ack: TransitionAck) => void) => {
       handleTransition(socket, payload, callback).catch((error: unknown) => {
+        console.error(error)
+        callback({ ok: false, message: GENERIC_ACK_ERROR_MESSAGE })
+      })
+    })
+
+    socket.on(SESSION_EVENTS.alias, (payload: unknown, callback: (ack: AliasAck) => void) => {
+      handleAlias(socket, payload, callback).catch((error: unknown) => {
         console.error(error)
         callback({ ok: false, message: GENERIC_ACK_ERROR_MESSAGE })
       })
@@ -183,6 +192,32 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
       }
       await broadcastParticipants(io, presence, prisma, sessionId)
     }
+  }
+
+  /**
+   * `session:alias` (design.md D4, Requirement "Alias pro Mitgliedschaft"): `authorizeAction`
+   * ohne Rollenanforderung - jedes anwesende Mitglied darf sich selbst benennen. Das
+   * Ereignis traegt keine Ziel-Nutzer-ID; geaendert wird ausschliesslich die Mitgliedschaft,
+   * die `authorizeAction` fuer den Absender liefert - die Berechtigungspruefung ist damit
+   * strukturell, nicht per `if` (constitution.md §9.3).
+   */
+  async function handleAlias(socket: Socket, payload: unknown, callback: (ack: AliasAck) => void): Promise<void> {
+    const parsed = AliasInputSchema.safeParse(payload)
+    if (!parsed.success) {
+      callback({ ok: false, message: INVALID_PAYLOAD_MESSAGE })
+      return
+    }
+    const { sessionId, alias } = parsed.data
+
+    const authResult = await authorizeAction({ prisma, clock }, socket, sessionId)
+    if (!authResult.ok) {
+      callback({ ok: false, message: authResult.message })
+      return
+    }
+
+    await prisma.membership.update({ where: { id: authResult.membership.id }, data: { alias } })
+    await broadcastParticipants(io, presence, prisma, sessionId)
+    callback({ ok: true, alias })
   }
 
   async function handleDisconnect(socket: Socket): Promise<void> {

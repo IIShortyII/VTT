@@ -19,6 +19,12 @@ generator client {
 model User {
   id          String       @id @default(cuid())
   email       String       @unique
+  // add-username-and-alias (#45): Anzeigename (wie eingegeben) getrennt vom
+  // Einmaligkeits-Schluessel - SQLite kennt kein case-insensitives Unique fuer Unicode
+  // (design.md D1). `usernameKey` wird ausschliesslich vom Server berechnet
+  // (`server/auth/rules.ts`, `usernameKey()`), nie vom Client gesetzt.
+  username    String
+  usernameKey String       @unique
   createdAt   DateTime     @default(now())
   accounts    Account[]
   sessions    Session[]
@@ -77,6 +83,10 @@ model Membership {
   sessionId String
   userId    String
   role      String
+  // add-username-and-alias (#45): Charaktername je Mitgliedschaft, nicht je Nutzer -
+  // derselbe Nutzer spielt in zwei Spielsitzungen zwei Charaktere (design.md D4). `null` =
+  // kein Alias, dann zeigt die Teilnehmerliste den Nutzernamen.
+  alias     String?
   joinedAt  DateTime    @default(now())
   session   GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)

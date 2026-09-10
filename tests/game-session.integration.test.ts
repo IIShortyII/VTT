@@ -12,6 +12,7 @@
 import { PrismaClient } from '@prisma/client'
 
 import { setupEphemeralDb } from './helpers/ephemeral-db.js'
+import { usernameFromEmail } from './helpers/username.js'
 
 jest.setTimeout(120_000)
 
@@ -97,11 +98,11 @@ async function makeApp(): Promise<App> {
 }
 
 /** Registriert einen Nutzer und liefert Cookie und Nutzer-Id. */
-async function registerUser(app: App, email: string): Promise<{ sid: string; userId: string; email: string }> {
+async function registerUser(app: App, email: string, username: string = usernameFromEmail(email)): Promise<{ sid: string; userId: string; email: string }> {
   const res = (await app.inject({
     method: 'POST',
     url: '/api/auth/register',
-    payload: { email, password: PASSWORD },
+    payload: { email, username, password: PASSWORD },
   })) as unknown as Res
   if (res.statusCode !== 201) throw new Error(`Registrierung fehlgeschlagen (${res.statusCode}): ${res.body}`)
   return { sid: sidOf(res), userId: String(bodyOf(res).id), email }

@@ -18,6 +18,7 @@
 import { Prisma, PrismaClient } from '@prisma/client'
 
 import { setupEphemeralDb } from './helpers/ephemeral-db.js'
+import { usernameFromEmail } from './helpers/username.js'
 
 jest.setTimeout(120_000)
 
@@ -99,8 +100,8 @@ async function makeApp(clock: () => Date = () => new Date()): Promise<App> {
   return app
 }
 
-function register(app: App, email: string, password: string) {
-  return app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password } })
+function register(app: App, email: string, password: string, username: string = usernameFromEmail(email)) {
+  return app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, username, password } })
 }
 
 function login(app: App, email: string, password: string) {

@@ -94,6 +94,7 @@ export function App() {
       return (
         <SessionRoom
           sessionId={sessionView.sessionId}
+          currentUserId={state.user.id}
           onLeave={() => setSessionView({ view: 'liste' })}
           onEnded={(message) => {
             setHinweis(message)

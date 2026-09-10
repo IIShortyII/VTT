@@ -138,6 +138,17 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
 }
 
+/**
+ * Normalisierter Einmaligkeits-Schluessel eines Nutzernamens (add-username-and-alias #45,
+ * design.md D1): NFKC-Normalform, danach kleingeschrieben. `toLowerCase` statt
+ * `toLocaleLowerCase` - deterministisch ueber Laufzeitumgebungen, unabhaengig vom Locale
+ * (etwa dem tuerkischen `İ`). Reine Funktion, wird nie vom Client berechnet - der Client
+ * kennt die Spalte `usernameKey` nicht.
+ */
+export function usernameKey(username: string): string {
+  return username.normalize('NFKC').toLowerCase()
+}
+
 /** Volle Sitzungslaufzeit (design.md, Requirement "Ablauf und gleitende Verlängerung"). */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 export const SESSION_TTL_SECONDS = SESSION_TTL_MS / 1000

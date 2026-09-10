@@ -101,15 +101,28 @@ export const SessionSummarySchema = z.object({
 })
 export type SessionSummary = z.infer<typeof SessionSummarySchema>
 
-/** Teilnehmer der Echtzeit-Teilnehmerliste (Requirement "Teilnehmerliste in Echtzeit"). Die
- * E-Mail steht hier bis #45, weil das Nutzerkonto nichts anderes hat (proposal.md). */
+/**
+ * Teilnehmer der Echtzeit-Teilnehmerliste (Requirement "Teilnehmerliste in Echtzeit"). Die
+ * E-Mail steht hier NICHT (mehr) - sie ist Anmeldename, keine Information fuer andere
+ * Mitspieler (constitution.md §9.2, add-username-and-alias #45). `alias` fehlt auf der
+ * Leitung, wenn die Mitgliedschaft keinen traegt (`JSON.stringify` laesst `undefined` weg);
+ * das Fehlen des Felds ist der natuerliche Zustand "kein Alias" (design.md D5).
+ */
 export const ParticipantSchema = z.object({
   userId: z.string(),
-  email: z.string(),
+  username: z.string(),
+  alias: z.string().optional(),
   role: MemberRoleSchema,
   online: z.boolean(),
 })
 export type Participant = z.infer<typeof ParticipantSchema>
+
+/** Zeigt den Alias, falls die Mitgliedschaft einen traegt, sonst den Nutzernamen
+ * (design.md D5) - die einzige Stelle, die "wie heisst dieser Spieler" beantwortet; Tokens
+ * (#8) und Chat benutzen denselben Helfer, statt die Regel zu wiederholen. */
+export function displayName(p: Pick<Participant, 'username' | 'alias'>): string {
+  return p.alias ?? p.username
+}
 
 /** Payload von `session:enter` (Client -> Server). */
 export const EnterInputSchema = z.object({
@@ -124,17 +137,54 @@ export const TransitionInputSchema = z.object({
 })
 export type TransitionInput = z.infer<typeof TransitionInputSchema>
 
+/**
+ * Alias-Obergrenze (design.md D4, Requirement "Alias pro Mitgliedschaft"): 1-40 Codepoints
+ * nach Trimmen, frei bis auf Steuerzeichen (einschliesslich Zeilenumbruch).
+ */
+export const ALIAS_MAX_LENGTH = 40
+
+/**
+ * Payload von `session:alias` (Client -> Server, design.md D4). Der Alias wird an den
+ * Raendern getrimmt; ein danach leerer Wert setzt den Alias zurueck (`null`). Ein nicht
+ * leerer Wert muss 1-40 Codepoints lang sein und darf keine Steuerzeichen enthalten -
+ * sonst ist er frei waehlbar und nicht einmalig (mehrere Mitglieder duerfen denselben
+ * Alias tragen).
+ */
+export const AliasInputSchema = z.object({
+  sessionId: z.string(),
+  alias: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(
+      z.union([
+        z.literal(''),
+        z
+          .string()
+          .regex(/^[^\p{Cc}]+$/u, 'Der Alias darf keine Steuerzeichen enthalten.')
+          .refine((value) => [...value].length <= ALIAS_MAX_LENGTH, `Der Alias darf höchstens ${ALIAS_MAX_LENGTH} Zeichen lang sein.`),
+      ]),
+    )
+    .transform((value) => (value === '' ? null : value)),
+})
+export type AliasInput = z.infer<typeof AliasInputSchema>
+
 /** Acknowledgement von `session:enter`. */
 export type EnterAck = { ok: true; session: SessionSummary; participants: Participant[] } | { ok: false; message: string }
 
 /** Acknowledgement von `session:transition`. */
 export type TransitionAck = { ok: true; status: GameSessionStatus } | { ok: false; message: string }
 
+/** Acknowledgement von `session:alias` - `alias` ist hier `null` statt fehlend, weil
+ * "zurueckgesetzt" eine explizite Antwort ist (design.md D5), anders als das optionale Feld
+ * in `ParticipantSchema`. */
+export type AliasAck = { ok: true; alias: string | null } | { ok: false; message: string }
+
 /** Ereignisnamen auf der Leitung - eine Quelle fuer Client und Server (spec.md
  * "Drahtformat"). */
 export const SESSION_EVENTS = {
   enter: 'session:enter',
   transition: 'session:transition',
+  alias: 'session:alias',
   participants: 'session:participants',
   status: 'session:status',
   replaced: 'session:replaced',

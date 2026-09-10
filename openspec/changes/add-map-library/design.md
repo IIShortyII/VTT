@@ -251,7 +251,13 @@ bestehenden Szenarien der Sitzungsoberfläche bleiben unberührt.
   wie `client/session/api.ts` (`{ ok: false, message, field? }`).
 - `client/map/MapCanvas.tsx`: dünner React-Rahmen um die Fassade — `useEffect` erzeugt den
   Canvas im `ref`-Element, reagiert auf Änderungen von `grid`/`imageUrl` per `setGrid`/
-  `setImage`, ruft `destroy` im Cleanup. Ein `cancelled`-Flag verhindert, dass ein nach dem
+  `setImage`, ruft `destroy` im Cleanup. **Die Fassade wird erst beim Mounten per
+  dynamischem `import()` geladen**, nicht statisch am Modulanfang: `App` importiert
+  `MapLibrary`, und ein statischer Import würde `pixi.js` in die Importkette jeder Ansicht
+  ziehen — im Browser ein unnötig großes Startbündel, unter Jest ein Ladefehler in *jeder*
+  Suite, die die `App` rendert (PixiJS zieht `earcut` als reines ES-Modul nach, das Jest im
+  CJS-Modus nicht laden kann). Kein Modul außerhalb von `MapCanvas.tsx` importiert die
+  Fassade; nur der Typ `MapCanvasHandle` darf statisch (`import type`) bezogen werden. Ein `cancelled`-Flag verhindert, dass ein nach dem
   Unmount aufgelöstes `createMapCanvas` einen verwaisten Canvas hinterlässt (dann sofort
   `destroy`).
 - `client/map/MapLibrary.tsx`: Zustand `liste` (Karten mit Name und „ohne Bild"-Kennzeichen,
@@ -281,7 +287,11 @@ bestehenden Szenarien der Sitzungsoberfläche bleiben unberührt.
   unterschieden, `PUT`-Body und `Content-Type` werden im Mock festgehalten), Canvas-Fassade
   per Modul-Mock ersetzt — der Mock liefert ein Handle mit drei `jest.fn`, sodass „erzeugt
   mit URL und Raster", „`setGrid` mit dem Serverwert" und „`destroy` genau einmal" prüfbar
-  sind. Dateiwahl über `fireEvent.change` mit einem `File`-Objekt.
+  sind. Der Mock muss den **auflösbaren** Modulpfad der Fassade treffen (mit `.js`-Endung,
+  wie `MapCanvas` sie importiert; der `moduleNameMapper` löst ihn auf die `.ts`-Datei auf).
+  Ein *virtueller* Mock unter einem anderen Schlüssel greift nicht, sobald die Datei
+  existiert — Jest lädt dann die echte Fassade samt PixiJS. Dateiwahl über
+  `fireEvent.change` mit einem `File`-Objekt.
 - Kein Test importiert `pixi.js`.
 
 ## Risks / Trade-offs

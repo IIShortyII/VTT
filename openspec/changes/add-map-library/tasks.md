@@ -93,8 +93,10 @@
       `destroy` genau einmal mit `app.destroy(true, { children: true, texture: true })`
       (design.md D8); verifizieren mit `pnpm typecheck:src` und `pnpm lint`; Verhalten im
       App-Test
-- [ ] 5.4 `src/client/map/MapCanvas.tsx`: `ref`-Element, `useEffect` erzeugt die Fassade,
-      `cancelled`-Flag für Unmount vor Auflösung, `setGrid`/`setImage` bei Prop-Änderung,
+- [ ] 5.4 `src/client/map/MapCanvas.tsx`: `ref`-Element, `useEffect` lädt die Fassade per
+      dynamischem `import()` und erzeugt den Canvas (kein statischer Import von `canvas.ts`
+      — sonst hängt `pixi.js` an der Importkette der `App`), `cancelled`-Flag für Unmount vor
+      Auflösung, `setGrid`/`setImage` bei Prop-Änderung,
       `destroy` im Cleanup (design.md D9); verifiziert durch die Szenarien „Karte öffnen",
       „Gespeichertes Raster kommt vom Server" und „Verlassen gibt die Kartenansicht frei"
 - [ ] 5.5 `src/client/map/MapLibrary.tsx`: Liste mit Namen und „ohne Bild"-Kennzeichen,

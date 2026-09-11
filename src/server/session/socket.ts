@@ -135,6 +135,12 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
 
     if (previousRoom && previousRoom !== sessionId) {
       await socket.leave(roomName(previousRoom))
+      // Requirement "Teilnehmerliste in Echtzeit", Szenario "Raumwechsel setzt das Mitglied
+      // im alten Raum auf abwesend" (design.md D1): `presence.enter` hat den Wechselnden
+      // bereits aus der Anwesenheit des alten Raums ausgetragen, der Socket hat den
+      // Socket.IO-Raum bereits verlassen - der Broadcast erreicht also nur die Verbliebenen,
+      // mit `online: false` fuer ihn.
+      await broadcastParticipants(io, presence, prisma, previousRoom)
     }
 
     if (replaced) {

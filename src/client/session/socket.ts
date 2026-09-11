@@ -32,6 +32,11 @@ export interface SessionSocketFacade {
   on(event: 'ended', handler: (payload: EndedEvent) => void): void
   on(event: 'map', handler: (payload: MapEvent) => void): void
   on(event: 'disconnect', handler: (reason: string) => void): void
+  /** Feuert bei jeder erfolgreichen Verbindung ausser der ersten (design.md D2) - der Server
+   * hat die Verbindung angenommen, kennt den Raum dieser Verbindung nach der vorangegangenen
+   * Trennung aber nicht mehr (`design.md` D10 aus #6). Kein Drahtereignis, deshalb nicht in
+   * `wireEventFor`. */
+  on(event: 'reconnect', handler: () => void): void
 }
 
 function wireEventFor(event: string): string {
@@ -51,6 +56,20 @@ function wireEventFor(event: string): string {
  */
 export function createSessionSocket(): SessionSocketFacade {
   const socket: Socket = io('/', { path: '/socket.io', autoConnect: false, withCredentials: true })
+
+  // design.md D2: Zaehler erfolgreicher Verbindungen, nicht Versuche - eine erst spaeter
+  // gelingende erste Verbindung ist trotzdem die erste, kein `reconnect`. Das Socket-Ereignis
+  // `connect` (nicht das Manager-Ereignis `reconnect` von socket.io-client) feuert erst, wenn
+  // der Server die Verbindung angenommen hat.
+  let connectionCount = 0
+  let reconnectHandler: (() => void) | undefined
+
+  socket.on('connect', () => {
+    connectionCount += 1
+    if (connectionCount > 1) {
+      reconnectHandler?.()
+    }
+  })
 
   const facade = {
     connect: () => {
@@ -76,6 +95,10 @@ export function createSessionSocket(): SessionSocketFacade {
         socket.emit(SESSION_MAP_EVENTS.activate, { sessionId, instanceId }, (ack: ActivateMapAck) => resolve(ack))
       }),
     on: (event: string, handler: (payload: unknown) => void) => {
+      if (event === 'reconnect') {
+        reconnectHandler = handler as () => void
+        return
+      }
       socket.on(wireEventFor(event), handler as (...args: unknown[]) => void)
     },
   }

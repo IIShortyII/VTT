@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import {
   allowedActions,
@@ -21,6 +21,12 @@ import { createSessionSocket, type SessionSocketFacade } from './socket.js'
 // Acknowledgement von `enter` und den nachfolgenden Server-Ereignissen - der angezeigte
 // Zustand folgt dem Server, nie dem zuletzt geklickten Uebergang oder der zuletzt
 // aktivierten Karte (constitution.md §9.1).
+//
+// reenter-room-after-reconnect (#46, design.md D3): eine von der Fassade gemeldete
+// Wiederverbindung betritt denselben Raum ueber dieselbe Fassade erneut - ausser die
+// Verbindung wurde zuvor durch `session:replaced` ersetzt. Die Verdrahtung der fuenf
+// Server-Ereignisse plus des erneuten Betretens geschieht an einer einzigen Stelle
+// (`wireSocket`), die sowohl das Mounten als auch "Hier weiterspielen" aufrufen.
 
 export interface SessionRoomProps {
   sessionId: string
@@ -52,6 +58,12 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
   const socketRef = useRef<SessionSocketFacade | null>(null)
   const [state, setState] = useState<RoomState>({ status: 'lädt' })
   const [replaced, setReplaced] = useState(false)
+  // Requirement "Sitzungsoberflaeche": eine gemeldete Wiederverbindung nach `session:replaced`
+  // betritt den Raum nicht automatisch erneut. Der `reconnect`-Handler wird einmal beim
+  // Verdrahten registriert und lebt so lange wie die Fassade - die Pruefung braucht deshalb
+  // den *aktuellen* Wert, ein `useState`-Wert in der Effekt-Closure waere veraltet
+  // (design.md D3, "Achtung bei der Umsetzung").
+  const replacedRef = useRef(false)
   // Eingabefeld der eigenen Zeile (design.md D6): einmal beim Betreten mit dem aktuell
   // gesetzten Alias vorbelegt, danach eine unabhaengige Absicht - die angezeigte Benennung
   // (`displayName`) folgt ausschliesslich `state.participants`, nicht dieser Eingabe
@@ -60,6 +72,87 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
   const [aliasError, setAliasError] = useState<string | null>(null)
   const [activateError, setActivateError] = useState<string | null>(null)
 
+  // Registriert die fuenf Server-Ereignisse und das erneute Betreten bei Wiederverbindung auf
+  // einer gegebenen Fassade, und betritt den Raum ueber sie (design.md D3, D10). `isCancelled`
+  // entscheidet, ob ein inzwischen veraltetes Acknowledgement noch State setzen darf - beim
+  // Mounten die `cancelled`-Sperre des Effekts, bei "Hier weiterspielen" nie (kein Rerun, kein
+  // Cleanup zwischen Klick und Antwort ausser dem Unmount, den die Fassade per `disconnect()`
+  // ohnehin stumm schaltet).
+  const wireSocket = useCallback(
+    (socket: SessionSocketFacade, isCancelled: () => boolean) => {
+      function applyEnterAck(ack: EnterAck): void {
+        if (!ack.ok) {
+          setState({ status: 'fehler', message: ack.message })
+          return
+        }
+        setState({
+          status: 'bereit',
+          name: ack.session.name,
+          sessionStatus: ack.session.status,
+          role: ack.session.role,
+          code: ack.session.code,
+          participants: ack.participants,
+          map: ack.map ?? null,
+        })
+        const self = ack.participants.find((participant) => participant.userId === currentUserId)
+        setAliasInput(self?.alias ?? '')
+      }
+
+      function enter(): void {
+        socket
+          .enter(sessionId)
+          .then((ack: EnterAck) => {
+            if (isCancelled()) {
+              return
+            }
+            applyEnterAck(ack)
+          })
+          .catch((error: unknown) => {
+            if (isCancelled()) {
+              return
+            }
+            console.error(error)
+            setState({ status: 'fehler', message: ENTER_FAILURE_MESSAGE })
+          })
+      }
+
+      socket.on('participants', ({ participants }) => {
+        setState((prev) => (prev.status === 'bereit' ? { ...prev, participants } : prev))
+      })
+      socket.on('status', ({ status }) => {
+        setState((prev) => (prev.status === 'bereit' ? { ...prev, sessionStatus: status } : prev))
+      })
+      // session-map (#50, Requirement "Kartenansicht im Raum"): die angezeigte Karte folgt
+      // ausschliesslich `session:map`, nie der zuletzt geklickten Schaltflaeche.
+      socket.on('map', ({ map }) => {
+        setState((prev) => (prev.status === 'bereit' ? { ...prev, map } : prev))
+      })
+      // Nach `replaced` MUSS die Fassade sich nicht von selbst neu verbinden oder den Raum
+      // erneut betreten (Requirement "Sitzungsoberflaeche") - nur der Hinweis erscheint, ein
+      // erneutes Betreten erfolgt ausschliesslich durch "Hier weiterspielen".
+      socket.on('replaced', () => {
+        replacedRef.current = true
+        setReplaced(true)
+      })
+      socket.on('ended', () => {
+        onEnded(ENDED_MESSAGE)
+      })
+      // reenter-room-after-reconnect (#46, design.md D2/D3): der Server kennt den Raum einer
+      // Verbindung nach einer Trennung nicht mehr - eine gemeldete Wiederverbindung betritt ihn
+      // ueber dieselbe Fassade erneut, ausser die Verbindung wurde inzwischen ersetzt.
+      socket.on('reconnect', () => {
+        if (replacedRef.current || isCancelled()) {
+          return
+        }
+        enter()
+      })
+
+      socket.connect()
+      enter()
+    },
+    [sessionId, currentUserId, onEnded],
+  )
+
   // Betritt den Raum beim Mounten und bei einem Wechsel der `sessionId` - eine neue Fassade
   // je Betreten, getrennt beim Unmount (design.md D10: "Fassade beim Unmount trennen").
   useEffect(() => {
@@ -67,67 +160,13 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
     socketRef.current = socket
     let cancelled = false
 
-    socket.on('participants', ({ participants }) => {
-      setState((prev) => (prev.status === 'bereit' ? { ...prev, participants } : prev))
-    })
-    socket.on('status', ({ status }) => {
-      setState((prev) => (prev.status === 'bereit' ? { ...prev, sessionStatus: status } : prev))
-    })
-    // session-map (#50, Requirement "Kartenansicht im Raum"): die angezeigte Karte folgt
-    // ausschliesslich `session:map`, nie der zuletzt geklickten Schaltflaeche.
-    socket.on('map', ({ map }) => {
-      setState((prev) => (prev.status === 'bereit' ? { ...prev, map } : prev))
-    })
-    // Nach `replaced` MUSS die Fassade sich nicht von selbst neu verbinden oder den Raum
-    // erneut betreten (Requirement "Sitzungsoberflaeche") - nur der Hinweis erscheint, ein
-    // erneutes Betreten erfolgt ausschliesslich durch "Hier weiterspielen".
-    socket.on('replaced', () => {
-      setReplaced(true)
-    })
-    socket.on('ended', () => {
-      onEnded(ENDED_MESSAGE)
-    })
-
-    socket.connect()
-    socket
-      .enter(sessionId)
-      .then((ack: EnterAck) => {
-        if (cancelled) {
-          return
-        }
-        applyEnterAck(ack)
-      })
-      .catch((error: unknown) => {
-        if (cancelled) {
-          return
-        }
-        console.error(error)
-        setState({ status: 'fehler', message: ENTER_FAILURE_MESSAGE })
-      })
-
-    function applyEnterAck(ack: EnterAck): void {
-      if (!ack.ok) {
-        setState({ status: 'fehler', message: ack.message })
-        return
-      }
-      setState({
-        status: 'bereit',
-        name: ack.session.name,
-        sessionStatus: ack.session.status,
-        role: ack.session.role,
-        code: ack.session.code,
-        participants: ack.participants,
-        map: ack.map ?? null,
-      })
-      const self = ack.participants.find((participant) => participant.userId === currentUserId)
-      setAliasInput(self?.alias ?? '')
-    }
+    wireSocket(socket, () => cancelled)
 
     return () => {
       cancelled = true
       socket.disconnect()
     }
-  }, [sessionId, currentUserId, onEnded])
+  }, [wireSocket])
 
   const handleTransition = (action: TransitionAction) => {
     const socket = socketRef.current
@@ -173,53 +212,17 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
       })
   }
 
+  // "Hier weiterspielen" (Requirement "Sitzungsoberflaeche"): eine bewusste Handlung des
+  // Nutzers, keine Automatik - die Sperre wird zurueckgesetzt, die neue Fassade beginnt ohne
+  // Vorgeschichte (design.md D3).
   const handleReconnect = () => {
+    replacedRef.current = false
     setReplaced(false)
     setState({ status: 'lädt' })
 
     const socket = createSessionSocket()
     socketRef.current = socket
-
-    socket.on('participants', ({ participants }) => {
-      setState((prev) => (prev.status === 'bereit' ? { ...prev, participants } : prev))
-    })
-    socket.on('status', ({ status }) => {
-      setState((prev) => (prev.status === 'bereit' ? { ...prev, sessionStatus: status } : prev))
-    })
-    socket.on('map', ({ map }) => {
-      setState((prev) => (prev.status === 'bereit' ? { ...prev, map } : prev))
-    })
-    socket.on('replaced', () => {
-      setReplaced(true)
-    })
-    socket.on('ended', () => {
-      onEnded(ENDED_MESSAGE)
-    })
-
-    socket.connect()
-    socket
-      .enter(sessionId)
-      .then((ack: EnterAck) => {
-        if (!ack.ok) {
-          setState({ status: 'fehler', message: ack.message })
-          return
-        }
-        setState({
-          status: 'bereit',
-          name: ack.session.name,
-          sessionStatus: ack.session.status,
-          role: ack.session.role,
-          code: ack.session.code,
-          participants: ack.participants,
-          map: ack.map ?? null,
-        })
-        const self = ack.participants.find((participant) => participant.userId === currentUserId)
-        setAliasInput(self?.alias ?? '')
-      })
-      .catch((error: unknown) => {
-        console.error(error)
-        setState({ status: 'fehler', message: ENTER_FAILURE_MESSAGE })
-      })
+    wireSocket(socket, () => false)
   }
 
   if (replaced) {

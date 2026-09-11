@@ -43,12 +43,22 @@ const MIGRATION_COMMANDS = /prisma\s+(migrate\s+(deploy|dev|reset)|db\s+push)/
 // Server-URL bleibt fuer einen spaeteren Umzug auf eine Server-DB enthalten - die Userinfo
 // davor darf keinen "/" tragen, sonst liesse sich "localhost" dort verstecken und der echte
 // Host dahinter.
-const EPHEMERAL_FORMS: RegExp[] = [
-  /^["']?file:(?:[^?"']*\/)?test\.db(?:\?[^"']*)?["']?$/,
-  /^["']?(?:file|sqlite)::memory:(?:\?[^"']*)?["']?$/,
-  /^["']?[a-z][a-z0-9+.-]*:\/\/(?:[^@/"']*@)?(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/[^"']*)?["']?$/i,
-]
-export function isEphemeralDbUrl(value: string): boolean { return EPHEMERAL_FORMS.some(f => f.test(value)) }
+const SQLITE_TEST_FILE = /^file:(?:[^?"']*\/)?test\.db(?:\?[^"']*)?$/
+const SQLITE_MEMORY = /^(?:file|sqlite)::memory:(?:\?[^"']*)?$/
+const LOCAL_SERVER_URL = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/"']*@)?(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/[^?"']*)?(?:\?([^"']*))?$/i
+// libpq und Prisma lesen den Zielhost auch aus dem Query-Teil (?host=/cloudsql/..., ?socket=) -
+// "localhost" in der Authority verbindet dann nirgends hin (design.md D8, Punkt 3, Review-Befund
+// Runde 2). Deshalb eine Whitelist harmloser Schluessel statt einer Sperrliste, die beim
+// naechsten Treiber unvollstaendig waere: jeder andere Schluessel macht den Wert zur unbekannten Form.
+const HARMLESS_QUERY_KEYS = new Set(['schema', 'sslmode', 'connection_limit', 'pool_timeout', 'connect_timeout', 'pgbouncer', 'sslaccept'])
+export function isEphemeralDbUrl(raw: string): boolean {
+  const value = raw.replace(/^["']/, '').replace(/["']$/, '') // Anfuehrungszeichen aussen, wie die Shell sie entfernt
+  if (SQLITE_TEST_FILE.test(value) || SQLITE_MEMORY.test(value)) return true
+  const server = LOCAL_SERVER_URL.exec(value)
+  if (!server) return false
+  const query = server[1] ?? ''
+  return query === '' || query.split('&').every(p => HARMLESS_QUERY_KEYS.has(p.split('=')[0].toLowerCase()))
+}
 // Welche Quelle fuer DATABASE_URL das Migrationskommando tatsaechlich sieht
 // (guard-inline-db-url/design.md D1-D5). process.env ist die Umgebung des HOOK-Prozesses, nicht
 // die des Kommandos: eine Inline-Zuweisung im Text ersetzt sie (D1). Rein - kein

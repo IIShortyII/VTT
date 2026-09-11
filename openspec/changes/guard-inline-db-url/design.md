@@ -135,8 +135,18 @@ der Umgebungswert ist zwar menschengesetzt, aber nichts spricht dafür, ihn lock
    braucht keins davon (`&` in einer Query bräuchte Quotes, die der Guard nicht auswertet — also
    blockt, fail-closed).
 
+3. **Der Query-Teil einer Server-URL ist eine Whitelist** (Review-Befund Runde 2). libpq und
+   Prisma lesen den Ziel-Host auch aus `?host=` — das dokumentierte Cloud-SQL-Muster ist
+   `postgresql://localhost/db?host=/cloudsql/proj:region:instance`, und dort verbindet
+   `localhost` nirgends hin. Eine Sperrliste (`host`, `socket`) wäre die zweite Liste, die man
+   beim nächsten Treiber vergisst; deshalb umgekehrt: nur `schema`, `sslmode`,
+   `connection_limit`, `pool_timeout`, `connect_timeout`, `pgbouncer` und `sslaccept` sind
+   erlaubt, jeder andere Schlüssel macht den Wert zur unbekannten Form. Schlüssel werden
+   case-insensitiv verglichen, `&` trennt (inline kommt es wegen des Zeichenvorrats nicht vor,
+   im Umgebungswert schon).
+
 Der Preis: `EPHEMERAL_DB` als Teilstring-Match entfällt; wer eine exotische Wegwerf-Adresse
-braucht, erweitert die Liste der Formen im Code, nicht den Match.
+oder einen weiteren Query-Schlüssel braucht, erweitert die Liste im Code, nicht den Match.
 
 ### D7 — `databaseUrlForCommand` ist exportiert und rein
 

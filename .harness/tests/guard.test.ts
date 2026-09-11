@@ -744,6 +744,11 @@ describe('Nacharbeit Runde 1 (harness-migration-guard): Wert als Ganzes, D2/D3-Z
         expect(evaluate(bash('DATABASE_URL=file:$(dir)/test.db prisma migrate deploy'), defaultDeps).blocked).toBe(true)
       })
     })
+    it('Ein host-umlenkender Query-Parameter blockt', () => {
+      withDbUrl(undefined, () => {
+        expect(evaluate(bash('DATABASE_URL=postgresql://localhost/db?host=/cloudsql/proj:region:prod prisma migrate deploy'), defaultDeps).blocked).toBe(true)
+      })
+    })
     it('Ein localhost hinter dem echten Host blockt', () => {
       withDbUrl(undefined, () => {
         expect(evaluate(bash('DATABASE_URL=postgres://prod-host/x@localhost/db prisma migrate deploy'), defaultDeps).blocked).toBe(true)

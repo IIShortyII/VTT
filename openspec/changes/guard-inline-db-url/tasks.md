@@ -57,8 +57,12 @@
 - [x] 4.5 `guard.ts`: `EPHEMERAL_DB` durch `isEphemeralDbUrl(value)` ersetzen (Wert als
       Ganzes, drei Formen); `DB_URL_VALUE` auf URL-Zeichenvorrat; `\s` → `[ \t]` in den
       Inline-Mustern
-- [ ] 4.6 Gate erneut grün, Reviewer erneut (§3.3: jede Nacharbeit-Runde durchläuft Gate und
-      Review)
+- [x] 4.6 Gate erneut grün (168), Reviewer Runde 2: **nacharbeit**. Block-Finding: die
+      Server-URL-Form ließ einen beliebigen Query-Teil zu, und libpq/Prisma lesen den Ziel-Host
+      aus `?host=` (`postgresql://localhost/db?host=/cloudsql/…`). Nacharbeit Runde 2
+      (design.md D8, Punkt 3): Query-Whitelist harmloser Schlüssel; Szenario „host-umlenkender
+      Query-Parameter blockt" + Test, rot bestätigt (Zusicherung), Mutationsprobe „Whitelist
+      entfernt" → genau dieser Test rot. Gate erneut grün, Reviewer Runde 3.
 - [ ] 4.7 Menschliche Freigabe (`constitution.md` §3.4 — kein App-Test, kein Anwendungscode;
       geprüft wird das Guard-Urteil)
 - [ ] 4.8 `openspec archive guard-inline-db-url --yes`, Purpose der neuen Capability

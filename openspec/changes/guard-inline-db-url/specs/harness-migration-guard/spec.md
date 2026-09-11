@@ -92,7 +92,11 @@ Der Guard MUST den Wert von `DATABASE_URL` — aus dem Kommandotext wie aus der 
 Ganzes gegen die Wegwerf-Formen prüfen, nicht auf ein enthaltenes Teilstück: eine
 SQLite-Datei namens `test.db`, eine In-Memory-Datenbank, oder eine Server-URL, deren Host
 `localhost` oder `127.0.0.1` ist. Ein Wert, der ein Wegwerf-Muster nur irgendwo enthält (etwa
-als Query-Parameter einer produktiven URL), MUST blocken. Ein Inline-Wert, der eine
+als Query-Parameter einer produktiven URL), MUST blocken. Bei einer Server-URL MUST der
+Query-Teil auf eine feste Liste harmloser Schlüssel beschränkt sein (`schema`, `sslmode`,
+`connection_limit`, `pool_timeout`, `connect_timeout`, `pgbouncer`, `sslaccept`): libpq und
+Prisma lesen den Ziel-Host auch aus `?host=` bzw. `?socket=`, und ein unbekannter Schlüssel
+gilt deshalb als unbekannte Form. Ein Inline-Wert, der eine
 Kommandosubstitution, eine Variable oder Zeichen außerhalb des URL-Vorrats trägt, MUST als
 unbekannte Form blocken: was die Shell daraus macht, sieht der Guard nicht.
 
@@ -108,6 +112,13 @@ unbekannte Form blocken: was die Shell daraus macht, sieht der Guard nicht.
 - **WHEN** ein Bash-Aufruf `DATABASE_URL=file:$(dir)/test.db prisma migrate deploy` geprüft wird
 - **THEN** wird er geblockt — der Wert sähe wie eine Wegwerf-Datei aus, steht aber erst nach der
   Substitution fest
+
+#### Scenario: Ein host-umlenkender Query-Parameter blockt
+
+- **GIVEN** die Umgebung des Hook-Prozesses trägt kein `DATABASE_URL`
+- **WHEN** ein Bash-Aufruf `DATABASE_URL=postgresql://localhost/db?host=/cloudsql/proj:region:prod prisma migrate deploy` geprüft wird
+- **THEN** wird er geblockt — `localhost` steht nur in der Authority, verbunden wird mit dem
+  Host aus dem Query-Parameter
 
 #### Scenario: Ein localhost hinter dem echten Host blockt
 

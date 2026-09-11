@@ -48,6 +48,7 @@ jest.mock('../src/client/session/socket.js', () => {
     moveToken: jest.fn(),
     removeToken: jest.fn(),
     assignToken: jest.fn(),
+    shareToken: jest.fn(),
     setTokenStats: jest.fn(async () => ({ ok: true })),
     setTokenConditions: jest.fn(async () => ({ ok: true })),
     on: jest.fn((event: string, handler: (payload: unknown) => void) => {
@@ -76,6 +77,7 @@ type SocketTestApi = {
     moveToken: jest.Mock
     removeToken: jest.Mock
     assignToken: jest.Mock
+    shareToken: jest.Mock
     setTokenStats: jest.Mock
     setTokenConditions: jest.Mock
     on: jest.Mock
@@ -183,6 +185,9 @@ function spielleiterFetch(): void {
 // `ownerId` ist Teil der Tokendarstellung (spec.md "Drahtformat"). Standardwert `null`
 // ("gehört dem Spielleiter"); wo ein Besitzer gebraucht wird, entsteht eine lokale Variante.
 
+type ShareAudience = 'keine' | 'alle' | string[]
+type Freigaben = { hp: ShareAudience; tempHp: ShareAudience; ac: ShareAudience; initiative: ShareAudience; conditions: ShareAudience }
+const KEINE_SHARES: Freigaben = { hp: 'keine', tempHp: 'keine', ac: 'keine', initiative: 'keine', conditions: 'keine' }
 const GOBLIN = {
   id: 't-goblin',
   instanceId: 'i-tav',
@@ -199,6 +204,7 @@ const GOBLIN = {
   ac: null as number | null,
   initiative: null as number | null,
   conditions: [] as string[],
+  shares: null as Freigaben | null,
 }
 const ORK = {
   id: 't-ork',
@@ -216,6 +222,7 @@ const ORK = {
   ac: null as number | null,
   initiative: null as number | null,
   conditions: [] as string[],
+  shares: null as Freigaben | null,
 }
 const AKTIVE_KARTE = { instanceId: 'i-tav', mapId: 'm-tav', name: 'Taverne', hasImage: true, grid: QUADRAT }
 
@@ -682,4 +689,196 @@ test('Spieler sieht keine Token-Verwaltung', async () => {
   expect(screen.queryByRole('button', { name: 'Goblin Schaden' })).toBeNull()
   expect(screen.queryByRole('combobox', { name: 'Goblin Markierung wählen' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Goblin Markierung hinzufügen' })).toBeNull()
+})
+
+// ============================================================================================
+// Delta add-token-sharing (#62): die 9 neuen Szenarien der Requirement "Tokenansicht im Raum"
+// (tasks.md 1.2). Ein Test je Szenario, Testname = Szenarioname. Elemente ausschliesslich ueber
+// die Schnittstellentabelle design.md D8: Rolle `checkbox` und genauer zugaenglicher Name
+// (`getByRole('checkbox', { name })`), `queryByRole`/`queryAllByRole` fuer Nicht-Existenz,
+// Klick auf das Kaestchen fuer Ankreuzen/Abwaehlen, `checked`/`disabled` als DOM-Eigenschaften;
+// keine `must()`-Helfer mit Kurzmeldung (design.md D9).
+//
+// Teilnehmer-Fixtures (design.md D9): `sam` mit Alias `Gandalf` (Anzeigename Gandalf), `tom` ohne
+// Alias (Anzeigename tom), `meister` als Spielleiter — keine Anzeigenamen, die Teilstring eines
+// anderen sind.
+//
+// Rote Phase (constitution.md §3.1): die Freigabe-Kontrollkaestchen und die Fassadenmethode
+// `shareToken` fehlen — `getByRole('checkbox', …)` findet sein Element nicht bzw. der erwartete
+// Fassaden-Aufruf bleibt aus. Kein Compile-/Setup-Fehler.
+
+const MEISTER = { userId: 'u-selbst', username: 'meister', role: 'spielleiter', online: true }
+const SAM = { userId: 'u-sam', username: 'sam', alias: 'Gandalf', role: 'spieler', online: true }
+const TOM = { userId: 'u-tom', username: 'tom', role: 'spieler', online: true }
+// Der Besitzer-Spieler ist der angemeldete Nutzer (u-selbst), sein Anzeigename ist der Alias Gandalf.
+const SELBST_SPIELER = { userId: 'u-selbst', username: 'ich', alias: 'Gandalf', role: 'spieler', online: true }
+
+function checkbox(name: string): HTMLInputElement {
+  return screen.getByRole('checkbox', { name }) as HTMLInputElement
+}
+
+test('Spielleiter teilt einen Wert mit allen über die Liste', async () => {
+  const GOBLIN_TEILBAR = { ...GOBLIN, shares: KEINE_SHARES }
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN_TEILBAR], participants: [MEISTER, SAM, TOM] })
+  socketMock.__facade.shareToken.mockResolvedValue({ ok: true, token: { ...GOBLIN_TEILBAR, shares: { ...KEINE_SHARES, hp: 'alle' } } })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Goblin HP für alle' }))
+  })
+
+  await waitFor(() => expect(socketMock.__facade.shareToken).toHaveBeenCalledWith('s1', 't-goblin', 'hp', 'alle'))
+})
+
+test('Spielleiter teilt einen Wert mit einem Spieler über die Liste', async () => {
+  const GOBLIN_TEILBAR = { ...GOBLIN, shares: KEINE_SHARES }
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN_TEILBAR], participants: [MEISTER, SAM, TOM] })
+  socketMock.__facade.shareToken.mockResolvedValue({ ok: true, token: { ...GOBLIN_TEILBAR, shares: { ...KEINE_SHARES, ac: ['u-sam'] } } })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Goblin RK für Gandalf' }))
+  })
+
+  await waitFor(() => expect(socketMock.__facade.shareToken).toHaveBeenCalledWith('s1', 't-goblin', 'ac', ['u-sam']))
+  expect(screen.queryByRole('checkbox', { name: 'Goblin RK für meister' })).toBeNull()
+})
+
+test('Weiterer Empfänger wird an die Liste angehängt', async () => {
+  const GOBLIN_AC_SAM = { ...GOBLIN, shares: { ...KEINE_SHARES, ac: ['u-sam'] } }
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN_AC_SAM], participants: [MEISTER, SAM, TOM] })
+  socketMock.__facade.shareToken.mockResolvedValue({ ok: true, token: { ...GOBLIN_AC_SAM, shares: { ...KEINE_SHARES, ac: ['u-sam', 'u-tom'] } } })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Goblin RK für tom' }))
+  })
+
+  await waitFor(() => expect(socketMock.__facade.shareToken).toHaveBeenCalledWith('s1', 't-goblin', 'ac', ['u-sam', 'u-tom']))
+})
+
+test('Abwahl des letzten Empfängers sendet keine', async () => {
+  const GOBLIN_AC_SAM = { ...GOBLIN, shares: { ...KEINE_SHARES, ac: ['u-sam'] } }
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN_AC_SAM], participants: [MEISTER, SAM, TOM] })
+  socketMock.__facade.shareToken.mockResolvedValue({ ok: true, token: { ...GOBLIN_AC_SAM, shares: KEINE_SHARES } })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  const box = (await screen.findByRole('checkbox', { name: 'Goblin RK für Gandalf' })) as HTMLInputElement
+  expect(box.checked).toBe(true)
+  await act(async () => {
+    fireEvent.click(box)
+  })
+
+  await waitFor(() => expect(socketMock.__facade.shareToken).toHaveBeenCalledWith('s1', 't-goblin', 'ac', 'keine'))
+})
+
+test('Abwahl von alle sendet keine', async () => {
+  const GOBLIN_HP_ALLE = { ...GOBLIN, shares: { ...KEINE_SHARES, hp: 'alle' } }
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN_HP_ALLE], participants: [MEISTER, SAM] })
+  socketMock.__facade.shareToken.mockResolvedValue({ ok: true, token: { ...GOBLIN_HP_ALLE, shares: KEINE_SHARES } })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  const box = (await screen.findByRole('checkbox', { name: 'Goblin HP für alle' })) as HTMLInputElement
+  expect(box.checked).toBe(true)
+  await act(async () => {
+    fireEvent.click(box)
+  })
+
+  await waitFor(() => expect(socketMock.__facade.shareToken).toHaveBeenCalledWith('s1', 't-goblin', 'hp', 'keine'))
+})
+
+test('Freigabe-Schalter folgen dem Bestand', async () => {
+  const GOBLIN_MIX = {
+    ...GOBLIN,
+    shares: { hp: 'alle', tempHp: 'keine', ac: ['u-sam'], initiative: 'keine', conditions: 'keine' } as Freigaben,
+  }
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN_MIX], participants: [MEISTER, SAM, TOM] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  await screen.findByRole('checkbox', { name: 'Goblin HP für alle' })
+  expect(checkbox('Goblin HP für alle').checked).toBe(true)
+  expect(checkbox('Goblin HP für Gandalf').disabled).toBe(true)
+  expect(checkbox('Goblin HP für Gandalf').checked).toBe(false)
+  expect(checkbox('Goblin RK für Gandalf').checked).toBe(true)
+  expect(checkbox('Goblin RK für Gandalf').disabled).toBe(false)
+  expect(checkbox('Goblin RK für tom').checked).toBe(false)
+  expect(checkbox('Goblin RK für tom').disabled).toBe(false)
+  expect(checkbox('Goblin Markierungen für alle').checked).toBe(false)
+  expect(screen.getByRole('checkbox', { name: 'Goblin Temp-HP für alle' })).toBeTruthy()
+  expect(screen.getByRole('checkbox', { name: 'Goblin Initiative für alle' })).toBeTruthy()
+})
+
+test('Besitzer sieht Freigabe-Schalter nur am eigenen Token', async () => {
+  const MEIN_GOBLIN = { ...GOBLIN, ownerId: 'u-selbst', shares: KEINE_SHARES }
+  const FREMDER_ORK = { ...ORK, ownerId: null, shares: null }
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [MEIN_GOBLIN, FREMDER_ORK], participants: [MEISTER, SELBST_SPIELER, TOM] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  expect(await screen.findByRole('checkbox', { name: 'Goblin HP für alle' })).toBeTruthy()
+  expect(screen.getByRole('checkbox', { name: 'Goblin HP für tom' })).toBeTruthy()
+  expect(screen.queryByRole('checkbox', { name: 'Goblin HP für Gandalf' })).toBeNull()
+  expect(screen.queryByRole('checkbox', { name: 'Goblin HP für meister' })).toBeNull()
+  expect(screen.queryAllByRole('checkbox', { name: /^Ork/ })).toHaveLength(0)
+})
+
+test('Besitzer teilt über die Liste', async () => {
+  const MEIN_GOBLIN = { ...GOBLIN, ownerId: 'u-selbst', shares: KEINE_SHARES }
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [MEIN_GOBLIN], participants: [SELBST_SPIELER, TOM] })
+  socketMock.__facade.shareToken.mockResolvedValue({ ok: true, token: { ...MEIN_GOBLIN, shares: { ...KEINE_SHARES, conditions: ['u-tom'] } } })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Goblin Markierungen für tom' }))
+  })
+
+  await waitFor(() => expect(socketMock.__facade.shareToken).toHaveBeenCalledWith('s1', 't-goblin', 'conditions', ['u-tom']))
+})
+
+test('Abgelehnte Freigabe zeigt die Meldung', async () => {
+  const MEIN_GOBLIN = { ...GOBLIN, ownerId: 'u-selbst', shares: KEINE_SHARES }
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [MEIN_GOBLIN], participants: [SELBST_SPIELER, TOM] })
+  socketMock.__facade.shareToken.mockResolvedValue({ ok: false, message: 'Dieses Token darfst du nicht teilen.' })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Goblin HP für alle' }))
+  })
+
+  expect(await screen.findByText('Dieses Token darfst du nicht teilen.')).toBeTruthy()
 })

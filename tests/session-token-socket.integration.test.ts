@@ -1702,6 +1702,7 @@ test('Spieler erhält von fremden Tokens keine Werte', async () => {
     expect(t.ac).toBeNull()
     expect(t.initiative).toBeNull()
     expect(t.conditions).toEqual([])
+    expect(t.shares).toBeNull()
   }
 
   // Die uebrigen Felder bleiben ungefiltert (spec.md "Sichtbarkeit der Tokenwerte").
@@ -1827,4 +1828,589 @@ test('Entzogene Zuweisung verbirgt die Werte mit dem nächsten Bestand', async (
   expect(slGoblin.hp).toBe(23)
   expect(slGoblin.hpMax).toBe(40)
   expect(slGoblin.conditions).toEqual(['Segen'])
+})
+
+// ============================================================================================
+// Delta add-token-sharing (#62): Integrationstests zu
+// openspec/changes/add-token-sharing/specs/session-token/spec.md (tasks.md 1.1). Ein Test je
+// GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname: die 13 Szenarien
+// "Zielgruppe eines Tokenwerts setzen" und die 3 neuen Szenarien "Sichtbarkeit der Tokenwerte"
+// ("Geteilte Werte erreichen den Empfänger beim Betreten", "Freigaben sehen nur Spielleiter und
+// Besitzer", "Änderung eines geteilten Werts erreicht die Zielgruppe sofort"). Aufbau wie oben
+// (echte Socket.IO-Clients, Routen, direkte DB-Anlage). Zielgruppen werden per Helfer als
+// TokenShare-Zeilen angelegt (design.md D9, Tabelle nach D1: je Zeile tokenId, stat, userId oder
+// null für "alle").
+//
+// Rote Phase (constitution.md §3.1): das Ereignis `session:token-share` ist unbekannt (kein Ack
+// -> Timeout); die Tabelle `TokenShare` kennt Prisma bis zur Migration (2.1) nicht, weshalb ein
+// GIVEN, das Zielgruppen anlegt oder liest, am Datenbankzugriff scheitert
+// ("Cannot read properties of undefined (reading 'create')" bzw. Prisma "tokenShare"); ohne die
+// Filterung erhielte ein Empfänger geteilte Werte statt der erwarteten. Prisma-/Tabellenfehler
+// beim Rot-Bestätigen sind der erwartete Grund, kein Setup-/Tippfehler.
+
+interface TokenShareRow {
+  id: string
+  tokenId: string
+  stat: string
+  userId: string | null
+}
+type ShareAudienceSetup = Partial<Record<'hp' | 'tempHp' | 'ac' | 'initiative' | 'conditions', 'alle' | string[]>>
+
+// Zugriff auf die (neue) Tabelle `TokenShare` als Inline-Cast — die Suite bleibt kompilierbar und
+// scheitert erst zur Laufzeit an der noch fehlenden Tabelle (der erwartete rote Grund).
+interface TokenShareDb {
+  create(args: { data: { tokenId: string; stat: string; userId: string | null } }): Promise<TokenShareRow>
+  findMany(args?: unknown): Promise<TokenShareRow[]>
+  count(args?: unknown): Promise<number>
+}
+function tokenShareDb(): TokenShareDb {
+  return (prisma as unknown as { tokenShare: TokenShareDb }).tokenShare
+}
+
+/** Legt Zielgruppen als TokenShare-Zeilen an: `'alle'` -> eine Zeile mit `userId` null; eine Liste
+ * -> eine Zeile je `userId` (design.md D9). */
+async function setShareRows(tokenId: string, shares: ShareAudienceSetup): Promise<void> {
+  for (const [stat, audience] of Object.entries(shares)) {
+    if (audience === 'alle') {
+      await tokenShareDb().create({ data: { tokenId, stat, userId: null } })
+    } else if (Array.isArray(audience)) {
+      for (const userId of audience) {
+        await tokenShareDb().create({ data: { tokenId, stat, userId } })
+      }
+    }
+  }
+}
+
+/** Token direkt anlegen (`createTokenDirect`) und optionale Zielgruppen setzen (design.md D9). */
+async function createTokenShared(
+  instanceId: string,
+  fields: Parameters<typeof createTokenDirect>[1] = {},
+  shares?: ShareAudienceSetup,
+): Promise<TokenRow> {
+  const token = await createTokenDirect(instanceId, fields)
+  if (shares) await setShareRows(token.id, shares)
+  return token
+}
+
+/** Empfänger-`userId`s (bzw. `null` für "alle") einer gespeicherten Zielgruppe (design.md D9). */
+async function recipientsOf(tokenId: string, stat: string): Promise<Array<string | null>> {
+  const rows = await tokenShareDb().findMany({ where: { tokenId, stat } })
+  return rows.map((r) => r.userId)
+}
+async function shareRowCount(tokenId: string): Promise<number> {
+  return tokenShareDb().count({ where: { tokenId } })
+}
+
+function tokenShare(socket: Socket, payload: unknown): Promise<Record<string, unknown>> {
+  return emitAck(socket, 'session:token-share', payload)
+}
+/** Die Freigaben (`shares`) aus einer Tokendarstellung als Objekt (für Spielleiter und Besitzer). */
+function sharesRec(token: Record<string, unknown>): Record<string, unknown> {
+  return rec(token.shares, 'shares in der Tokendarstellung')
+}
+
+// --- Zielgruppe eines Tokenwerts setzen -----------------------------------------------------
+
+test('Spielleiter teilt Trefferpunkte mit allen', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const ork = await createTokenDirect(instanz.id, { name: 'Ork', col: 5, row: 5, ownerId: null, hp: 30, hpMax: 30, ac: 13 })
+
+  const slSocket = client(sl.sid)
+  const samSocket = client(sam.sid)
+  await connect(slSocket)
+  await connect(samSocket)
+  await enter(slSocket, gs.id)
+  await enter(samSocket, gs.id)
+
+  const beimSl = once(slSocket, 'session:tokens')
+  const beimSam = once(samSocket, 'session:tokens')
+  const ack = await tokenShare(slSocket, { sessionId: gs.id, tokenId: ork.id, stat: 'hp', audience: 'alle' })
+
+  expect(ack.ok).toBe(true)
+  const token = rec(ack.token, 'token im Acknowledgement')
+  expect(sharesRec(token).hp).toBe('alle')
+  expect(sharesRec(token).ac).toBe('keine')
+
+  expect(await recipientsOf(ork.id, 'hp')).toEqual([null])
+
+  const samTokens = tokensOf(await beimSam, 'session:tokens beim Spieler')
+  const samOrk = must(samTokens.find((t) => t.name === 'Ork'), 'Ork beim Spieler')
+  expect(samOrk.hp).toBe(30)
+  expect(samOrk.hpMax).toBe(30)
+  expect(samOrk.ac).toBeNull()
+  expect(samOrk.shares).toBeNull()
+
+  const slTokens = tokensOf(await beimSl, 'session:tokens beim Spielleiter')
+  const slOrk = must(slTokens.find((t) => t.name === 'Ork'), 'Ork beim Spielleiter')
+  expect(sharesRec(slOrk).hp).toBe('alle')
+})
+
+test('Besitzer teilt einen Wert mit einem Mitspieler', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const tom = await registerUser(app, 'tom@example.com', 'tom')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  await addMembership(gs.id, tom.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const goblin = await createTokenDirect(instanz.id, { name: 'Goblin', col: 3, row: 4, ownerId: sam.userId, hp: 23, hpMax: 40, ac: 16 })
+
+  const slSocket = client(sl.sid)
+  const samSocket = client(sam.sid)
+  const tomSocket = client(tom.sid)
+  await connect(slSocket)
+  await connect(samSocket)
+  await connect(tomSocket)
+  await enter(slSocket, gs.id)
+  await enter(samSocket, gs.id)
+  await enter(tomSocket, gs.id)
+
+  const beimSam = once(samSocket, 'session:tokens')
+  const beimTom = once(tomSocket, 'session:tokens')
+  const ack = await tokenShare(samSocket, { sessionId: gs.id, tokenId: goblin.id, stat: 'ac', audience: [tom.userId] })
+
+  expect(ack.ok).toBe(true)
+  const token = rec(ack.token, 'token im Acknowledgement')
+  expect(sharesRec(token).ac).toEqual([tom.userId])
+
+  expect(await recipientsOf(goblin.id, 'ac')).toEqual([tom.userId])
+
+  const tomTokens = tokensOf(await beimTom, 'session:tokens bei tom')
+  const tomGoblin = must(tomTokens.find((t) => t.name === 'Goblin'), 'Goblin bei tom')
+  expect(tomGoblin.ac).toBe(16)
+  expect(tomGoblin.hp).toBeNull()
+  expect(tomGoblin.hpMax).toBeNull()
+  expect(tomGoblin.shares).toBeNull()
+
+  const samTokens = tokensOf(await beimSam, 'session:tokens bei sam')
+  const samGoblin = must(samTokens.find((t) => t.name === 'Goblin'), 'Goblin bei sam')
+  expect(sharesRec(samGoblin).ac).toEqual([tom.userId])
+})
+
+test('Zielgruppe wird als Ganzes ersetzt', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const tom = await registerUser(app, 'tom@example.com', 'tom')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  await addMembership(gs.id, tom.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const goblin = await createTokenShared(instanz.id, { name: 'Goblin', col: 3, row: 4, ownerId: sam.userId }, { hp: 'alle' })
+
+  const slSocket = client(sl.sid)
+  await connect(slSocket)
+  await enter(slSocket, gs.id)
+
+  const ack = await tokenShare(slSocket, { sessionId: gs.id, tokenId: goblin.id, stat: 'hp', audience: [tom.userId] })
+
+  expect(ack.ok).toBe(true)
+  const token = rec(ack.token, 'token im Acknowledgement')
+  expect(sharesRec(token).hp).toEqual([tom.userId])
+
+  expect(await recipientsOf(goblin.id, 'hp')).toEqual([tom.userId])
+})
+
+test('keine leert die Zielgruppe', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const tom = await registerUser(app, 'tom@example.com', 'tom')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  await addMembership(gs.id, tom.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const goblin = await createTokenShared(instanz.id, { name: 'Goblin', col: 3, row: 4, ownerId: sam.userId, hp: 23, hpMax: 40 }, { hp: [tom.userId] })
+
+  const slSocket = client(sl.sid)
+  const tomSocket = client(tom.sid)
+  await connect(slSocket)
+  await connect(tomSocket)
+  await enter(slSocket, gs.id)
+  await enter(tomSocket, gs.id)
+
+  const beimTom = once(tomSocket, 'session:tokens')
+  const ack = await tokenShare(slSocket, { sessionId: gs.id, tokenId: goblin.id, stat: 'hp', audience: 'keine' })
+
+  expect(ack.ok).toBe(true)
+  const token = rec(ack.token, 'token im Acknowledgement')
+  expect(sharesRec(token).hp).toBe('keine')
+
+  expect(await recipientsOf(goblin.id, 'hp')).toEqual([])
+
+  const tomTokens = tokensOf(await beimTom, 'session:tokens bei tom')
+  const tomGoblin = must(tomTokens.find((t) => t.name === 'Goblin'), 'Goblin bei tom')
+  expect(tomGoblin.hp).toBeNull()
+  expect(tomGoblin.hpMax).toBeNull()
+})
+
+test('Letzter Schreiber gewinnt', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const goblin = await createTokenDirect(instanz.id, { name: 'Goblin', col: 3, row: 4, ownerId: sam.userId, ac: 16 })
+
+  const slSocket = client(sl.sid)
+  const samSocket = client(sam.sid)
+  await connect(slSocket)
+  await connect(samSocket)
+  await enter(slSocket, gs.id)
+  await enter(samSocket, gs.id)
+
+  const samEvents = collect(samSocket, 'session:tokens')
+  const ersteAck = await tokenShare(slSocket, { sessionId: gs.id, tokenId: goblin.id, stat: 'ac', audience: 'alle' })
+  const zweiteAck = await tokenShare(samSocket, { sessionId: gs.id, tokenId: goblin.id, stat: 'ac', audience: 'keine' })
+
+  expect(ersteAck.ok).toBe(true)
+  expect(zweiteAck.ok).toBe(true)
+  expect(sharesRec(rec(zweiteAck.token, 'token im zweiten Acknowledgement')).ac).toBe('keine')
+
+  expect(await recipientsOf(goblin.id, 'ac')).toEqual([])
+
+  await new Promise((resolve) => setTimeout(resolve, QUIET_MS))
+  expect(samEvents.length).toBeGreaterThanOrEqual(2)
+  const letztes = samEvents[samEvents.length - 1]
+  const letztesGoblin = must(tokensOf(letztes, 'letztes session:tokens bei sam').find((t) => t.name === 'Goblin'), 'Goblin bei sam')
+  expect(sharesRec(letztesGoblin).ac).toBe('keine')
+})
+
+test('Spieler darf ein fremdes Token nicht teilen', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const tom = await registerUser(app, 'tom@example.com', 'tom')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  await addMembership(gs.id, tom.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const goblin = await createTokenDirect(instanz.id, { name: 'Goblin', col: 3, row: 4, ownerId: tom.userId, hp: 23, hpMax: 40 })
+
+  const samSocket = client(sam.sid)
+  await connect(samSocket)
+  await enter(samSocket, gs.id)
+
+  let samTokens = false
+  samSocket.on('session:tokens', () => {
+    samTokens = true
+  })
+  const ack = await tokenShare(samSocket, { sessionId: gs.id, tokenId: goblin.id, stat: 'hp', audience: 'alle' })
+
+  expect(ack.ok).toBe(false)
+  expect(ack.message).toBe('Dieses Token darfst du nicht teilen.')
+  expect(await shareRowCount(goblin.id)).toBe(0)
+  await new Promise((resolve) => setTimeout(resolve, QUIET_MS))
+  expect(samTokens).toBe(false)
+})
+
+test('Spieler darf ein Token ohne Besitzer nicht teilen', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const ork = await createTokenDirect(instanz.id, { name: 'Ork', col: 5, row: 5, ownerId: null, hp: 30, hpMax: 30 })
+
+  const samSocket = client(sam.sid)
+  await connect(samSocket)
+  await enter(samSocket, gs.id)
+
+  const ack = await tokenShare(samSocket, { sessionId: gs.id, tokenId: ork.id, stat: 'hp', audience: [sam.userId] })
+
+  expect(ack.ok).toBe(false)
+  expect(ack.message).toBe('Dieses Token darfst du nicht teilen.')
+  expect(await shareRowCount(ork.id)).toBe(0)
+})
+
+test('Nur Spieler-Mitglieder kommen als Empfänger in Frage', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const fremd = await registerUser(app, 'fremd@example.com', 'fremd')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const ork = await createTokenDirect(instanz.id, { name: 'Ork', col: 5, row: 5, ownerId: null })
+
+  const slSocket = client(sl.sid)
+  await connect(slSocket)
+  await enter(slSocket, gs.id)
+
+  let slTokens = false
+  slSocket.on('session:tokens', () => {
+    slTokens = true
+  })
+  const fremdAck = await tokenShare(slSocket, { sessionId: gs.id, tokenId: ork.id, stat: 'hp', audience: [fremd.userId] })
+  const selbstAck = await tokenShare(slSocket, { sessionId: gs.id, tokenId: ork.id, stat: 'hp', audience: [sl.userId] })
+  const gemischtAck = await tokenShare(slSocket, { sessionId: gs.id, tokenId: ork.id, stat: 'hp', audience: [sam.userId, fremd.userId] })
+
+  for (const ack of [fremdAck, selbstAck, gemischtAck]) {
+    expect(ack.ok).toBe(false)
+    expect(ack.message).toBe('Spieler nicht gefunden.')
+  }
+  expect(await shareRowCount(ork.id)).toBe(0)
+  await new Promise((resolve) => setTimeout(resolve, QUIET_MS))
+  expect(slTokens).toBe(false)
+})
+
+test('Ungültige Payload wird abgelehnt', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const ork = await createTokenDirect(instanz.id, { name: 'Ork', col: 5, row: 5, ownerId: null })
+
+  const slSocket = client(sl.sid)
+  await connect(slSocket)
+  await enter(slSocket, gs.id)
+
+  const falscherStat = await tokenShare(slSocket, { sessionId: gs.id, tokenId: ork.id, stat: 'hpMax', audience: 'alle' })
+  const leereListe = await tokenShare(slSocket, { sessionId: gs.id, tokenId: ork.id, stat: 'hp', audience: [] })
+  const unbekannteAudience = await tokenShare(slSocket, { sessionId: gs.id, tokenId: ork.id, stat: 'hp', audience: 'jeder' })
+  const doppelt = await tokenShare(slSocket, { sessionId: gs.id, tokenId: ork.id, stat: 'hp', audience: [sam.userId, sam.userId] })
+
+  for (const ack of [falscherStat, leereListe, unbekannteAudience, doppelt]) {
+    expect(ack.ok).toBe(false)
+    expect(ack.message).toBe('Ungültige Anfrage.')
+  }
+  expect(await shareRowCount(ork.id)).toBe(0)
+})
+
+test('Unbekanntes und nicht aktives Token sind beim Teilen nicht unterscheidbar', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  const karte1 = await makeMap(sl.userId, 'Erste', { image: true })
+  const karte2 = await makeMap(sl.userId, 'Zweite', { image: true })
+  const aktiv = await mountDirect(gs.id, karte1.id)
+  const nichtAktiv = await mountDirect(gs.id, karte2.id)
+  await setActive(gs.id, aktiv.id)
+  const verborgen = await createTokenDirect(nichtAktiv.id, { name: 'Verborgen', col: 0, row: 0, ownerId: null })
+
+  const slSocket = client(sl.sid)
+  await connect(slSocket)
+  await enter(slSocket, gs.id)
+
+  const unbekanntAck = await tokenShare(slSocket, { sessionId: gs.id, tokenId: 'unbekannt', stat: 'hp', audience: 'alle' })
+  const verborgenAck = await tokenShare(slSocket, { sessionId: gs.id, tokenId: verborgen.id, stat: 'hp', audience: 'alle' })
+
+  expect(unbekanntAck.ok).toBe(false)
+  expect(verborgenAck.ok).toBe(false)
+  expect(typeof unbekanntAck.message).toBe('string')
+  expect(verborgenAck.message).toBe(unbekanntAck.message)
+  expect(await shareRowCount(verborgen.id)).toBe(0)
+})
+
+test('Zuweisung lässt die Zielgruppen stehen', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const tom = await registerUser(app, 'tom@example.com', 'tom')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  await addMembership(gs.id, tom.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const goblin = await createTokenShared(instanz.id, { name: 'Goblin', col: 3, row: 4, ownerId: sam.userId }, { ac: [tom.userId] })
+
+  const slSocket = client(sl.sid)
+  await connect(slSocket)
+  await enter(slSocket, gs.id)
+
+  const zurueckAck = await tokenAssign(slSocket, { sessionId: gs.id, tokenId: goblin.id, ownerId: null })
+  const neuAck = await tokenAssign(slSocket, { sessionId: gs.id, tokenId: goblin.id, ownerId: tom.userId })
+
+  for (const ack of [zurueckAck, neuAck]) {
+    expect(ack.ok).toBe(true)
+    expect(sharesRec(rec(ack.token, 'token im Acknowledgement')).ac).toEqual([tom.userId])
+  }
+  expect(await recipientsOf(goblin.id, 'ac')).toEqual([tom.userId])
+})
+
+test('Entfernen nimmt die Zielgruppen mit', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const tom = await registerUser(app, 'tom@example.com', 'tom')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, tom.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const goblin = await createTokenShared(instanz.id, { name: 'Goblin', col: 3, row: 4, ownerId: null }, { hp: 'alle', ac: [tom.userId] })
+
+  const slSocket = client(sl.sid)
+  await connect(slSocket)
+  await enter(slSocket, gs.id)
+
+  const ack = await tokenRemove(slSocket, { sessionId: gs.id, tokenId: goblin.id })
+
+  expect(ack.ok).toBe(true)
+  expect(await shareRowCount(goblin.id)).toBe(0)
+})
+
+test('Neu angelegtes Token teilt nichts', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+
+  const slSocket = client(sl.sid)
+  await connect(slSocket)
+  await enter(slSocket, gs.id)
+
+  const ack = await tokenCreate(slSocket, { sessionId: gs.id, name: 'Goblin', color: '#3366ff', icon: null, size: 1, col: 0, row: 0 })
+
+  expect(ack.ok).toBe(true)
+  const token = rec(ack.token, 'token im Acknowledgement')
+  expect(token.shares).toEqual({ hp: 'keine', tempHp: 'keine', ac: 'keine', initiative: 'keine', conditions: 'keine' })
+  expect(await shareRowCount(String(token.id))).toBe(0)
+})
+
+// --- Sichtbarkeit der Tokenwerte (drei neue Szenarien) --------------------------------------
+
+test('Geteilte Werte erreichen den Empfänger beim Betreten', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const tom = await registerUser(app, 'tom@example.com', 'tom')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  await addMembership(gs.id, tom.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  await createTokenShared(
+    instanz.id,
+    { name: 'Ork', col: 5, row: 5, ownerId: null, hp: 30, hpMax: 30, tempHp: 3, ac: 13, initiative: 8, conditions: ['Liegend'] },
+    { hp: 'alle', ac: [sam.userId], initiative: [tom.userId], conditions: 'alle' },
+  )
+
+  const samSocket = client(sam.sid)
+  await connect(samSocket)
+  const ack = await enter(samSocket, gs.id)
+
+  expect(ack.ok).toBe(true)
+  const tokens = tokensOf(ack, 'tokens im Enter-Acknowledgement')
+  const ork = must(tokens.find((t) => t.name === 'Ork'), 'Ork im Enter-Acknowledgement')
+  expect(ork.hp).toBe(30)
+  expect(ork.hpMax).toBe(30)
+  expect(ork.ac).toBe(13)
+  expect(ork.conditions).toEqual(['Liegend'])
+  expect(ork.tempHp).toBeNull()
+  expect(ork.initiative).toBeNull()
+  expect(ork.shares).toBeNull()
+})
+
+test('Freigaben sehen nur Spielleiter und Besitzer', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const tom = await registerUser(app, 'tom@example.com', 'tom')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  await addMembership(gs.id, tom.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  await createTokenShared(instanz.id, { name: 'Goblin', col: 3, row: 4, ownerId: sam.userId, hp: 23, hpMax: 40 }, { hp: [tom.userId] })
+
+  const slSocket = client(sl.sid)
+  const samSocket = client(sam.sid)
+  const tomSocket = client(tom.sid)
+  await connect(slSocket)
+  await connect(samSocket)
+  await connect(tomSocket)
+  const slAck = await enter(slSocket, gs.id)
+  const samAck = await enter(samSocket, gs.id)
+  const tomAck = await enter(tomSocket, gs.id)
+
+  for (const [ack, wer] of [
+    [slAck, 'Spielleiter'],
+    [samAck, 'Besitzer sam'],
+  ] as const) {
+    const goblin = must(tokensOf(ack, `Enter-Acknowledgement ${wer}`).find((t) => t.name === 'Goblin'), `Goblin bei ${wer}`)
+    expect(sharesRec(goblin).hp).toEqual([tom.userId])
+    expect(sharesRec(goblin).ac).toBe('keine')
+  }
+
+  const tomGoblin = must(tokensOf(tomAck, 'Enter-Acknowledgement tom').find((t) => t.name === 'Goblin'), 'Goblin bei tom')
+  expect(tomGoblin.hp).toBe(23)
+  expect(tomGoblin.hpMax).toBe(40)
+  expect(tomGoblin.shares).toBeNull()
+})
+
+test('Änderung eines geteilten Werts erreicht die Zielgruppe sofort', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const ork = await createTokenShared(instanz.id, { name: 'Ork', col: 5, row: 5, ownerId: null, hp: 30, hpMax: 30 }, { hp: 'alle' })
+
+  const slSocket = client(sl.sid)
+  const samSocket = client(sam.sid)
+  await connect(slSocket)
+  await connect(samSocket)
+  await enter(slSocket, gs.id)
+  await enter(samSocket, gs.id)
+
+  const beimSam = once(samSocket, 'session:tokens')
+  const ack = await tokenStats(slSocket, { sessionId: gs.id, tokenId: ork.id, hp: 12 })
+  expect(ack.ok).toBe(true)
+
+  const samTokens = tokensOf(await beimSam, 'session:tokens bei sam')
+  const samOrk = must(samTokens.find((t) => t.name === 'Ork'), 'Ork bei sam')
+  expect(samOrk.hp).toBe(12)
+  expect(samOrk.hpMax).toBe(30)
 })

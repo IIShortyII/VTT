@@ -40,6 +40,15 @@ const GRID_LINE_COLOR = 0xffffff
 const GRID_LINE_WIDTH = 1
 const BACKGROUND_COLOR = 0x202020
 
+// App-Test Runde 3 (#14): modulweiter Zaehler fuer eine je Canvas-Instanz eindeutige
+// Cache-Kennung. React-StrictMode (Dev) erzeugt eine Kartenansicht kurzzeitig doppelt; ohne
+// diese Kennung laden beide Instanzen dasselbe Bild unter derselben Query ("?v=1") und
+// teilen sich dieselbe Textur im `Assets`-Cache - zerstoert die zuerst abgeraeumte Instanz
+// beim Unmount ihre (geteilte) Textur, wirft der Render-Loop der zweiten Instanz
+// ("textureSource is null"). Die Kennung macht den Cache-Schluessel je Instanz eindeutig,
+// unabhaengig vom (je Instanz bei 1 startenden) Ladezaehler.
+let instanceCounter = 0
+
 // session-token (#14, design.md D6): Radiusanteil der Zellgroesse und Textfarben/-groessen
 // der Tokendarstellung.
 const TOKEN_RADIUS_FACTOR = 0.9
@@ -68,6 +77,7 @@ function parseColor(hex: string): number {
  * (`applyImage` faengt seinen eigenen Fehler ab, siehe dort).
  */
 export async function createMapCanvas(container: HTMLElement, options: MapCanvasOptions): Promise<MapCanvasHandle> {
+  const instanceId = ++instanceCounter
   const app = new Application()
   await app.init({ resizeTo: container, background: BACKGROUND_COLOR, antialias: true })
   container.appendChild(app.canvas)
@@ -145,7 +155,7 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       }
 
       imageCounter += 1
-      const versionedUrl = `${url}${url.includes('?') ? '&' : '?'}v=${imageCounter}`
+      const versionedUrl = `${url}${url.includes('?') ? '&' : '?'}v=${instanceId}-${imageCounter}`
 
       let texture: Texture
       try {

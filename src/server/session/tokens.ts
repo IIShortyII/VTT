@@ -1,4 +1,9 @@
-import type { PrismaClient, Token as PrismaToken, TokenCondition as PrismaTokenCondition } from '@prisma/client'
+import type {
+  PrismaClient,
+  Token as PrismaToken,
+  TokenCondition as PrismaTokenCondition,
+  TokenShare as PrismaTokenShare,
+} from '@prisma/client'
 import type { Server, Socket } from 'socket.io'
 
 import { MemberRoleSchema, type MemberRole } from '../../shared/session.js'
@@ -6,30 +11,37 @@ import {
   AssignTokenInputSchema,
   CreateTokenInputSchema,
   MoveTokenInputSchema,
+  NO_SHARES,
   RemoveTokenInputSchema,
   SESSION_TOKEN_EVENTS,
+  ShareTokenInputSchema,
   TokenConditionsInputSchema,
   TokenIconSchema,
   TokenStatsInputSchema,
   canMoveToken,
+  canShareToken,
   type AssignTokenAck,
   type CreateTokenAck,
   type MoveTokenAck,
   type RemoveTokenAck,
+  type ShareTokenAck,
   type Token,
+  type TokenAudience,
   type TokenConditionsAck,
+  type TokenShares,
+  type TokenStat,
   type TokenStatsAck,
 } from '../../shared/token.js'
 import type { Clock } from '../core/clock.js'
 import { authorizeAction } from './authorize.js'
 import type { Presence } from './presence.js'
 
-// Eine Stelle, die den Tokenbestand einer Spielsitzung laedt und verteilt, und die sechs
-// Token-Handler (design.md D3, add-token-assignment #15, add-token-stats #61). Reihenfolge
-// in jedem Handler: zod-Parse -> authorizeAction (Rolle je nach Aktion, siehe unten) ->
-// aktive Instanz aus der Spielsitzung lesen (nicht aus der Payload) -> Token laden mit `id`
-// UND `instanceId` der aktiven Instanz -> Schreiben -> `broadcastTokens` -> Acknowledgement
-// (design.md D2).
+// Eine Stelle, die den Tokenbestand einer Spielsitzung laedt und verteilt, und die sieben
+// Token-Handler (design.md D3, add-token-assignment #15, add-token-stats #61,
+// add-token-sharing #62). Reihenfolge in jedem Handler: zod-Parse -> authorizeAction (Rolle
+// je nach Aktion, siehe unten) -> aktive Instanz aus der Spielsitzung lesen (nicht aus der
+// Payload) -> Token laden mit `id` UND `instanceId` der aktiven Instanz -> Schreiben ->
+// `broadcastTokens` -> Acknowledgement (design.md D2).
 
 export interface TokenSocketDeps {
   prisma: PrismaClient
@@ -38,12 +50,17 @@ export interface TokenSocketDeps {
 }
 
 /** add-token-stats (#61, design.md D3): jede Lade-/Schreibstelle, deren Ergebnis durch
- * `toToken` geht, benutzt dieses `include` - Markierungen nach `position` sortiert. */
+ * `toToken` geht, benutzt dieses `include` - Markierungen nach `position` sortiert.
+ * add-token-sharing (#62, design.md D3): Zielgruppen-Zeilen nach `userId` aufsteigend -
+ * `null` (die "alle"-Zeile) steht in SQLite vor jedem String, das beeinflusst `toToken`
+ * nicht (es sucht die "alle"-Zeile explizit), aber macht die Empfaengerlisten deterministisch
+ * sortiert. */
 export const TOKEN_INCLUDE = {
   conditions: { orderBy: { position: 'asc' as const } },
+  shares: { orderBy: { userId: 'asc' as const } },
 } as const
 
-type TokenRow = PrismaToken & { conditions: PrismaTokenCondition[] }
+type TokenRow = PrismaToken & { conditions: PrismaTokenCondition[]; shares: PrismaTokenShare[] }
 
 const INVALID_PAYLOAD_MESSAGE = 'Ungültige Anfrage.'
 const GENERIC_ACK_ERROR_MESSAGE = 'Die Aktion ist fehlgeschlagen. Bitte versuche es erneut.'
@@ -58,13 +75,20 @@ const NOT_TOKEN_OWNER_MESSAGE = 'Dieses Token darfst du nicht bewegen.'
 // add-token-stats (#61, spec.md Requirement "Tokenwerte setzen"): weder ein stilles Deckeln
 // noch eine Verrechnung von Schaden/Heilung - eine Kopplungsverletzung wird abgelehnt.
 const INVALID_HP_MESSAGE = 'Ungültige Trefferpunkte.'
+// add-token-sharing (#62, spec.md Requirement "Zielgruppe eines Tokenwerts setzen"): Rolle
+// `spielleiter` oder Besitzer, geprueft gegen die JETZT gespeicherte Zuweisung.
+const NOT_TOKEN_SHARER_MESSAGE = 'Dieses Token darfst du nicht teilen.'
 
-/** Prisma-Zeile (mit Markierungen) -> Tokendarstellung (design.md D3). `icon` bleibt `null`,
- * wenn kein Symbol gespeichert ist - ein gespeicherter Wert ist immer ein Katalogeintrag
- * (die Handler schreiben nur validierte Werte). `ownerId` (add-token-assignment #15) wird
- * unveraendert uebernommen - fuer jeden Teilnehmer sichtbar (constitution.md §9.2).
- * add-token-stats (#61): die fuenf Wertefelder unveraendert, `conditions` als Label-Liste in
- * der Reihenfolge der geladenen Zeilen (siehe `TOKEN_INCLUDE`). */
+/** Prisma-Zeile (mit Markierungen und Zielgruppen) -> Tokendarstellung (design.md D3). `icon`
+ * bleibt `null`, wenn kein Symbol gespeichert ist - ein gespeicherter Wert ist immer ein
+ * Katalogeintrag (die Handler schreiben nur validierte Werte). `ownerId`
+ * (add-token-assignment #15) wird unveraendert uebernommen - fuer jeden Teilnehmer sichtbar
+ * (constitution.md §9.2). add-token-stats (#61): die fuenf Wertefelder unveraendert,
+ * `conditions` als Label-Liste in der Reihenfolge der geladenen Zeilen (siehe
+ * `TOKEN_INCLUDE`). add-token-sharing (#62, design.md D3): `shares` wird IMMER als Objekt
+ * gebaut, nie `null` - `null` entsteht erst in `redactToken`. Je Stat: enthaelt eine Zeile
+ * `userId` `null`, ist die Zielgruppe `'alle'`; sonst, bei mindestens einer Zeile, die Liste
+ * der `userId`s (aufsteigend, durch das `orderBy` in `TOKEN_INCLUDE`); sonst `'keine'`. */
 export function toToken(row: TokenRow): Token {
   return {
     id: row.id,
@@ -82,7 +106,24 @@ export function toToken(row: TokenRow): Token {
     ac: row.ac,
     initiative: row.initiative,
     conditions: row.conditions.map((c) => c.label),
+    shares: sharesFromRows(row.shares),
   }
+}
+
+function sharesFromRows(rows: PrismaTokenShare[]): TokenShares {
+  const result = { ...NO_SHARES }
+  for (const stat of Object.keys(result) as TokenStat[]) {
+    const rowsForStat = rows.filter((row) => row.stat === stat)
+    if (rowsForStat.length === 0) {
+      continue
+    }
+    if (rowsForStat.some((row) => row.userId === null)) {
+      result[stat] = 'alle'
+      continue
+    }
+    result[stat] = rowsForStat.map((row) => row.userId as string)
+  }
+  return result
 }
 
 /** Wer eine Tokendarstellung empfaengt (add-token-stats #61, design.md D3, constitution.md
@@ -92,15 +133,47 @@ export interface TokenViewer {
   userId: string
 }
 
+/** Ist ein Stat eines Tokens fuer einen Empfaenger sichtbar (add-token-sharing #62, design.md
+ * D3, spec.md Requirement "Sichtbarkeit der Tokenwerte")? Reine Funktion, keine DB: der
+ * Spielleiter und der Besitzer sehen immer alles (Regel, kein Eintrag), sonst entscheidet die
+ * Zielgruppe dieses Stats - `'alle'` oder eine Liste, die die `userId` des Empfaengers
+ * enthaelt. `token.shares` kann laut Typ `null` sein (Tokendarstellung eines fremden
+ * Empfaengers) - fuer serverseitig aus `toToken` geladene Tokens kommt das nicht vor, aber
+ * die Funktion faellt dann defensiv auf `NO_SHARES` zurueck. */
+export function isStatVisible(token: Token, stat: TokenStat, viewer: TokenViewer): boolean {
+  if (viewer.role === 'spielleiter' || token.ownerId === viewer.userId) {
+    return true
+  }
+  const audience: TokenAudience = (token.shares ?? NO_SHARES)[stat]
+  if (audience === 'alle') {
+    return true
+  }
+  if (audience === 'keine') {
+    return false
+  }
+  return audience.includes(viewer.userId)
+}
+
 /** Filtert die Werte eines Tokens fuer einen Empfaenger (add-token-stats #61, design.md D3,
- * constitution.md §9.2): der Spielleiter und der Besitzer sehen das Token unveraendert, jeder
- * andere Empfaenger erhaelt `null` fuer die fuenf Wertefelder und die leere Markierungsliste
- * - ununterscheidbar von "nicht gesetzt". Reine Funktion, keine DB. */
+ * add-token-sharing #62, constitution.md §9.2): der Spielleiter und der Besitzer sehen das
+ * Token unveraendert (inklusive `shares`). Jeder andere Empfaenger erhaelt je Stat `null`
+ * bzw. die leere Liste, wenn `isStatVisible` es verneint, und immer `shares: null` - wer
+ * sonst noch sieht, ist keine Information fuer Dritte (constitution.md §9.2). Reine Funktion,
+ * keine DB. */
 export function redactToken(token: Token, viewer: TokenViewer): Token {
   if (viewer.role === 'spielleiter' || token.ownerId === viewer.userId) {
     return token
   }
-  return { ...token, hp: null, hpMax: null, tempHp: null, ac: null, initiative: null, conditions: [] }
+  return {
+    ...token,
+    hp: isStatVisible(token, 'hp', viewer) ? token.hp : null,
+    hpMax: isStatVisible(token, 'hp', viewer) ? token.hpMax : null,
+    tempHp: isStatVisible(token, 'tempHp', viewer) ? token.tempHp : null,
+    ac: isStatVisible(token, 'ac', viewer) ? token.ac : null,
+    initiative: isStatVisible(token, 'initiative', viewer) ? token.initiative : null,
+    conditions: isStatVisible(token, 'conditions', viewer) ? token.conditions : [],
+    shares: null,
+  }
 }
 
 /** Laedt den Tokenbestand der aktiven Instanz einer Spielsitzung - die leere Liste ohne
@@ -156,9 +229,10 @@ export async function broadcastTokens(io: Server, prisma: PrismaClient, presence
 }
 
 /**
- * Registriert die sechs Token-Ereignisse auf einem verbundenen Socket (design.md D3,
- * add-token-assignment #15, add-token-stats #61) - aus `session/socket.ts` in der
- * `connection`-Registrierung aufgerufen, damit diese Datei nicht weiter waechst.
+ * Registriert die sieben Token-Ereignisse auf einem verbundenen Socket (design.md D3,
+ * add-token-assignment #15, add-token-stats #61, add-token-sharing #62) - aus
+ * `session/socket.ts` in der `connection`-Registrierung aufgerufen, damit diese Datei nicht
+ * weiter waechst.
  */
 export function registerTokenHandlers(io: Server, socket: Socket, deps: TokenSocketDeps): void {
   const { prisma, clock, presence } = deps
@@ -205,6 +279,13 @@ export function registerTokenHandlers(io: Server, socket: Socket, deps: TokenSoc
     })
   })
 
+  socket.on(SESSION_TOKEN_EVENTS.share, (payload: unknown, callback: (ack: ShareTokenAck) => void) => {
+    handleShareToken(payload, callback).catch((error: unknown) => {
+      console.error(error)
+      callback({ ok: false, message: GENERIC_ACK_ERROR_MESSAGE })
+    })
+  })
+
   /**
    * `session:token-create` (spec.md Requirement "Token anlegen"): ohne aktive Karte wird
    * nichts angelegt - die aktive Instanz kommt aus der Spielsitzung, nicht aus der Payload
@@ -212,7 +293,8 @@ export function registerTokenHandlers(io: Server, socket: Socket, deps: TokenSoc
    * `null`, ein neu angelegtes Token gehoert damit dem Spielleiter (add-token-assignment
    * #15, spec.md Requirement "Token zuweisen"). Kein Wert wird gesetzt - ein neu angelegtes
    * Token hat keine Werte (add-token-stats #61, spec.md "Neu angelegtes Token hat keine
-   * Werte").
+   * Werte"). Keine Zielgruppen-Zeile wird angelegt - ein neu angelegtes Token teilt nichts
+   * (add-token-sharing #62, spec.md "Neu angelegtes Token teilt nichts").
    */
   async function handleCreateToken(payload: unknown, callback: (ack: CreateTokenAck) => void): Promise<void> {
     const parsed = CreateTokenInputSchema.safeParse(payload)
@@ -290,7 +372,8 @@ export function registerTokenHandlers(io: Server, socket: Socket, deps: TokenSoc
   /** `session:token-remove` (spec.md Requirement "Token entfernen"): dieselbe Ladepruefung
    * wie beim Bewegen, weiterhin Rolle `spielleiter`. Die Markierungen werden per
    * `onDelete: Cascade` mit entfernt (add-token-stats #61, spec.md "Entfernen nimmt die
-   * Markierungen mit") - kein zusaetzlicher Code hier. */
+   * Markierungen mit") - kein zusaetzlicher Code hier. Die Zielgruppen ebenso
+   * (add-token-sharing #62, spec.md "Entfernen nimmt die Zielgruppen mit"). */
   async function handleRemoveToken(payload: unknown, callback: (ack: RemoveTokenAck) => void): Promise<void> {
     const parsed = RemoveTokenInputSchema.safeParse(payload)
     if (!parsed.success) {
@@ -323,7 +406,8 @@ export function registerTokenHandlers(io: Server, socket: Socket, deps: TokenSoc
    * auffindbares Token dieselbe Meldung liefert wie beim Bewegen, unabhaengig vom
    * `ownerId`. Ein `ownerId` ungleich `null`, der nicht die `userId` eines Mitglieds
    * dieser Spielsitzung mit Rolle `spieler` ist - auch die `userId` des Spielleiters
-   * selbst -, wird mit `PLAYER_NOT_FOUND_MESSAGE` abgelehnt.
+   * selbst -, wird mit `PLAYER_NOT_FOUND_MESSAGE` abgelehnt. add-token-sharing (#62,
+   * spec.md "Zuweisung lässt die Zielgruppen stehen"): kein Zugriff auf `TokenShare` hier.
    */
   async function handleAssignToken(payload: unknown, callback: (ack: AssignTokenAck) => void): Promise<void> {
     const parsed = AssignTokenInputSchema.safeParse(payload)
@@ -448,5 +532,67 @@ export function registerTokenHandlers(io: Server, socket: Socket, deps: TokenSoc
     const updated = await prisma.token.findUniqueOrThrow({ where: { id: existing.id }, include: TOKEN_INCLUDE })
     await broadcastTokens(io, prisma, presence, sessionId)
     callback({ ok: true, token: toToken(updated) })
+  }
+
+  /**
+   * `session:token-share` (add-token-sharing #62, spec.md Requirement "Zielgruppe eines
+   * Tokenwerts setzen"): jede Mitgliedschaft darf senden - keine Rollenanforderung an
+   * `authorizeAction`. Das Token wird zuerst geladen, VOR jeder Berechtigungspruefung (wie
+   * beim Bewegen, constitution.md §9.2 - sonst verriete die Meldung einem Spieler, ob eine
+   * `id` existiert). Danach entscheidet `canShareToken` gegen die JETZT geladene Zuweisung
+   * und die JETZT geladene Mitgliedschaft (constitution.md §9.3). Ist `audience` eine Liste,
+   * muss jede `userId` darin ein Mitglied dieser Spielsitzung mit Rolle `spieler` sein - eine
+   * `findMany` mit `in` genuegt, die Trefferzahl muss der Listenlaenge entsprechen (deckt
+   * Nichtmitglied, den Spielleiter selbst und eine einzelne ungueltige `userId` in einer
+   * Liste ab). Ersetzen als Ganzes in einer Transaktion (Loeschen + Anlegen, AGENTS.md).
+   */
+  async function handleShareToken(payload: unknown, callback: (ack: ShareTokenAck) => void): Promise<void> {
+    const parsed = ShareTokenInputSchema.safeParse(payload)
+    if (!parsed.success) {
+      callback({ ok: false, message: INVALID_PAYLOAD_MESSAGE })
+      return
+    }
+    const { sessionId, tokenId, stat, audience } = parsed.data
+
+    const authResult = await authorizeAction({ prisma, clock }, socket, sessionId)
+    if (!authResult.ok) {
+      callback({ ok: false, message: authResult.message })
+      return
+    }
+
+    const activeInstanceId = authResult.gameSession.activeInstanceId
+    const existing = activeInstanceId ? await prisma.token.findFirst({ where: { id: tokenId, instanceId: activeInstanceId } }) : null
+    if (!existing) {
+      callback({ ok: false, message: TOKEN_NOT_FOUND_MESSAGE })
+      return
+    }
+
+    const actor = { role: MemberRoleSchema.parse(authResult.membership.role), userId: authResult.user.id }
+    if (!canShareToken(existing, actor)) {
+      callback({ ok: false, message: NOT_TOKEN_SHARER_MESSAGE })
+      return
+    }
+
+    if (Array.isArray(audience)) {
+      const players = await prisma.membership.findMany({
+        where: { sessionId, role: 'spieler', userId: { in: audience } },
+      })
+      if (players.length !== audience.length) {
+        callback({ ok: false, message: PLAYER_NOT_FOUND_MESSAGE })
+        return
+      }
+    }
+
+    const rows: { tokenId: string; stat: string; userId: string | null }[] =
+      audience === 'keine' ? [] : audience === 'alle' ? [{ tokenId: existing.id, stat, userId: null }] : audience.map((userId) => ({ tokenId: existing.id, stat, userId }))
+
+    await prisma.$transaction([
+      prisma.tokenShare.deleteMany({ where: { tokenId: existing.id, stat } }),
+      prisma.tokenShare.createMany({ data: rows }),
+    ])
+
+    const updated = await prisma.token.findUniqueOrThrow({ where: { id: existing.id }, include: TOKEN_INCLUDE })
+    await broadcastTokens(io, prisma, presence, sessionId)
+    callback({ ok: true, token: redactToken(toToken(updated), actor) })
   }
 }

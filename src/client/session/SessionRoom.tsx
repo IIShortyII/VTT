@@ -12,7 +12,14 @@ import {
   type TransitionAction,
 } from '../../shared/session.js'
 import type { ActiveMap } from '../../shared/session-map.js'
-import { canMoveToken, type CreateTokenInput, type Token, type TokenStatsPatch } from '../../shared/token.js'
+import {
+  canMoveToken,
+  type CreateTokenInput,
+  type Token,
+  type TokenAudience,
+  type TokenStat,
+  type TokenStatsPatch,
+} from '../../shared/token.js'
 import { mapImageUrl } from '../map/api.js'
 import { MapCanvas } from '../map/MapCanvas.js'
 import { MapPanel } from './MapPanel.js'
@@ -23,10 +30,11 @@ import { TokenPanel } from './TokenPanel.js'
 // Raumansicht (design.md D10, Requirement "Sitzungsoberflaeche"; session-map #50, Requirement
 // "Kartenansicht im Raum"; session-token #14, Requirement "Tokenansicht im Raum";
 // add-token-assignment #15, Requirement "Tokenansicht im Raum"/"Token bewegen"; add-token-stats
-// #61, Requirement "Tokenansicht im Raum"). Zustand und Teilnehmer kommen ausschliesslich aus
-// dem Acknowledgement von `enter` und den nachfolgenden Server-Ereignissen - der angezeigte
-// Zustand folgt dem Server, nie dem zuletzt geklickten Uebergang oder der zuletzt aktivierten
-// Karte (constitution.md §9.1).
+// #61, Requirement "Tokenansicht im Raum"; add-token-sharing #62, Requirement "Zielgruppe
+// eines Tokenwerts setzen"/"Tokenansicht im Raum"). Zustand und Teilnehmer kommen
+// ausschliesslich aus dem Acknowledgement von `enter` und den nachfolgenden
+// Server-Ereignissen - der angezeigte Zustand folgt dem Server, nie dem zuletzt geklickten
+// Uebergang oder der zuletzt aktivierten Karte (constitution.md §9.1).
 //
 // reenter-room-after-reconnect (#46, design.md D3): eine von der Fassade gemeldete
 // Wiederverbindung betritt denselben Raum ueber dieselbe Fassade erneut - ausser die
@@ -90,7 +98,8 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
   // Canvas und die Token-Verwaltung - beides sind Absichten desselben Spielleiters.
   // add-token-assignment (#15, design.md D6): wird jetzt in der Raumansicht selbst gerendert
   // (fuer jede Rolle), nicht mehr in `TokenPanel` - sonst stuende dieselbe Meldung zweimal im
-  // DOM, sobald auch ein Spieler eine abgelehnte Bewegung sieht.
+  // DOM, sobald auch ein Spieler eine abgelehnte Bewegung sieht. add-token-sharing (#62,
+  // design.md D6): dieselbe Meldung auch fuer eine abgelehnte Freigabe.
   const [tokenError, setTokenError] = useState<string | null>(null)
 
   // Registriert die Server-Ereignisse und das erneute Betreten bei Wiederverbindung auf einer
@@ -348,6 +357,24 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
       })
   }
 
+  // add-token-sharing (#62, design.md D6): die Absicht wird gesendet, keine lokale Aenderung
+  // des Bestands - der Server verteilt den neuen Bestand per `session:tokens`
+  // (constitution.md §9.1); dieselbe Fehlermeldung wie die uebrigen Token-Handler.
+  const handleTokenShare = (tokenId: string, stat: TokenStat, audience: TokenAudience) => {
+    const socket = socketRef.current
+    if (!socket) {
+      return
+    }
+    socket
+      .shareToken(sessionId, tokenId, stat, audience)
+      .then((ack) => {
+        setTokenError(ack.ok ? null : ack.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
   // "Hier weiterspielen" (Requirement "Sitzungsoberflaeche"): eine bewusste Handlung des
   // Nutzers, keine Automatik - die Sperren werden zurueckgesetzt, die neue Fassade beginnt
   // ohne Vorgeschichte (design.md D3). Die bisherige Fassade wird zusaetzlich explizit
@@ -444,7 +471,8 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
       )}
 
       {/* add-token-assignment (#15, design.md D6): fuer jede Rolle, damit auch ein Spieler
-          eine abgelehnte eigene Bewegung sieht. */}
+          eine abgelehnte eigene Bewegung sieht. add-token-sharing (#62): auch eine
+          abgelehnte Freigabe. */}
       {tokenError !== null && <p role="alert">{tokenError}</p>}
 
       {state.role === 'spielleiter' && (
@@ -466,12 +494,17 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
           onAssign={handleTokenAssign}
           onSetStats={handleTokenStats}
           onSetConditions={handleTokenConditions}
+          onShare={handleTokenShare}
         />
       )}
 
       {/* add-token-stats (#61, design.md D10, Requirement "Tokenansicht im Raum"): ein
-          Spieler sieht statt der Verwaltung die eigene Werteliste. */}
-      {state.role === 'spieler' && <PlayerTokenList tokens={state.tokens} />}
+          Spieler sieht statt der Verwaltung die eigene Werteliste. add-token-sharing (#62,
+          design.md D6): `participants` und `onShare` fuer die Freigabe-Schalter der eigenen
+          Tokens. */}
+      {state.role === 'spieler' && (
+        <PlayerTokenList tokens={state.tokens} participants={state.participants} onShare={handleTokenShare} />
+      )}
 
       <button type="button" onClick={onLeave}>
         Zurück zur Liste

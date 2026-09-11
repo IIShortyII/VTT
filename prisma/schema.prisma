@@ -35,6 +35,9 @@ model User {
   // add-token-assignment (#15): Gegenrelation zu den Tokens, deren Besitzer dieser Nutzer
   // ist - siehe design.md D1.
   tokens      Token[]
+  // add-token-sharing (#62): Gegenrelation zu den Zielgruppen-Zeilen, in denen dieser Nutzer
+  // als Empfaenger steht - siehe design.md D1.
+  tokenShares TokenShare[]
 }
 
 model Account {
@@ -168,6 +171,8 @@ model MapInstance {
 // add-token-stats (#61): fuenf nullable Wertespalten (design.md D1) - `null` heisst "nicht
 // gesetzt" (proposal.md), kein Default ausser `null`. `conditions` ist die Gegenrelation zu
 // `TokenCondition` (Tabelle statt JSON - SQLite kennt kein `Json`, design.md D1).
+// add-token-sharing (#62): `shares` ist die Gegenrelation zu `TokenShare` - je (Token, Stat)
+// keine, eine oder mehrere Zeilen (design.md D1).
 model Token {
   id         String           @id @default(cuid())
   instanceId String
@@ -187,6 +192,7 @@ model Token {
   instance   MapInstance      @relation(fields: [instanceId], references: [id], onDelete: Cascade)
   owner      User?            @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   conditions TokenCondition[]
+  shares     TokenShare[]
 
   @@index([instanceId])
   @@index([ownerId])
@@ -206,4 +212,26 @@ model TokenCondition {
 
   @@unique([tokenId, label])
   @@index([tokenId])
+}
+
+// add-token-sharing (#62): wer einen Stat eines Tokens zusaetzlich zu Spielleiter und
+// Besitzer sieht (design.md D1). Eine Zeile je Empfaenger: `keine` = keine Zeile fuer
+// (Token, Stat); `alle` = genau eine Zeile mit `userId` `null`; eine Liste = eine Zeile je
+// `userId`. `stat` ist `String` mit zod-Enum an der Grenze (`shared/token.ts`,
+// `TokenStatSchema`), kein Prisma-`enum` (Muster wie `GameSession.status`).
+// `@@unique([tokenId, stat, userId])` verhindert doppelte Empfaenger auf DB-Ebene; SQLite
+// behandelt `NULL` im Unique-Index als je verschieden - `toToken` liest defensiv ("alle"
+// gewinnt, siehe design.md D3). `onDelete: Cascade` an beiden Fremdschluesseln: ein
+// entferntes Token oder ein geloeschter Nutzer nimmt seine Zielgruppen-Zeilen mit.
+model TokenShare {
+  id      String  @id @default(cuid())
+  tokenId String
+  stat    String
+  userId  String?
+  token   Token   @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenId, stat, userId])
+  @@index([tokenId])
+  @@index([userId])
 }

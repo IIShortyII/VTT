@@ -363,14 +363,23 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
           tokenContainer.destroy({ children: true })
         }
         tokenLayer.destroy({ children: true })
-        app.destroy(true, { children: true, texture: true })
+        // App-Test Runde 4 (#14): nicht "true" als erstes Argument - Pixi setzt damit intern
+        // "releaseGlobalResources" und leert den GLOBALEN TexturePool (Singleton, von allen
+        // Renderern/Canvas-Instanzen geteilt). Die von React StrictMode sofort wieder
+        // abgebaute erste Instanz zerstoerte darueber den Pool, den die zweite, sichtbare
+        // Instanz noch braucht - das naechste "Text.destroy()" einer Tokenaenderung wirft
+        // dann "this._texturePool[key] is undefined". "{ removeView: true }" entfernt nur das
+        // eigene Canvas, ohne renderer-uebergreifende, globale Ressourcen anzufassen.
+        app.destroy({ removeView: true }, { children: true, texture: true })
       },
     }
   } catch (error) {
     // (3) im Ablehnungsbefund aus dem App-Test: scheitert der Aufbau nach `appendChild`
     // dennoch (nicht durch `applyImage`, das seinen eigenen Fehler abfaengt), bleibt kein
-    // verwaistes `<canvas>` im `container` zurueck.
-    app.destroy(true, { children: true, texture: true })
+    // verwaistes `<canvas>` im `container` zurueck. Wie bei `destroy()` oben: nicht "true"
+    // als erstes Argument (globale Pixi-Ressourcen, siehe dort), sondern
+    // "{ removeView: true }".
+    app.destroy({ removeView: true }, { children: true, texture: true })
     throw error
   }
 }

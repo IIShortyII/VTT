@@ -153,4 +153,4 @@ oder einen weiteren Query-Schlüssel braucht, erweitert die Liste im Code, nicht
 Die Funktion nimmt Kommandotext und Umgebungswert und liefert die geprüfte Quelle oder
 `undefined`. Kein Zugriff auf `process.env` darin — den macht der Aufrufer in `decide()`.
 So lässt sich jede Form ohne `withDbUrl`-Gymnastik testen, und die Sperre bleibt in einem
-Ausdruck lesbar: `url === undefined || !EPHEMERAL_DB.test(url)` → blocken.
+Ausdruck lesbar: `url === undefined || !isEphemeralDbUrl(url)` → blocken (Name seit D8).

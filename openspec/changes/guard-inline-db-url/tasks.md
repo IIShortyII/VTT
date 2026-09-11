@@ -27,7 +27,7 @@
 - [x] 2.2 Präfix/env: nach dem Wert muss ein Kommando folgen, und der Rest darf keinen
       Trenner tragen (`;`, `&&`, `||`, `|`, Zeilenumbruch, `$(`, Backtick). export: Wert, dann
       `&&`, `;` oder Zeilenumbruch, dann Kommando
-- [x] 2.3 Migrationssperre in `decide()`: `url === undefined || !EPHEMERAL_DB.test(url)` →
+- [x] 2.3 Migrationssperre in `decide()`: `url === undefined || !isEphemeralDbUrl(url)` →
       blocken; Meldung nennt bei unbekannter Form, dass der Wert nicht sicher bestimmbar ist
 
 ## 3. Dokumentation (D6)
@@ -62,7 +62,9 @@
       aus `?host=` (`postgresql://localhost/db?host=/cloudsql/…`). Nacharbeit Runde 2
       (design.md D8, Punkt 3): Query-Whitelist harmloser Schlüssel; Szenario „host-umlenkender
       Query-Parameter blockt" + Test, rot bestätigt (Zusicherung), Mutationsprobe „Whitelist
-      entfernt" → genau dieser Test rot. Gate erneut grün, Reviewer Runde 3.
+      entfernt" → genau dieser Test rot. Gate erneut grün (169), Reviewer Runde 3: **ok**, kein
+      Fail-open mehr; zwei dokumentarische Hinweise (SQLite-Formen ohne Query-Whitelist bewusst,
+      D7 nannte noch `EPHEMERAL_DB`) eingearbeitet.
 - [ ] 4.7 Menschliche Freigabe (`constitution.md` §3.4 — kein App-Test, kein Anwendungscode;
       geprüft wird das Guard-Urteil)
 - [ ] 4.8 `openspec archive guard-inline-db-url --yes`, Purpose der neuen Capability

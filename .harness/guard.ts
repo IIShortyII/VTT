@@ -43,6 +43,9 @@ const MIGRATION_COMMANDS = /prisma\s+(migrate\s+(deploy|dev|reset)|db\s+push)/
 // Server-URL bleibt fuer einen spaeteren Umzug auf eine Server-DB enthalten - die Userinfo
 // davor darf keinen "/" tragen, sonst liesse sich "localhost" dort verstecken und der echte
 // Host dahinter.
+// Die beiden SQLite-Formen lassen einen beliebigen Query-Teil zu - anders als die Server-URL
+// unten: SQLite ist rein lokal, kein Query-Parameter adressiert einen anderen Host. Kommt je ein
+// dateibasierter Treiber mit host-artigen Parametern hinzu, gehoert die Whitelist auch hierher.
 const SQLITE_TEST_FILE = /^file:(?:[^?"']*\/)?test\.db(?:\?[^"']*)?$/
 const SQLITE_MEMORY = /^(?:file|sqlite)::memory:(?:\?[^"']*)?$/
 const LOCAL_SERVER_URL = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/"']*@)?(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/[^?"']*)?(?:\?([^"']*))?$/i

@@ -158,6 +158,34 @@ describe('Spec-Szenario: Eskalationsgarantie bleibt rollenunabhängig', () => {
     expect(readStatus(issue).phase).toBe('escalated')
     expect(readStatus(issue).round).toBe(MAX_ROUNDS) // kein weiterer Rundenverbrauch bei der Eskalation selbst
   })
+
+  // harness-role-marker, Requirement "Eine App-Test-Ablehnung wird genau einmal verbraucht"
+  // (Issue #57): die Ablehnung bucht ihre Runde ueber confirmAppReview; sobald der Lauf nach
+  // der Nacharbeit wieder in app-review steht, darf ein wiederholtes next() sie nicht noch
+  // einmal als frische Ablehnung lesen.
+  it('Review „ok" nach einer App-Test-Ablehnung verbraucht die Ablehnung', () => {
+    const issue2 = freshIssue()
+    try {
+      makeStatus(issue2, { round: 1, phase: 'app-review' })
+      confirmAppReview(issue2, 'nein', 'Kartenbild fehlt')
+      expect(readStatus(issue2).round).toBe(2)
+      expect(readStatus(issue2).phase).toBe('implement')
+
+      // Nacharbeit, gruenes Gate, Review "ok" -> zurueck in die App-Test-Phase.
+      writeStatus({
+        ...readStatus(issue2), phase: 'review',
+        lastGate: { green: true, jestGreen: true },
+        lastReview: { recommendation: 'ok', findings: [] },
+      })
+      for (let i = 0; i < 3; i++) {
+        expect(JSON.parse(next(issue2)).action).toBe('present-app-review')
+      }
+      const s = readStatus(issue2)
+      expect(s.round).toBe(2)
+      expect(s.phase).toBe('app-review')
+      expect(s.lastAppReview).toBeUndefined()
+    } finally { cleanup(issue2) }
+  })
 })
 
 describe('Spec-Szenario: Mehrzeiliger Diff wird durchgereicht', () => {

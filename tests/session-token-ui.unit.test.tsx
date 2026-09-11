@@ -1,30 +1,36 @@
 /** @jest-environment jsdom */
-// Komponententests zum Requirement "Tokenansicht im Raum" aus
-// openspec/changes/add-session-tokens/specs/session-token/spec.md (tasks.md 1.2). Ein Test je
-// GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname.
+// Komponententests zum Delta "Tokenansicht im Raum" aus
+// openspec/changes/add-token-assignment/specs/session-token/spec.md (tasks.md 1.2). Ein Test je
+// GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname. Neu zu #15: die
+// vier Szenarien "Spieler greift nur eigene Tokens", "Spieler sieht die abgelehnte Bewegung",
+// "Spielleiter weist ein Token über die Liste zu" und "Spielleiter nimmt eine Zuweisung über die
+// Liste zurück". Der bestehende Test "Spieler zieht nicht" aendert seine Aussage (Rueckruf
+// vorhanden, `canMoveToken` verneint fuer das fremde Token), "Spieler sieht keine
+// Token-Verwaltung" bekommt eine weitere Assertion (kein Auswahlfeld). Die uebrigen Szenarien
+// aus #14 bleiben unveraendert.
 //
 // Geprueft wird, *was* die Anwendung anfordert und anzeigt — nicht, wie es aussieht (AGENTS.md:
 // Rendering nimmt der menschliche App-Test ab). Mock-Grenzen (design.md D8), wie in
 // session-map-ui.unit.test.tsx:
 //  - die Socket-Fassade `src/client/session/socket.ts` mit aufzeichnenden
-//    `createToken`/`moveToken`/`removeToken`, einem von aussen ausloesbaren `tokens`-Handler und
-//    `enter`-Acknowledgement mit `map` und `tokens`,
+//    `createToken`/`moveToken`/`removeToken`/`assignToken`, einem von aussen ausloesbaren
+//    `tokens`-Handler und `enter`-Acknowledgement mit `map`, `tokens` und `participants`,
 //  - die Canvas-Fassade `src/client/map/canvas.ts` — ueber den *aufloesbaren* Modulschluessel mit
-//    `.js`-Endung; `createMapCanvas` zeichnet `options` (inkl. `tokens`, `onTokenMove`) auf und
-//    liefert ein Handle mit `setGrid`/`setImage`/`setTokens`/`destroy` als `jest.fn`; kein Test
-//    importiert `pixi.js`,
+//    `.js`-Endung; `createMapCanvas` zeichnet `options` (inkl. `tokens`, `onTokenMove`,
+//    `canMoveToken`) auf und liefert ein Handle mit `setGrid`/`setImage`/`setTokens`/`destroy`
+//    als `jest.fn`; kein Test importiert `pixi.js`,
 //  - `fetch`, nach Pfad und Methode.
-// Elemente ausschliesslich ueber getByRole/getByLabelText/getByText (D7-Schnittstellentabelle).
+// Elemente ausschliesslich ueber getByRole/getByLabelText/getByText und within (D7-Tabelle);
+// keine `must()`-Helfer mit Kurzmeldung in den neuen Tests — die DOM-Ausgabe der Testing Library
+// ist das Gate-Feedback des implementers (design.md D8).
 //
-// Rote Phase (tasks.md 1.2): `SessionRoom` uebergibt der Canvas-Fassade weder `tokens` noch
-// `onTokenMove`, kennt `setTokens` nicht, und die Token-Verwaltung (`TokenPanel`) fehlt. Die
-// Szenarien scheitern daher am fehlenden Aufruf/Bedienelement — der erwartete rote Grund, kein
-// Compile-/Setup-Fehler. Die beiden reinen Spieler-Verbote ("zieht nicht", "sieht keine
-// Verwaltung") tragen zusaetzlich einen positiven Anker (der Tokenbestand erreicht die
-// Canvas-Fassade, D6), damit sie vor der Umsetzung aus dem richtigen Grund rot sind statt trivial
-// gruen — dieselbe Technik wie der "Keine Karte aktiv"-Anker in session-map-ui.unit.test.tsx.
+// Rote Phase (tasks.md 1.2): fuer einen Spieler uebergibt `SessionRoom` der Canvas-Fassade
+// bislang weder `onTokenMove` noch `canMoveToken`; die Meldung einer abgelehnten Bewegung
+// erscheint fuer den Spieler nirgends; die Token-Verwaltung kennt kein Auswahlfeld und
+// `assignToken` fehlt. Die Szenarien scheitern daher am fehlenden Rueckruf/Bedienelement/an der
+// fehlenden Meldung — der erwartete rote Grund, kein Compile-/Setup-Fehler.
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 import { App } from '../src/client/app/App.js'
 
@@ -41,6 +47,7 @@ jest.mock('../src/client/session/socket.js', () => {
     createToken: jest.fn(),
     moveToken: jest.fn(),
     removeToken: jest.fn(),
+    assignToken: jest.fn(),
     on: jest.fn((event: string, handler: (payload: unknown) => void) => {
       handlers[event] = handler
     }),
@@ -66,6 +73,7 @@ type SocketTestApi = {
     createToken: jest.Mock
     moveToken: jest.Mock
     removeToken: jest.Mock
+    assignToken: jest.Mock
     on: jest.Mock
   }
   __handlers: Record<string, (payload: unknown) => void>
@@ -168,16 +176,25 @@ function spielleiterFetch(): void {
 }
 
 // --- Token-Testdaten ------------------------------------------------------------------------
+// `ownerId` ist Teil der Tokendarstellung (spec.md "Drahtformat"). Standardwert `null`
+// ("gehört dem Spielleiter"); wo ein Besitzer gebraucht wird, entsteht eine lokale Variante.
 
-const GOBLIN = { id: 't-goblin', instanceId: 'i-tav', name: 'Goblin', color: '#3366ff', icon: '💀', size: 2, col: 3, row: 4 }
-const ORK = { id: 't-ork', instanceId: 'i-tav', name: 'Ork', color: '#aa2222', icon: null, size: 1, col: 1, row: 1 }
+const GOBLIN = { id: 't-goblin', instanceId: 'i-tav', name: 'Goblin', color: '#3366ff', icon: '💀', size: 2, col: 3, row: 4, ownerId: null as string | null }
+const ORK = { id: 't-ork', instanceId: 'i-tav', name: 'Ork', color: '#aa2222', icon: null, size: 1, col: 1, row: 1, ownerId: null as string | null }
 const AKTIVE_KARTE = { instanceId: 'i-tav', mapId: 'm-tav', name: 'Taverne', hasImage: true, grid: QUADRAT }
 
-function enterAck(role: 'spieler' | 'spielleiter', extras: { map?: unknown; tokens?: unknown[] } = {}): void {
+// Teilnehmer fuer die Zuweisungs-Szenarien (design.md D8): meister (Spielleiter, selbst) und
+// sam (Spieler, userId u-sam, Alias Gandalf).
+const TEILNEHMER = [
+  { userId: 'u-selbst', username: 'meister', role: 'spielleiter', online: true },
+  { userId: 'u-sam', username: 'sam', alias: 'Gandalf', role: 'spieler', online: true },
+]
+
+function enterAck(role: 'spieler' | 'spielleiter', extras: { map?: unknown; tokens?: unknown[]; participants?: unknown[] } = {}): void {
   socketMock.__facade.enter.mockResolvedValue({
     ok: true,
     session: { id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role, ...(role === 'spielleiter' ? { code: 'ABC234' } : {}) },
-    participants: [{ userId: 'u-selbst', username: 'ich', role, online: true }],
+    participants: extras.participants ?? [{ userId: 'u-selbst', username: 'ich', role, online: true }],
     map: 'map' in extras ? extras.map : null,
     tokens: extras.tokens ?? [],
   })
@@ -253,17 +270,66 @@ test('Spielleiter zieht ein Token', async () => {
 
 test('Spieler zieht nicht', async () => {
   installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
-  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [GOBLIN] })
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [ORK] })
 
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
-
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
-  // Positiver Anker: der Tokenbestand erreicht die Spielersicht (D6, rot vor der Umsetzung) ...
-  expect(letzteCanvasOptions().tokens).toEqual([GOBLIN])
-  // ... aber ohne Zieh-Rueckruf.
-  expect(letzteCanvasOptions().onTokenMove).toBeUndefined()
+
+  const opts = letzteCanvasOptions()
+  // Positiver Anker: der Tokenbestand erreicht die Spielersicht (D6) ...
+  expect(opts.tokens).toEqual([ORK])
+  // ... mit Zieh-Rueckruf fuer jede Rolle (D6), aber einer Greifbarkeitsregel, die das fremde
+  // Token verneint (ORK gehört dem Spielleiter, ownerId null).
+  expect(typeof opts.onTokenMove).toBe('function')
+  const canMoveToken = opts.canMoveToken as ((token: unknown) => boolean) | undefined
+  expect(typeof canMoveToken).toBe('function')
+  expect(must(canMoveToken, 'canMoveToken-Regel')(ORK)).toBe(false)
+})
+
+test('Spieler greift nur eigene Tokens', async () => {
+  const MEIN_GOBLIN = { ...GOBLIN, ownerId: 'u-selbst' }
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [MEIN_GOBLIN, ORK] })
+  socketMock.__facade.moveToken.mockResolvedValue({ ok: true, token: { ...MEIN_GOBLIN, col: 7, row: 1 } })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
+
+  const opts = letzteCanvasOptions()
+  const canMoveToken = opts.canMoveToken as ((token: unknown) => boolean) | undefined
+  expect(typeof canMoveToken).toBe('function')
+  expect(must(canMoveToken, 'canMoveToken-Regel')(MEIN_GOBLIN)).toBe(true)
+  expect(must(canMoveToken, 'canMoveToken-Regel')(ORK)).toBe(false)
+
+  const onTokenMove = opts.onTokenMove as ((id: string, cell: { col: number; row: number }) => void) | undefined
+  expect(typeof onTokenMove).toBe('function')
+  await act(async () => {
+    must(onTokenMove, 'onTokenMove-Rueckruf')('t-goblin', { col: 7, row: 1 })
+  })
+
+  await waitFor(() => expect(socketMock.__facade.moveToken).toHaveBeenCalledWith('s1', 't-goblin', { col: 7, row: 1 }))
+})
+
+test('Spieler sieht die abgelehnte Bewegung', async () => {
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [GOBLIN] })
+  socketMock.__facade.moveToken.mockResolvedValue({ ok: false, message: 'Dieses Token darfst du nicht bewegen.' })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
+
+  const onTokenMove = letzteCanvasOptions().onTokenMove as ((id: string, cell: { col: number; row: number }) => void) | undefined
+  await act(async () => {
+    onTokenMove?.('t-goblin', { col: 7, row: 1 })
+  })
+
+  expect(await screen.findByText('Dieses Token darfst du nicht bewegen.')).toBeTruthy()
 })
 
 test('Spielleiter legt ein Token über das Formular an', async () => {
@@ -306,6 +372,48 @@ test('Spielleiter entfernt ein Token über die Liste', async () => {
   await waitFor(() => expect(socketMock.__facade.removeToken).toHaveBeenCalledWith('s1', 't-goblin'))
 })
 
+test('Spielleiter weist ein Token über die Liste zu', async () => {
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN], participants: TEILNEHMER })
+  socketMock.__facade.assignToken.mockResolvedValue({ ok: true, token: { ...GOBLIN, ownerId: 'u-sam' } })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  const select = (await screen.findByRole('combobox', { name: 'Goblin zuweisen' })) as HTMLSelectElement
+  expect(within(select).getByRole('option', { name: 'Spielleiter' })).toBeTruthy()
+  expect(within(select).getByRole('option', { name: 'Gandalf' })).toBeTruthy()
+  expect(within(select).queryByRole('option', { name: 'meister' })).toBeNull()
+  expect(within(select).queryByRole('option', { name: 'sam' })).toBeNull()
+
+  await act(async () => {
+    fireEvent.change(select, { target: { value: 'u-sam' } })
+  })
+
+  await waitFor(() => expect(socketMock.__facade.assignToken).toHaveBeenCalledWith('s1', 't-goblin', 'u-sam'))
+})
+
+test('Spielleiter nimmt eine Zuweisung über die Liste zurück', async () => {
+  const GOBLIN_SAM = { ...GOBLIN, ownerId: 'u-sam' }
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN_SAM], participants: TEILNEHMER })
+  socketMock.__facade.assignToken.mockResolvedValue({ ok: true, token: { ...GOBLIN_SAM, ownerId: null } })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  const select = (await screen.findByRole('combobox', { name: 'Goblin zuweisen' })) as HTMLSelectElement
+  expect(select.value).toBe('u-sam')
+
+  await act(async () => {
+    fireEvent.change(select, { target: { value: '' } })
+  })
+
+  await waitFor(() => expect(socketMock.__facade.assignToken).toHaveBeenCalledWith('s1', 't-goblin', null))
+})
+
 test('Abgelehnte Aktion zeigt die Meldung', async () => {
   spielleiterFetch()
   enterAck('spielleiter', { map: null, tokens: [] })
@@ -332,10 +440,11 @@ test('Spieler sieht keine Token-Verwaltung', async () => {
   await betreten()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
-  // Positiver Anker: der Tokenbestand erreicht auch die Spielersicht (D6, rot vor der Umsetzung) ...
+  // Positiver Anker: der Tokenbestand erreicht auch die Spielersicht (D6) ...
   expect(canvasMock.createMapCanvas).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tokens: [GOBLIN] }))
-  // ... aber die Token-Verwaltung bleibt dem Spieler verborgen.
+  // ... aber die Token-Verwaltung bleibt dem Spieler verborgen, samt Auswahlfeld.
   expect(screen.queryByRole('heading', { name: 'Tokens' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Anlegen' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Goblin entfernen' })).toBeNull()
+  expect(screen.queryByRole('combobox', { name: 'Goblin zuweisen' })).toBeNull()
 })

@@ -177,7 +177,14 @@ export function next(i: string, run: Sh = sh): string {
       // wurde (z.B. bei einer Eskalations-Nachbearbeitung durch den Menschen) und lastReview
       // dabei geloescht, phase aber auf 'review' stehen gelassen wurde.
       if (!s.lastReview) return emit(i, 'invoke-reviewer', 'reviewer')
-      if (s.lastReview.recommendation === 'ok') { s.phase = 'app-review'; writeStatus(s); return emit(i, 'present-app-review', 'none', run) }
+      if (s.lastReview.recommendation === 'ok') {
+        // Issue #57: eine App-Test-Ablehnung hat ihre Runde bereits ueber confirmAppReview
+        // gebucht. Wer hier ankommt, hat die Nacharbeit dazu durch - die alte Entscheidung darf
+        // ein wiederholtes next() in app-review nicht erneut als Ablehnung lesen (Requirement
+        // "Eine App-Test-Ablehnung wird genau einmal verbraucht").
+        delete s.lastAppReview
+        s.phase = 'app-review'; writeStatus(s); return emit(i, 'present-app-review', 'none', run)
+      }
       return reviewRework(s)
     case 'app-review':
       if (!s.lastAppReview) return emit(i, 'present-app-review', 'none', run)

@@ -129,28 +129,34 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       gridGraphics.stroke({ width: GRID_LINE_WIDTH, color: GRID_LINE_COLOR })
     }
 
-    /** Laedt (oder entfernt) das Kartenbild. Ein `loadToken` verwirft eine veraltete Antwort,
-     * wenn zwischenzeitlich ein neuer Aufruf oder `destroy()` erfolgte. */
+    /**
+     * Laedt (oder entfernt) das Kartenbild. Ein `loadToken` verwirft eine veraltete Antwort,
+     * wenn zwischenzeitlich ein neuer Aufruf oder `destroy()` erfolgte.
+     *
+     * App-Test Runde 5 (#14, Kartenwechsel liess Bild/Raster verschwinden): erst die neue
+     * Textur laden, danach das alte Sprite entfernen/zeichnen, und ERST DANACH die alte URL
+     * bei `Assets` entladen - nicht umgekehrt. Vorher wurde die alte Textur zuerst entladen
+     * (`Assets.unload`), waehrend das alte Sprite noch im Szenengraph haengt; der Ticker
+     * rendert es dann mit bereits zerstoerter Textur ("textureSource is null"), der Renderer
+     * stirbt, das Canvas bleibt leer. Eine waehrenddessen veraltete Ladung (ein neuerer
+     * Aufruf oder `destroy()` kam dazwischen) fasst weder Sprite noch die aktuelle
+     * `loadedUrl` an - sie entlaedt nur ihre eigene, dann ueberfluessige Textur.
+     */
     async function applyImage(url: string | null): Promise<void> {
       const token = ++loadToken
-
-      // Der Server sendet `no-store`, aber `Assets` fuehrt einen eigenen Cache nach URL - ohne
-      // `unload` der vorigen URL zeigte "Bild ersetzen" die alte Textur (design.md D8).
-      if (loadedUrl) {
-        await Assets.unload(loadedUrl).catch(() => undefined)
-      }
-      if (destroyed || token !== loadToken) {
-        return
-      }
+      const previousUrl = loadedUrl
 
       if (url === null) {
-        loadedUrl = null
         if (sprite) {
           root.removeChild(sprite)
           sprite.destroy()
           sprite = null
         }
+        loadedUrl = null
         drawGrid()
+        if (previousUrl) {
+          await Assets.unload(previousUrl).catch(() => undefined)
+        }
         return
       }
 
@@ -166,15 +172,17 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
         texture = await Assets.load<Texture>({ src: versionedUrl, parser: 'loadTextures' })
       } catch (error) {
         // Ein fehlgeschlagenes Bild reisst die Kartenansicht nicht mit (Erwartung aus dem
-        // App-Test): Raster und Tokens bleiben, wie sie sind; nur das Bild bleibt aus.
+        // App-Test): das alte Sprite bleibt stehen, `loadedUrl` bleibt unveraendert.
         console.error(error)
-        loadedUrl = null
         return
       }
+
       if (destroyed || token !== loadToken) {
+        // Veraltete Ladung: weder das Sprite noch die aktuelle `loadedUrl` anfassen - nur die
+        // eigene, jetzt ueberfluessige Textur wieder freigeben.
+        await Assets.unload(versionedUrl).catch(() => undefined)
         return
       }
-      loadedUrl = versionedUrl
 
       if (sprite) {
         root.removeChild(sprite)
@@ -182,7 +190,12 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       }
       sprite = new Sprite(texture)
       root.addChildAt(sprite, 0)
+      loadedUrl = versionedUrl
       drawGrid()
+
+      if (previousUrl) {
+        await Assets.unload(previousUrl).catch(() => undefined)
+      }
     }
 
     // session-token (#14, design.md D6): Mittelpunkt der Ankerzelle, bei `quadrat` und
@@ -356,8 +369,21 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
         app.stage.off('pointerupoutside', onPointerUp)
         app.canvas.removeEventListener('wheel', onWheel)
         app.renderer.off('resize', onResize)
+        // App-Test Runde 5 (#14): erst das Sprite aus dem Szenengraph nehmen und OHNE
+        // Textur-Option zerstoeren (die Textur selbst bleibt am Leben) - erst danach die von
+        // `Assets` verwaltete Textur ueber `Assets.unload` entladen. Nie eine von `Assets`
+        // verwaltete Textur direkt zerstoeren (weder ueber `sprite.destroy({ texture: true
+        // })` noch ueber das rekursive `app.destroy(..., { texture: true })`, das sonst noch
+        // ein angehaengtes Sprite miterwischen wuerde) - sonst "A Texture managed by Assets
+        // was destroyed instead of unloaded".
+        if (sprite) {
+          root.removeChild(sprite)
+          sprite.destroy()
+          sprite = null
+        }
         if (loadedUrl) {
           void Assets.unload(loadedUrl).catch(() => undefined)
+          loadedUrl = null
         }
         for (const tokenContainer of tokenContainers) {
           tokenContainer.destroy({ children: true })

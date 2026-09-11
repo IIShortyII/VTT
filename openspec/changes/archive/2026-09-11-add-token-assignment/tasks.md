@@ -9,7 +9,7 @@
 
 ## 1. Tests (test-author)
 
-- [ ] 1.1 Socket-Integrationstests in der bestehenden Token-Socket-Suite: die 7 Szenarien
+- [x] 1.1 Socket-Integrationstests in der bestehenden Token-Socket-Suite: die 7 Szenarien
       „Token zuweisen" und die 3 neuen Szenarien „Token bewegen" („Spieler bewegt sein
       eigenes Token", „Spieler darf ein fremdes Token nicht bewegen", „Entzogene Zuweisung
       wirkt mit der nächsten Bewegung" — letzteres mit **einer** Spieler-Verbindung für beide
@@ -22,7 +22,7 @@
       `ownerId` fehlt, und der ersetzte Test rot ist, weil die Meldung nicht stimmt bzw.
       `ownerId` in der DB nicht existiert (Prisma-Typfehler beim Rot-Bestätigen
       unterscheiden)
-- [ ] 1.2 Komponententests in der bestehenden Token-UI-Suite: die 4 neuen Szenarien
+- [x] 1.2 Komponententests in der bestehenden Token-UI-Suite: die 4 neuen Szenarien
       „Spieler greift nur eigene Tokens", „Spieler sieht die abgelehnte Bewegung",
       „Spielleiter weist ein Token über die Liste zu", „Spielleiter nimmt eine Zuweisung über
       die Liste zurück"; den bestehenden Test „Spieler zieht nicht" an das geänderte Szenario
@@ -39,7 +39,7 @@
 
 ## 2. Schema (implementer)
 
-- [ ] 2.1 `prisma/schema.prisma`: `Token.ownerId String?` mit Relation `owner User?`
+- [x] 2.1 `prisma/schema.prisma`: `Token.ownerId String?` mit Relation `owner User?`
       (`onDelete: SetNull`) und `@@index([ownerId])`, Gegenrelation `tokens Token[]` an
       `User` (design.md D1); Migrationsdatei
       `prisma/migrations/<stamp>_add-token-owner/migration.sql` per `ALTER TABLE … ADD
@@ -49,7 +49,7 @@
 
 ## 3. Gemeinsamer Vertrag (implementer)
 
-- [ ] 3.1 `src/shared/token.ts`: `ownerId: z.string().nullable()` in `TokenSchema`;
+- [x] 3.1 `src/shared/token.ts`: `ownerId: z.string().nullable()` in `TokenSchema`;
       `AssignTokenInputSchema` (`sessionId`, `tokenId`, `ownerId` nullable, nicht optional),
       `AssignTokenAck`, `SESSION_TOKEN_EVENTS.assign = 'session:token-assign'`;
       `TokenMover` und `canMoveToken(token, mover)` als reine Regel (Rolle `spielleiter`
@@ -58,7 +58,7 @@
 
 ## 4. Server (implementer)
 
-- [ ] 4.1 `src/server/session/tokens.ts`: `toToken` kopiert `ownerId`; neuer Handler
+- [x] 4.1 `src/server/session/tokens.ts`: `toToken` kopiert `ownerId`; neuer Handler
       `session:token-assign` (zod-Parse → `authorizeAction` Rolle `spielleiter` → Token der
       aktiven Instanz laden, `Token nicht gefunden.` → bei `ownerId !== null` Mitgliedschaft
       `sessionId_userId` mit Rolle `spieler` prüfen, sonst `Spieler nicht gefunden.` →
@@ -70,23 +70,23 @@
 
 ## 5. Client (implementer)
 
-- [ ] 5.1 `src/client/session/socket.ts`: `assignToken(sessionId, tokenId, ownerId)` mit
+- [x] 5.1 `src/client/session/socket.ts`: `assignToken(sessionId, tokenId, ownerId)` mit
       Acknowledgement über `SESSION_TOKEN_EVENTS.assign` (design.md D4); verifizieren mit
       `pnpm typecheck:src`
-- [ ] 5.2 `src/client/map/canvas.ts`: Option `canMoveToken?: (token) => boolean`; ein Token
+- [x] 5.2 `src/client/map/canvas.ts`: Option `canMoveToken?: (token) => boolean`; ein Token
       ist greifbar genau dann, wenn `onTokenMove` gesetzt ist und `canMoveToken` fehlt oder
       `true` liefert — nur dann `eventMode`/`cursor`/`pointerdown`; greifbare Tokens mit
       Akzentring kennzeichnen (design.md D5); `src/client/map/MapCanvas.tsx`: Prop
       `canMoveToken`, nur beim Erzeugen übergeben; verifizieren mit `pnpm typecheck:src` und
       `pnpm lint`
-- [ ] 5.3 `src/client/session/TokenPanel.tsx`: Props `participants` und `onAssign`, Prop
+- [x] 5.3 `src/client/session/TokenPanel.tsx`: Props `participants` und `onAssign`, Prop
       `error` entfernen (keine Meldung mehr in der Verwaltung); je Token ein
       `<select name="owner" aria-label="<Name> zuweisen">` mit Wert `ownerId ?? ''`, Option
       `Spielleiter` (Wert `''`) und je Teilnehmer mit Rolle `spieler` eine Option mit
       `userId` als Wert und `displayName` als Text; `onChange` → `onAssign(token.id, value
       === '' ? null : value)` (design.md D7); verifiziert durch die Verwaltungs-Szenarien im
       Gate
-- [ ] 5.4 `src/client/session/SessionRoom.tsx`: `MapCanvas` für jede Rolle mit
+- [x] 5.4 `src/client/session/SessionRoom.tsx`: `MapCanvas` für jede Rolle mit
       `onTokenMove` und `canMoveToken` aus der Regel in `shared/token.ts` (Rolle aus dem
       Zustand, `currentUserId` aus den Props); `tokenError` als `<p role="alert">` in der
       Raumansicht für jede Rolle; `handleTokenAssign` über `assignToken` der Fassade mit
@@ -96,9 +96,9 @@
 
 ## 6. Abschluss
 
-- [ ] 6.1 Gate grün (Typecheck, Lint, komplette Jest-Suite inkl. der bestehenden Tests),
+- [x] 6.1 Gate grün (Typecheck, Lint, komplette Jest-Suite inkl. der bestehenden Tests),
       Review „ok"
-- [ ] 6.2 App-Test durch den Menschen (zwei Browser, Spielleiter und Spieler `sam`): Karte
+- [x] 6.2 App-Test durch den Menschen (zwei Browser, Spielleiter und Spieler `sam`): Karte
       aktivieren, Token `Goblin` und `Ork` anlegen → beim Spieler kein Token greifbar, kein
       Ring; Spielleiter wählt im Auswahlfeld `Goblin zuweisen` den Spieler → beim Spieler
       bekommt `Goblin` den Ring und lässt sich ziehen, `Ork` nicht; Spieler zieht `Goblin` →
@@ -108,7 +108,7 @@
       während der Spieler gerade zieht → beim Loslassen erscheint beim Spieler die Meldung
       `Dieses Token darfst du nicht bewegen.` und das Token bleibt; Server neu starten und
       Raum betreten → Zuweisung erhalten; Spieler-Tab zeigt weiterhin keine Token-Verwaltung
-- [ ] 6.3 Change nach `openspec/changes/archive/YYYY-MM-DD-add-token-assignment/` verschieben
+- [x] 6.3 Change nach `openspec/changes/archive/YYYY-MM-DD-add-token-assignment/` verschieben
       (Delta in `openspec/specs/session-token/` einsynchronisieren; danach prüfen, ob die
       Abschnitte „Begriffe"/„Drahtformat" der Hauptspec `ownerId` und
       `session:token-assign` nennen — das Delta trägt sie nur im Vorspann, `openspec`

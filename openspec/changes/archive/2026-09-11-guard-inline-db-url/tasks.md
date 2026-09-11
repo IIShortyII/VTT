@@ -65,8 +65,8 @@
       entfernt" → genau dieser Test rot. Gate erneut grün (169), Reviewer Runde 3: **ok**, kein
       Fail-open mehr; zwei dokumentarische Hinweise (SQLite-Formen ohne Query-Whitelist bewusst,
       D7 nannte noch `EPHEMERAL_DB`) eingearbeitet.
-- [ ] 4.7 Menschliche Freigabe (`constitution.md` §3.4 — kein App-Test, kein Anwendungscode;
+- [x] 4.7 Menschliche Freigabe (`constitution.md` §3.4 — kein App-Test, kein Anwendungscode;
       geprüft wird das Guard-Urteil)
-- [ ] 4.8 `openspec archive guard-inline-db-url --yes`, Purpose der neuen Capability
+- [x] 4.8 `openspec archive guard-inline-db-url --yes`, Purpose der neuen Capability
       ausfüllen, PR als Teil 2 von 3 zu #44 (kein `Closes`, Admin-Bypass wie bei #53);
       menschlicher Merge

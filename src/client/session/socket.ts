@@ -20,7 +20,10 @@ import {
   type CreateTokenInput,
   type MoveTokenAck,
   type RemoveTokenAck,
+  type ShareTokenAck,
+  type TokenAudience,
   type TokenConditionsAck,
+  type TokenStat,
   type TokenStatsAck,
   type TokenStatsPatch,
   type TokensEvent,
@@ -51,6 +54,8 @@ export interface SessionSocketFacade {
   // Schluessel - der Schaden-/Heilungspfad schickt genau `{ hp }`.
   setTokenStats(sessionId: string, tokenId: string, patch: TokenStatsPatch): Promise<TokenStatsAck>
   setTokenConditions(sessionId: string, tokenId: string, conditions: string[]): Promise<TokenConditionsAck>
+  // add-token-sharing (#62, design.md D4): ersetzt die Zielgruppe eines Stats als Ganzes.
+  shareToken(sessionId: string, tokenId: string, stat: TokenStat, audience: TokenAudience): Promise<ShareTokenAck>
   on(event: 'participants', handler: (payload: ParticipantsEvent) => void): void
   on(event: 'status', handler: (payload: StatusEvent) => void): void
   on(event: 'replaced', handler: (payload: ReplacedEvent) => void): void
@@ -146,6 +151,10 @@ export function createSessionSocket(): SessionSocketFacade {
     setTokenConditions: (sessionId: string, tokenId: string, conditions: string[]) =>
       new Promise<TokenConditionsAck>((resolve) => {
         socket.emit(SESSION_TOKEN_EVENTS.conditions, { sessionId, tokenId, conditions }, (ack: TokenConditionsAck) => resolve(ack))
+      }),
+    shareToken: (sessionId: string, tokenId: string, stat: TokenStat, audience: TokenAudience) =>
+      new Promise<ShareTokenAck>((resolve) => {
+        socket.emit(SESSION_TOKEN_EVENTS.share, { sessionId, tokenId, stat, audience }, (ack: ShareTokenAck) => resolve(ack))
       }),
     on: (event: string, handler: (payload: unknown) => void) => {
       if (event === 'reconnect') {

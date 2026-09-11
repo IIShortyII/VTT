@@ -10,7 +10,8 @@ import type { MemberRole } from './session.js'
 // Gegenrichtung erzeugt keinen Laufzeitzyklus.
 //
 // Begriffe siehe specs/session-token/spec.md: "Token", "Name", "Farbe", "Symbol", "Größe",
-// "Zelle", "Aktive Instanz", "Tokendarstellung", "Tokenbestand", "Besitzer".
+// "Zelle", "Aktive Instanz", "Tokendarstellung", "Tokenbestand", "Besitzer", "Stat",
+// "Zielgruppe", "Freigaben".
 
 /** Fester Symbolkatalog (spec.md "Begriffe") - gespeichert wird der Katalogeintrag selbst
  * (das Emoji), nicht ein Schluesselwort (design.md D1). */
@@ -42,13 +43,57 @@ export const ConditionLabelSchema = z
       .regex(/^[^\p{Cc}]+$/u, 'Die Markierung darf keine Steuerzeichen enthalten.'),
   )
 
+/** Die fuenf teilbaren Werte eines Tokens (add-token-sharing #62, design.md D2, spec.md
+ * "Begriffe"): `hp` deckt `hp` UND `hpMax` gemeinsam ab - `hpMax` ist bewusst KEIN eigener
+ * Stat. Reihenfolge wie in der Schnittstellentabelle (design.md D8). */
+export const TOKEN_STATS = ['hp', 'tempHp', 'ac', 'initiative', 'conditions'] as const
+export const TokenStatSchema = z.enum(TOKEN_STATS)
+export type TokenStat = z.infer<typeof TokenStatSchema>
+
+/** Zielgruppe eines Stats (add-token-sharing #62, design.md D2, spec.md "Begriffe"):
+ * `'keine'` (niemand zusaetzlich), `'alle'` (jedes Mitglied) oder eine nicht-leere Liste
+ * eindeutiger `userId`s. Eine leere Liste ist UNGUELTIG, nicht "keine" - der Client sendet
+ * `'keine'` selbst (design.md D7), damit ist eine Liste in `shares` nie leer. */
+export const TokenAudienceSchema = z.union([
+  z.literal('keine'),
+  z.literal('alle'),
+  z
+    .array(z.string())
+    .min(1, 'Die Zielgruppe darf nicht leer sein.')
+    .refine((ids) => new Set(ids).size === ids.length, 'Die Empfänger müssen sich unterscheiden.'),
+])
+export type TokenAudience = z.infer<typeof TokenAudienceSchema>
+
+/** Die fuenf Zielgruppen eines Tokens als Objekt (add-token-sharing #62, design.md D2,
+ * spec.md "Begriffe" "Freigaben"). */
+export const TokenSharesSchema = z.object({
+  hp: TokenAudienceSchema,
+  tempHp: TokenAudienceSchema,
+  ac: TokenAudienceSchema,
+  initiative: TokenAudienceSchema,
+  conditions: TokenAudienceSchema,
+})
+export type TokenShares = z.infer<typeof TokenSharesSchema>
+
+/** Ausgangszustand "nichts geteilt" (add-token-sharing #62, design.md D2) - Rueckfall fuer
+ * den Client und Baustein fuer Test-Fixtures. */
+export const NO_SHARES: TokenShares = {
+  hp: 'keine',
+  tempHp: 'keine',
+  ac: 'keine',
+  initiative: 'keine',
+  conditions: 'keine',
+}
+
 /** Tokendarstellung (spec.md "Begriffe"): `icon` ist ein Katalogeintrag oder `null`.
  * `ownerId` (add-token-assignment #15) ist die `userId` des Besitzers oder `null` ("gehört
  * dem Spielleiter") - fuer jeden Teilnehmer sichtbar, keine verdeckte Information
  * (constitution.md §9.2). add-token-stats (#61, design.md D2): die fuenf Wertefelder sind
  * ganze Zahlen oder `null` - "nicht gesetzt" ODER "fuer diesen Empfaenger verborgen",
  * ununterscheidbar (spec.md "Drahtformat"); `conditions` ist die Markierungsliste in
- * gespeicherter Reihenfolge. */
+ * gespeicherter Reihenfolge. add-token-sharing (#62, design.md D2): `shares` traegt die
+ * Freigaben fuer Spielleiter und Besitzer, `null` fuer jeden anderen Empfaenger - "wer sonst
+ * noch sieht" ist keine Information fuer Dritte (constitution.md §9.2). */
 export const TokenSchema = z.object({
   id: z.string(),
   instanceId: z.string(),
@@ -65,6 +110,7 @@ export const TokenSchema = z.object({
   ac: z.number().int().nullable(),
   initiative: z.number().int().nullable(),
   conditions: z.array(z.string()),
+  shares: TokenSharesSchema.nullable(),
 })
 export type Token = z.infer<typeof TokenSchema>
 
@@ -166,6 +212,18 @@ export const TokenConditionsInputSchema = z.object({
 })
 export type TokenConditionsInput = z.infer<typeof TokenConditionsInputSchema>
 
+/**
+ * Payload von `session:token-share` (add-token-sharing #62, design.md D2): ersetzt die
+ * Zielgruppe eines Stats an einem Token als Ganzes.
+ */
+export const ShareTokenInputSchema = z.object({
+  sessionId: z.string(),
+  tokenId: z.string(),
+  stat: TokenStatSchema,
+  audience: TokenAudienceSchema,
+})
+export type ShareTokenInput = z.infer<typeof ShareTokenInputSchema>
+
 /** Acknowledgement von `session:token-create`. */
 export type CreateTokenAck = { ok: true; token: Token } | { ok: false; message: string }
 
@@ -184,6 +242,9 @@ export type TokenStatsAck = { ok: true; token: Token } | { ok: false; message: s
 /** Acknowledgement von `session:token-conditions` (add-token-stats #61, design.md D2). */
 export type TokenConditionsAck = { ok: true; token: Token } | { ok: false; message: string }
 
+/** Acknowledgement von `session:token-share` (add-token-sharing #62, design.md D2). */
+export type ShareTokenAck = { ok: true; token: Token } | { ok: false; message: string }
+
 /** Payload von `session:tokens` (Server -> Client, spec.md "Drahtformat"). */
 export interface TokensEvent {
   sessionId: string
@@ -199,6 +260,7 @@ export const SESSION_TOKEN_EVENTS = {
   assign: 'session:token-assign',
   stats: 'session:token-stats',
   conditions: 'session:token-conditions',
+  share: 'session:token-share',
   tokens: 'session:tokens',
 } as const
 
@@ -217,4 +279,16 @@ export interface TokenMover {
 
 export function canMoveToken(token: Pick<Token, 'ownerId'>, mover: TokenMover): boolean {
   return mover.role === 'spielleiter' || token.ownerId === mover.userId
+}
+
+/**
+ * Wer die Zielgruppe eines Tokenwerts setzen darf (add-token-sharing #62, design.md D2) -
+ * heute derselbe Koerper wie `canMoveToken`, aber ein eigener Name: eine spaetere
+ * Spielleiter-Sperre gegen das Teilen durch den Besitzer (proposal.md "Nicht im Umfang")
+ * aendert damit nur diese Regel. Der Client benutzt sie NICHT zum Ein-/Ausblenden der
+ * Freigabe-Schalter - das entscheidet `shares !== null` (design.md D7); sie ist die
+ * Serverregel.
+ */
+export function canShareToken(token: Pick<Token, 'ownerId'>, actor: TokenMover): boolean {
+  return actor.role === 'spielleiter' || token.ownerId === actor.userId
 }

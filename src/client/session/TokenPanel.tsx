@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react'
 
 import { displayName, type Participant } from '../../shared/session.js'
-import { TOKEN_ICONS, type CreateTokenInput, type Token, type TokenStatsPatch } from '../../shared/token.js'
+import { TOKEN_ICONS, type CreateTokenInput, type Token, type TokenAudience, type TokenStat, type TokenStatsPatch } from '../../shared/token.js'
 import { CONDITION_CATALOG } from './conditions.js'
+import { TokenShareControls } from './TokenShare.js'
 import { TokenStatsText } from './TokenStats.js'
 
 // Token-Verwaltung des Spielleiters im Raum (design.md D7/D9, spec.md Requirement
@@ -18,6 +19,10 @@ import { TokenStatsText } from './TokenStats.js'
 // Formularzustand fuer die Wertefelder, die Aenderung und die freie Markierung). Die
 // angezeigte Markierungsliste kommt IMMER vom Server (`token.conditions`), nie aus einem
 // lokalen Zwischenstand.
+//
+// add-token-sharing (#62, design.md D6): `onShare` je Zeile durchgereicht, `TokenRow`
+// rendert `TokenShareControls` nach den Wertefeldern - fuer den Spielleiter hat jedes Token
+// `shares` (der Server sendet sie ihm immer), die Schalter erscheinen also an jedem Token.
 
 export interface TokenPanelProps {
   sessionId: string
@@ -28,6 +33,7 @@ export interface TokenPanelProps {
   onAssign: (tokenId: string, ownerId: string | null) => void
   onSetStats: (tokenId: string, patch: TokenStatsPatch) => void
   onSetConditions: (tokenId: string, conditions: string[]) => void
+  onShare: (tokenId: string, stat: TokenStat, audience: TokenAudience) => void
 }
 
 const DEFAULT_COLOR = '#3366ff'
@@ -52,9 +58,10 @@ interface TokenRowProps {
   onAssign: (tokenId: string, ownerId: string | null) => void
   onSetStats: (tokenId: string, patch: TokenStatsPatch) => void
   onSetConditions: (tokenId: string, conditions: string[]) => void
+  onShare: (tokenId: string, stat: TokenStat, audience: TokenAudience) => void
 }
 
-function TokenRow({ token, players, onRemove, onAssign, onSetStats, onSetConditions }: TokenRowProps) {
+function TokenRow({ token, players, onRemove, onAssign, onSetStats, onSetConditions, onShare }: TokenRowProps) {
   const [hp, setHp] = useState(token.hp === null ? '' : String(token.hp))
   const [hpMax, setHpMax] = useState(token.hpMax === null ? '' : String(token.hpMax))
   const [tempHp, setTempHp] = useState(token.tempHp === null ? '' : String(token.tempHp))
@@ -189,6 +196,10 @@ function TokenRow({ token, players, onRemove, onAssign, onSetStats, onSetConditi
         Werte speichern
       </button>
 
+      {/* add-token-sharing (#62, design.md D6): nach den Wertefeldern, vor Aenderung/
+          Schaden/Heilung und Markierungen. */}
+      <TokenShareControls token={token} participants={players} onShare={onShare} />
+
       <label htmlFor={`token-panel-delta-${token.id}`}>{`${token.name} Änderung`}</label>
       <input
         id={`token-panel-delta-${token.id}`}
@@ -249,7 +260,7 @@ function TokenRow({ token, players, onRemove, onAssign, onSetStats, onSetConditi
   )
 }
 
-export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign, onSetStats, onSetConditions }: TokenPanelProps) {
+export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign, onSetStats, onSetConditions, onShare }: TokenPanelProps) {
   const [name, setName] = useState('')
   const [color, setColor] = useState(DEFAULT_COLOR)
   const [icon, setIcon] = useState('')
@@ -332,6 +343,7 @@ export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign,
             onAssign={onAssign}
             onSetStats={onSetStats}
             onSetConditions={onSetConditions}
+            onShare={onShare}
           />
         ))}
       </ul>

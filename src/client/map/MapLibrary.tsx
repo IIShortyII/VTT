@@ -212,7 +212,7 @@ export function MapLibrary({ onBack }: MapLibraryProps) {
         {detailError !== null && <p role="alert">{detailError}</p>}
 
         <div style={{ width: '100%', height: 480 }}>
-          <MapCanvas imageUrl={current.hasImage ? mapImageUrl(current.id) : null} grid={current.grid} />
+          <MapCanvas imageUrl={current.hasImage ? mapImageUrl(current.id) : null} grid={current.grid} tokens={[]} />
         </div>
 
         <form onSubmit={(event) => void handleSave(event)}>

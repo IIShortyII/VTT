@@ -147,7 +147,29 @@ model MapInstance {
   // Gegenrelation zum Zeiger `GameSession.activeInstance` - nicht-null genau dann, wenn diese
   // Instanz die aktive Karte ihrer Spielsitzung ist.
   activeIn  GameSession? @relation("ActiveInstance")
+  // session-token (#14): Gegenrelation zu den Tokens dieser Instanz - siehe design.md D1.
+  tokens    Token[]
 
   @@unique([sessionId, mapId])
   @@index([mapId])
+}
+
+// session-token (#14): eine Figur auf einer Karteninstanz (design.md D1). Haengt an der
+// Instanz, nicht an der Spielsitzung - ein Kartenwechsel behaelt die Tokens, ein Aushaengen
+// nimmt sie mit (`onDelete: Cascade`). `icon` speichert den Katalogeintrag selbst (das
+// Emoji), geprueft durch `TokenIconSchema` an der Grenze (`shared/token.ts`); `col`/`row`
+// sind die Ankerzelle, kein Pixel - Einrasten ist damit eine Eigenschaft des Modells.
+model Token {
+  id         String      @id @default(cuid())
+  instanceId String
+  name       String
+  color      String
+  icon       String?
+  size       Int
+  col        Int
+  row        Int
+  createdAt  DateTime    @default(now())
+  instance   MapInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
 }

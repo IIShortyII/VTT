@@ -1,7 +1,8 @@
-import { Application, Assets, Container, Graphics, Sprite, type FederatedPointerEvent, type Texture } from 'pixi.js'
+import { Application, Assets, Container, Graphics, Sprite, Text, type FederatedPointerEvent, type Texture } from 'pixi.js'
 
-import { cellCorners, cellRange } from '../../shared/grid.js'
+import { cellAt, cellCenter, cellCorners, cellRange, type Cell } from '../../shared/grid.js'
 import type { Grid } from '../../shared/map.js'
+import type { Token } from '../../shared/token.js'
 import { panBy, zoomAt, type View } from './viewport.js'
 
 // Die einzige Datei, die `pixi.js` importiert (design.md D8) - die Mock-Grenze der
@@ -13,11 +14,18 @@ import { panBy, zoomAt, type View } from './viewport.js'
 export interface MapCanvasOptions {
   imageUrl: string | null
   grid: Grid
+  // session-token (#14, design.md D6): der Anfangsbestand und - nur fuer den Spielleiter -
+  // der Rueckruf beim Loslassen eines gezogenen Tokens. `onTokenMove` wird nur beim Erzeugen
+  // gelesen (kein Ziehen fuer Spieler); eine spaetere Aenderung wirkt nicht, weil sich die
+  // Rolle im Raum nicht aendert.
+  tokens: Token[]
+  onTokenMove?: (tokenId: string, cell: Cell) => void
 }
 
 export interface MapCanvasHandle {
   setGrid(grid: Grid): void
   setImage(url: string | null): void
+  setTokens(tokens: Token[]): void
   destroy(): void
 }
 
@@ -32,10 +40,27 @@ const GRID_LINE_COLOR = 0xffffff
 const GRID_LINE_WIDTH = 1
 const BACKGROUND_COLOR = 0x202020
 
+// session-token (#14, design.md D6): Radiusanteil der Zellgroesse und Textfarben/-groessen
+// der Tokendarstellung.
+const TOKEN_RADIUS_FACTOR = 0.9
+const TOKEN_STROKE_COLOR = 0xffffff
+const TOKEN_STROKE_WIDTH = 2
+const TOKEN_SYMBOL_COLOR = 0xffffff
+const TOKEN_NAME_COLOR = 0xffffff
+const TOKEN_NAME_FONT_SIZE = 12
+const TOKEN_NAME_GAP = 4
+
+/** Parst einen Hex-Farbwert (`#rrggbb`, aus `shared/token.ts` bereits validiert) in die von
+ * PixiJS erwartete Zahl. */
+function parseColor(hex: string): number {
+  return Number.parseInt(hex.slice(1), 16)
+}
+
 /**
  * Erzeugt die Kartenansicht: Bild und Raster auf einem Canvas mit Schwenken und Zoomen
- * (design.md D8, spec.md Requirement "Sicht mit Schwenken und Zoomen"). `container` bekommt
- * das erzeugte `<canvas>` angehaengt.
+ * (design.md D8, spec.md Requirement "Sicht mit Schwenken und Zoomen"), sowie die
+ * Tokenebene darueber (session-token #14, design.md D6). `container` bekommt das erzeugte
+ * `<canvas>` angehaengt.
  */
 export async function createMapCanvas(container: HTMLElement, options: MapCanvasOptions): Promise<MapCanvasHandle> {
   const app = new Application()
@@ -48,8 +73,14 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
   const gridGraphics = new Graphics()
   root.addChild(gridGraphics)
 
+  const tokenLayer = new Container()
+  root.addChild(tokenLayer)
+
   let sprite: Sprite | null = null
   let currentGrid: Grid = options.grid
+  let currentTokens: Token[] = options.tokens
+  let tokenContainers: Container[] = []
+  const onTokenMove = options.onTokenMove
   let loadedUrl: string | null = null
   let imageCounter = 0
   let loadToken = 0
@@ -124,6 +155,80 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     drawGrid()
   }
 
+  // session-token (#14, design.md D6): Mittelpunkt der Ankerzelle, bei `quadrat` und
+  // `size > 1` um die halbe zusaetzliche Kantenlaenge je Achse verschoben (Ankerzelle oben
+  // links, das Token deckt `size x size` Zellen); bei Hex bleibt der Mittelpunkt auf der
+  // Ankerzelle.
+  function tokenCenter(token: Token): { x: number; y: number } {
+    const center = cellCenter(currentGrid, { col: token.col, row: token.row })
+    if (currentGrid.type !== 'quadrat' || token.size <= 1) {
+      return center
+    }
+    const offset = ((token.size - 1) * currentGrid.size) / 2
+    return { x: center.x + offset, y: center.y + offset }
+  }
+
+  // Ziehen (nur mit `onTokenMove`, design.md D6): `pointerdown` auf einem Token-Container
+  // merkt sich die gezogene `id` und stoppt die Propagation, damit die Buehne nicht
+  // schwenkt; `pointermove`/`pointerup` der Buehne verschieben nur den Container
+  // (Vorschau) bzw. rechnen die Zielzelle aus und setzen den Container danach zurueck - die
+  // neue Position kommt mit `setTokens` vom Server (constitution.md §9.1).
+  let dragTokenId: string | null = null
+  let dragContainer: Container | null = null
+  let dragOrigin: { x: number; y: number } | null = null
+
+  function buildTokenContainer(token: Token): Container {
+    const tokenContainer = new Container()
+    const center = tokenCenter(token)
+    tokenContainer.position.set(center.x, center.y)
+
+    const radius = (token.size * currentGrid.size * TOKEN_RADIUS_FACTOR) / 2
+    const circle = new Graphics()
+    circle.circle(0, 0, radius)
+    circle.fill(parseColor(token.color))
+    circle.stroke({ width: TOKEN_STROKE_WIDTH, color: TOKEN_STROKE_COLOR })
+    tokenContainer.addChild(circle)
+
+    const symbolText = new Text({
+      text: token.icon ?? token.name.charAt(0).toUpperCase(),
+      style: { fill: TOKEN_SYMBOL_COLOR, fontSize: Math.max(radius, TOKEN_NAME_FONT_SIZE) },
+    })
+    symbolText.anchor.set(0.5)
+    tokenContainer.addChild(symbolText)
+
+    const nameText = new Text({
+      text: token.name,
+      style: { fill: TOKEN_NAME_COLOR, fontSize: TOKEN_NAME_FONT_SIZE },
+    })
+    nameText.anchor.set(0.5, 0)
+    nameText.position.set(0, radius + TOKEN_NAME_GAP)
+    tokenContainer.addChild(nameText)
+
+    if (onTokenMove) {
+      tokenContainer.eventMode = 'static'
+      tokenContainer.cursor = 'grab'
+      tokenContainer.on('pointerdown', (event: FederatedPointerEvent) => {
+        event.stopPropagation()
+        dragTokenId = token.id
+        dragContainer = tokenContainer
+        dragOrigin = { x: tokenContainer.position.x, y: tokenContainer.position.y }
+      })
+    }
+
+    return tokenContainer
+  }
+
+  function drawTokens(): void {
+    for (const tokenContainer of tokenContainers) {
+      tokenLayer.removeChild(tokenContainer)
+      tokenContainer.destroy({ children: true })
+    }
+    tokenContainers = currentTokens.map(buildTokenContainer)
+    for (const tokenContainer of tokenContainers) {
+      tokenLayer.addChild(tokenContainer)
+    }
+  }
+
   app.stage.eventMode = 'static'
   app.stage.hitArea = app.screen
 
@@ -136,6 +241,13 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
   }
 
   function onPointerMove(event: FederatedPointerEvent): void {
+    if (dragTokenId !== null) {
+      if (dragContainer) {
+        const point = root.toLocal(event.global)
+        dragContainer.position.set(point.x, point.y)
+      }
+      return
+    }
     if (!dragging) {
       return
     }
@@ -145,7 +257,22 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     applyView()
   }
 
-  function onPointerUp(): void {
+  function onPointerUp(event: FederatedPointerEvent): void {
+    if (dragTokenId !== null) {
+      const tokenId = dragTokenId
+      const draggedContainer = dragContainer
+      const origin = dragOrigin
+      dragTokenId = null
+      dragContainer = null
+      dragOrigin = null
+      if (draggedContainer && origin) {
+        const point = root.toLocal(event.global)
+        const cell = cellAt(currentGrid, point)
+        draggedContainer.position.set(origin.x, origin.y)
+        onTokenMove?.(tokenId, cell)
+      }
+      return
+    }
     dragging = false
   }
 
@@ -170,15 +297,23 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
   app.renderer.on('resize', onResize)
 
   drawGrid()
+  drawTokens()
   await applyImage(options.imageUrl)
 
   return {
     setGrid(grid: Grid): void {
       currentGrid = grid
       drawGrid()
+      // Mittelpunkte haengen am Raster - ein Rasterwechsel zeichnet die Tokens neu
+      // (design.md D6).
+      drawTokens()
     },
     setImage(url: string | null): void {
       void applyImage(url)
+    },
+    setTokens(tokens: Token[]): void {
+      currentTokens = tokens
+      drawTokens()
     },
     destroy(): void {
       if (destroyed) {
@@ -194,6 +329,10 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       if (loadedUrl) {
         void Assets.unload(loadedUrl).catch(() => undefined)
       }
+      for (const tokenContainer of tokenContainers) {
+        tokenContainer.destroy({ children: true })
+      }
+      tokenLayer.destroy({ children: true })
       app.destroy(true, { children: true, texture: true })
     },
   }

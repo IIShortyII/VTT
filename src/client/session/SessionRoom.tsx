@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
+import type { Cell } from '../../shared/grid.js'
 import {
   allowedActions,
   displayName,
@@ -11,22 +12,24 @@ import {
   type TransitionAction,
 } from '../../shared/session.js'
 import type { ActiveMap } from '../../shared/session-map.js'
+import type { CreateTokenInput, Token } from '../../shared/token.js'
 import { mapImageUrl } from '../map/api.js'
 import { MapCanvas } from '../map/MapCanvas.js'
 import { MapPanel } from './MapPanel.js'
 import { createSessionSocket, type SessionSocketFacade } from './socket.js'
+import { TokenPanel } from './TokenPanel.js'
 
 // Raumansicht (design.md D10, Requirement "Sitzungsoberflaeche"; session-map #50, Requirement
-// "Kartenansicht im Raum"). Zustand und Teilnehmer kommen ausschliesslich aus dem
-// Acknowledgement von `enter` und den nachfolgenden Server-Ereignissen - der angezeigte
-// Zustand folgt dem Server, nie dem zuletzt geklickten Uebergang oder der zuletzt
-// aktivierten Karte (constitution.md §9.1).
+// "Kartenansicht im Raum"; session-token #14, Requirement "Tokenansicht im Raum"). Zustand
+// und Teilnehmer kommen ausschliesslich aus dem Acknowledgement von `enter` und den
+// nachfolgenden Server-Ereignissen - der angezeigte Zustand folgt dem Server, nie dem zuletzt
+// geklickten Uebergang oder der zuletzt aktivierten Karte (constitution.md §9.1).
 //
 // reenter-room-after-reconnect (#46, design.md D3): eine von der Fassade gemeldete
 // Wiederverbindung betritt denselben Raum ueber dieselbe Fassade erneut - ausser die
-// Verbindung wurde zuvor durch `session:replaced` ersetzt. Die Verdrahtung der fuenf
-// Server-Ereignisse plus des erneuten Betretens geschieht an einer einzigen Stelle
-// (`wireSocket`), die sowohl das Mounten als auch "Hier weiterspielen" aufrufen.
+// Verbindung wurde zuvor durch `session:replaced` ersetzt. Die Verdrahtung der Server-
+// Ereignisse plus des erneuten Betretens geschieht an einer einzigen Stelle (`wireSocket`),
+// die sowohl das Mounten als auch "Hier weiterspielen" aufrufen.
 
 export interface SessionRoomProps {
   sessionId: string
@@ -52,6 +55,7 @@ type RoomState =
       code?: string
       participants: Participant[]
       map: ActiveMap | null
+      tokens: Token[]
     }
 
 export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: SessionRoomProps) {
@@ -79,9 +83,12 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
   const [aliasInput, setAliasInput] = useState('')
   const [aliasError, setAliasError] = useState<string | null>(null)
   const [activateError, setActivateError] = useState<string | null>(null)
+  // session-token (#14, design.md D5): gemeinsame Fehlermeldung fuer das Ziehen auf dem
+  // Canvas und die Token-Verwaltung - beides sind Absichten desselben Spielleiters.
+  const [tokenError, setTokenError] = useState<string | null>(null)
 
-  // Registriert die fuenf Server-Ereignisse und das erneute Betreten bei Wiederverbindung auf
-  // einer gegebenen Fassade, und betritt den Raum ueber sie (design.md D3, D10). `isCancelled`
+  // Registriert die Server-Ereignisse und das erneute Betreten bei Wiederverbindung auf einer
+  // gegebenen Fassade, und betritt den Raum ueber sie (design.md D3, D10). `isCancelled`
   // entscheidet, ob ein inzwischen veraltetes Acknowledgement noch State setzen darf - beide
   // Aufrufer (Mount-Effekt, "Hier weiterspielen") reichen dafuer `cancelledRef` durch.
   const wireSocket = useCallback(
@@ -99,6 +106,7 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
           code: ack.session.code,
           participants: ack.participants,
           map: ack.map ?? null,
+          tokens: ack.tokens,
         })
         const self = ack.participants.find((participant) => participant.userId === currentUserId)
         setAliasInput(self?.alias ?? '')
@@ -129,9 +137,17 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
         setState((prev) => (prev.status === 'bereit' ? { ...prev, sessionStatus: status } : prev))
       })
       // session-map (#50, Requirement "Kartenansicht im Raum"): die angezeigte Karte folgt
-      // ausschliesslich `session:map`, nie der zuletzt geklickten Schaltflaeche.
+      // ausschliesslich `session:map`, nie der zuletzt geklickten Schaltflaeche. `tokens` wird
+      // hier NICHT angefasst - der Server schickt den passenden Bestand unmittelbar danach
+      // ueber `session:tokens` (session-token #14, design.md D5); ein lokales Leeren erzeugte
+      // nur ein Flackern.
       socket.on('map', ({ map }) => {
         setState((prev) => (prev.status === 'bereit' ? { ...prev, map } : prev))
+      })
+      // session-token (#14, Requirement "Tokenbestand beim Betreten und Kartenwechsel"):
+      // ersetzt die Liste vollstaendig.
+      socket.on('tokens', ({ tokens }) => {
+        setState((prev) => (prev.status === 'bereit' ? { ...prev, tokens } : prev))
       })
       // Nach `replaced` MUSS die Fassade sich nicht von selbst neu verbinden oder den Raum
       // erneut betreten (Requirement "Sitzungsoberflaeche") - nur der Hinweis erscheint, ein
@@ -216,6 +232,54 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
       .activateMap(sessionId, instanceId)
       .then((ack) => {
         setActivateError(ack.ok ? null : ack.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
+  // session-token (#14, Requirement "Tokenansicht im Raum"): die Absicht wird gesendet, das
+  // Token springt erst mit dem `session:tokens`, das der Server nach dem Schreiben verteilt
+  // (constitution.md §9.1) - kein optimistisches Verschieben.
+  const handleTokenMove = (tokenId: string, cell: Cell) => {
+    const socket = socketRef.current
+    if (!socket) {
+      return
+    }
+    socket
+      .moveToken(sessionId, tokenId, cell)
+      .then((ack) => {
+        setTokenError(ack.ok ? null : ack.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
+  const handleTokenCreate = (input: Omit<CreateTokenInput, 'sessionId'>) => {
+    const socket = socketRef.current
+    if (!socket) {
+      return
+    }
+    socket
+      .createToken(sessionId, input)
+      .then((ack) => {
+        setTokenError(ack.ok ? null : ack.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
+  const handleTokenRemove = (tokenId: string) => {
+    const socket = socketRef.current
+    if (!socket) {
+      return
+    }
+    socket
+      .removeToken(sessionId, tokenId)
+      .then((ack) => {
+        setTokenError(ack.ok ? null : ack.message)
       })
       .catch((error: unknown) => {
         console.error(error)
@@ -307,7 +371,12 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
       {state.map !== null ? <p>{`Aktive Karte: ${state.map.name}`}</p> : <p>{NO_ACTIVE_MAP_MESSAGE}</p>}
       {state.map !== null && (
         <div style={{ width: '100%', height: MAP_CANVAS_HEIGHT }}>
-          <MapCanvas imageUrl={state.map.hasImage ? mapImageUrl(state.map.mapId) : null} grid={state.map.grid} />
+          <MapCanvas
+            imageUrl={state.map.hasImage ? mapImageUrl(state.map.mapId) : null}
+            grid={state.map.grid}
+            tokens={state.tokens}
+            onTokenMove={state.role === 'spielleiter' ? handleTokenMove : undefined}
+          />
         </div>
       )}
 
@@ -317,6 +386,16 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
           activeInstanceId={state.map?.instanceId ?? null}
           onActivate={handleActivateMap}
           activateError={activateError}
+        />
+      )}
+
+      {state.role === 'spielleiter' && (
+        <TokenPanel
+          sessionId={sessionId}
+          tokens={state.tokens}
+          onCreate={handleTokenCreate}
+          onRemove={handleTokenRemove}
+          error={tokenError}
         />
       )}
 

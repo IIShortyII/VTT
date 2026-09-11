@@ -1,5 +1,6 @@
 import { io, type Socket } from 'socket.io-client'
 
+import { SESSION_FOG_EVENTS, type FogAck, type FogEvent, type FogTarget } from '../../shared/fog.js'
 import type { Cell } from '../../shared/grid.js'
 import {
   SESSION_EVENTS,
@@ -30,8 +31,8 @@ import {
 } from '../../shared/token.js'
 
 // Duenne Fassade ueber socket.io-client (design.md D10) - kennt genau die Ereignisse des
-// Vertrags aus shared/session.ts, shared/session-map.ts und shared/token.ts, nichts sonst.
-// Das ist zugleich die Mock-Grenze fuer Komponententests
+// Vertrags aus shared/session.ts, shared/session-map.ts, shared/token.ts und shared/fog.ts,
+// nichts sonst. Das ist zugleich die Mock-Grenze fuer Komponententests
 // (`jest.mock('../src/client/session/socket.js')`); ohne sie muesste jeder Test
 // socket.io-client selbst nachbauen.
 
@@ -56,12 +57,17 @@ export interface SessionSocketFacade {
   setTokenConditions(sessionId: string, tokenId: string, conditions: string[]): Promise<TokenConditionsAck>
   // add-token-sharing (#62, design.md D4): ersetzt die Zielgruppe eines Stats als Ganzes.
   shareToken(sessionId: string, tokenId: string, stat: TokenStat, audience: TokenAudience): Promise<ShareTokenAck>
+  // add-fog-of-war (#16, design.md D7): die drei Fog-Absichten des Spielleiters.
+  setFog(sessionId: string, revealed: boolean, target: FogTarget): Promise<FogAck>
+  createFogArea(sessionId: string, name: string, cells: Cell[]): Promise<FogAck>
+  deleteFogArea(sessionId: string, areaId: string): Promise<FogAck>
   on(event: 'participants', handler: (payload: ParticipantsEvent) => void): void
   on(event: 'status', handler: (payload: StatusEvent) => void): void
   on(event: 'replaced', handler: (payload: ReplacedEvent) => void): void
   on(event: 'ended', handler: (payload: EndedEvent) => void): void
   on(event: 'map', handler: (payload: MapEvent) => void): void
   on(event: 'tokens', handler: (payload: TokensEvent) => void): void
+  on(event: 'fog', handler: (payload: FogEvent) => void): void
   on(event: 'disconnect', handler: (reason: string) => void): void
   /** Feuert bei jeder erfolgreichen Verbindung ausser der ersten (design.md D2) - der Server
    * hat die Verbindung angenommen, kennt den Raum dieser Verbindung nach der vorangegangenen
@@ -79,6 +85,9 @@ function wireEventFor(event: string): string {
   }
   if (event === 'tokens') {
     return SESSION_TOKEN_EVENTS.tokens
+  }
+  if (event === 'fog') {
+    return SESSION_FOG_EVENTS.fog
   }
   return SESSION_EVENTS[event as 'participants' | 'status' | 'replaced' | 'ended']
 }
@@ -155,6 +164,18 @@ export function createSessionSocket(): SessionSocketFacade {
     shareToken: (sessionId: string, tokenId: string, stat: TokenStat, audience: TokenAudience) =>
       new Promise<ShareTokenAck>((resolve) => {
         socket.emit(SESSION_TOKEN_EVENTS.share, { sessionId, tokenId, stat, audience }, (ack: ShareTokenAck) => resolve(ack))
+      }),
+    setFog: (sessionId: string, revealed: boolean, target: FogTarget) =>
+      new Promise<FogAck>((resolve) => {
+        socket.emit(SESSION_FOG_EVENTS.set, { sessionId, revealed, target }, (ack: FogAck) => resolve(ack))
+      }),
+    createFogArea: (sessionId: string, name: string, cells: Cell[]) =>
+      new Promise<FogAck>((resolve) => {
+        socket.emit(SESSION_FOG_EVENTS.areaCreate, { sessionId, name, cells }, (ack: FogAck) => resolve(ack))
+      }),
+    deleteFogArea: (sessionId: string, areaId: string) =>
+      new Promise<FogAck>((resolve) => {
+        socket.emit(SESSION_FOG_EVENTS.areaDelete, { sessionId, areaId }, (ack: FogAck) => resolve(ack))
       }),
     on: (event: string, handler: (payload: unknown) => void) => {
       if (event === 'reconnect') {

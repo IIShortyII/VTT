@@ -6,16 +6,17 @@ import { CreateMapInputSchema, DEFAULT_GRID, ImageMimeTypeSchema, UpdateMapInput
 import { resolveSession, SESSION_COOKIE_NAME } from '../auth/session.js'
 import type { Clock } from '../core/clock.js'
 import { broadcastMapChanged } from '../session/active-map.js'
-import { findOwnMap, findViewableMap, toMapSummary } from './rules.js'
+import { findOwnMap, toMapSummary } from './rules.js'
 import { detectSignature, readImage, removeImage, writeImage } from './storage.js'
 
 // Duenne Fastify-Anbindung fuer die Kartenbibliothek (design.md D4): jede Route laedt eine
 // Karte ausschliesslich ueber `findOwnMap` - Besitzerpruefung als Teil der Abfrage, kein `if`
 // danach (constitution.md §9.2). Alle id-bezogenen Routen (PATCH, PUT, GET, DELETE) pruefen
 // den Besitzer zuerst, bevor irgendetwas anderes an der Anfrage bewertet wird - eine fremde
-// oder unbekannte Karte verhaelt sich damit fuer jede Art von Anfrage gleich. Ausnahme:
-// `GET .../image` (session-map #50, design.md D6) laedt ueber `findViewableMap` - zusaetzlich
-// zum Besitzer auch ein Mitglied einer Spielsitzung, deren aktive Karte diese Karte ist. Der
+// oder unbekannte Karte verhaelt sich damit fuer jede Art von Anfrage gleich. add-fog-of-war
+// (#16, design.md D5): auch `GET .../image` laedt wieder ausschliesslich ueber `findOwnMap` -
+// ein Mitglied einer Spielsitzung erreicht das Bild der aktiven Karte ausschliesslich ueber
+// `GET /api/sessions/:id/map-image` (`server/session/map-image.ts`, `session-fog`). Der
 // Content-Type-Parser fuer Bild-Uploads ist global in `core/app.ts` registriert (design.md
 // D3); diese Datei prueft den Header selbst gegen die erlaubte Liste.
 
@@ -235,7 +236,7 @@ export function registerMapRoutes(app: FastifyInstance, deps: MapRoutesDeps): vo
       return
     }
 
-    const map = await findViewableMap(prisma, user.id, request.params.id)
+    const map = await findOwnMap(prisma, user.id, request.params.id)
     if (!map || !map.imageFile || !map.imageType) {
       sendError(reply, 404, 'Not Found', map ? IMAGE_MISSING_MESSAGE : MAP_NOT_FOUND_MESSAGE)
       return

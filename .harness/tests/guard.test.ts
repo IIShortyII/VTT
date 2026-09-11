@@ -636,3 +636,68 @@ describe('isTest/isSrc', () => {
     expect(isSrc('openspec/changes/x/proposal.md')).toBe(false)
   })
 })
+
+describe('Migrationssperre liest DATABASE_URL aus dem Kommandotext (harness-migration-guard)', () => {
+  const withDbUrl = (url: string | undefined, fn: () => void) => {
+    const prev = process.env.DATABASE_URL
+    if (url === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = url
+    try { fn() } finally { if (prev === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = prev }
+  }
+  const TEST_DB = 'file:./prisma/test.db'
+  const PROD_DB = 'file:/var/lib/vtt/prod.db'
+
+  describe('Die Migrationssperre prüft den Wert, den das Kommando sieht', () => {
+    it('Ein Präfix auf die Wegwerf-DB lässt die Migration durch', () => {
+      withDbUrl(undefined, () => {
+        expect(evaluate(bash(`DATABASE_URL=${TEST_DB} pnpm prisma migrate dev --name init`), defaultDeps).blocked).toBe(false)
+      })
+    })
+    it('Die env-Form auf die Wegwerf-DB lässt die Migration durch', () => {
+      withDbUrl(undefined, () => {
+        expect(evaluate(bash(`env DATABASE_URL=${TEST_DB} prisma migrate deploy`), defaultDeps).blocked).toBe(false)
+      })
+    })
+    it('Die export-Form auf die Wegwerf-DB lässt die Migration durch', () => {
+      withDbUrl(undefined, () => {
+        expect(evaluate(bash(`export DATABASE_URL=${TEST_DB} && pnpm prisma migrate dev --name init`), defaultDeps).blocked).toBe(false)
+      })
+    })
+    it('Eine Inline-Zuweisung auf eine produktive DB blockt trotz ephemerer Umgebung', () => {
+      withDbUrl(TEST_DB, () => {
+        expect(evaluate(bash(`DATABASE_URL=${PROD_DB} prisma migrate deploy`), defaultDeps).blocked).toBe(true)
+      })
+    })
+    it('Ohne Nennung im Text gilt die Umgebung wie bisher', () => {
+      withDbUrl('file:./prisma/dev.db', () => {
+        expect(evaluate(bash('pnpm prisma migrate dev --name init'), defaultDeps).blocked).toBe(true)
+      })
+    })
+  })
+
+  describe('Jede nicht erkannte Form blockt', () => {
+    it('Zwei Nennungen von DATABASE_URL blocken', () => {
+      withDbUrl(undefined, () => {
+        expect(evaluate(bash(`export DATABASE_URL=${TEST_DB} && DATABASE_URL=${PROD_DB} prisma migrate deploy`), defaultDeps).blocked).toBe(true)
+      })
+    })
+    it('Ein Präfix vor einem anderen Kommando schützt die Migration dahinter nicht', () => {
+      withDbUrl(undefined, () => {
+        expect(evaluate(bash(`DATABASE_URL=${TEST_DB} echo ok && prisma migrate deploy`), defaultDeps).blocked).toBe(true)
+      })
+    })
+    it('Eine Zuweisung ohne export vor einem Trenner blockt', () => {
+      withDbUrl(undefined, () => {
+        expect(evaluate(bash(`DATABASE_URL=${TEST_DB}; prisma migrate deploy`), defaultDeps).blocked).toBe(true)
+      })
+    })
+  })
+
+  describe('Eine Erwähnung des Migrationskommandos bleibt geblockt', () => {
+    it('Ein Heredoc mit dem Migrationskommando im Text bleibt geblockt', () => {
+      withDbUrl(undefined, () => {
+        const heredoc = `gh issue create --body "$(cat <<'EOF'\nBitte prisma migrate dev nicht lokal ausführen.\nEOF\n)"`
+        expect(evaluate(bash(heredoc), defaultDeps).blocked).toBe(true)
+      })
+    })
+  })
+})

@@ -182,6 +182,13 @@ Sitzung, solange der Marker auf einer Rolle steht.
   geheim. Das gilt auch, wenn eine Attribution-Vorgabe des Werkzeugs den Trailer verlangt.
   `Co-Authored-By` und der PR-Footer (constitution.md §7.2) bleiben davon unberührt.
 - Niemals Migrationen/Deploys gegen die produktive Zielumgebung ausführen (nur CI-Pipeline).
+  Gegen die Wegwerf-DB geht es per Inline-Zuweisung im selben Kommando —
+  `DATABASE_URL=file:./prisma/test.db pnpm prisma migrate dev --name <name>` (auch `env …` oder
+  `export … && …`); der Guard liest den Wert aus dem Kommandotext, nicht aus der
+  Sitzungsumgebung. Jede andere Form (zweite Nennung von `DATABASE_URL`, Trenner zwischen
+  Zuweisung und Migration) blockt. Und: ein Kommando, das das Migrationskommando nur im Text
+  **nennt** (Heredoc, `echo`, Commit-Nachricht), blockt ebenfalls — solche Texte per
+  `--body-file` oder Write-Tool anlegen, nicht per Heredoc.
 - Niemals direkt auf `main` pushen; Änderungen nur per PR.
 - Keine neuen Dependencies ohne menschliche Freigabe — Bedarf + Begründung
   nennen, nicht selbst installieren.

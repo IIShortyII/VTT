@@ -38,6 +38,37 @@ const MIGRATION_COMMANDS = /prisma\s+(migrate\s+(deploy|dev|reset)|db\s+push)/
 // Agent schreibt das Schema, fuehrt es aber nicht aus. localhost bleibt fuer einen spaeteren
 // Umzug auf eine Server-DB enthalten.
 const EPHEMERAL_DB = /:memory:|test\.db|localhost|127\.0\.0\.1/
+// Welche Quelle fuer DATABASE_URL das Migrationskommando tatsaechlich sieht
+// (guard-inline-db-url/design.md D1-D5). process.env ist die Umgebung des HOOK-Prozesses, nicht
+// die des Kommandos: eine Inline-Zuweisung im Text ersetzt sie (D1). Rein - kein
+// process.env-Zugriff hier, den macht decide() (D7).
+const DB_URL_MENTION = /\bDATABASE_URL\b/g
+// Der Wert endet am ersten Leerzeichen oder Trenner; Anfuehrungszeichen bleiben Teil des Werts
+// (EPHEMERAL_DB ist ein Teilstring-Match). `DATABASE_URL=x;` liefert damit KEINEN Wert - das
+// Semikolon klebt am Wert, und die Form faellt in "unbekannt" (D5).
+const DB_URL_VALUE = '([^\\s;&|]+)'
+// Praefix und env: die Zuweisung wirkt auf genau das Kommando, das direkt folgt (D2). Weitere
+// VAR=wert-Zuweisungen davor sind erlaubt. Nach dem Wert muss ein Kommandowort folgen, kein
+// Trenner; der Rest wird auf Trenner geprueft (D3).
+const PREFIX_FORM = new RegExp(`^\\s*(?:env\\s+)?(?:[A-Za-z_]\\w*=\\S*\\s+)*DATABASE_URL=${DB_URL_VALUE}\\s+(?![;&|])(\\S[\\s\\S]*)$`)
+// export wirkt auf alles danach (D2) - ein Trenner zwischen Zuweisung und Kommando ist hier gerade
+// die erwartete Form.
+const EXPORT_FORM = new RegExp(`^\\s*export\\s+DATABASE_URL=${DB_URL_VALUE}\\s*(?:&&|;|\\n)\\s*\\S`)
+// Hinter diesen Trennern gilt ein Praefix nicht mehr (D3) - auch die Pipe: bei
+// `DATABASE_URL=x true | prisma migrate` sieht nur die linke Seite den Wert.
+const COMMAND_SEPARATOR = /;|&&|\|\||\||\n|\$\(|`/
+export function databaseUrlForCommand(cmd: string, env: string | undefined): string | undefined {
+  const mentions = (cmd.match(DB_URL_MENTION) ?? []).length
+  if (mentions === 0) return env ?? ''
+  // Jede zweite Nennung - Zuweisung, unset, $DATABASE_URL - ist ein Weg, den geprueften Wert vor
+  // der Migration umzubiegen (D4). Fail-closed.
+  if (mentions > 1) return undefined
+  const prefix = PREFIX_FORM.exec(cmd)
+  if (prefix) return COMMAND_SEPARATOR.test(prefix[2]) ? undefined : prefix[1]
+  const exported = EXPORT_FORM.exec(cmd)
+  if (exported) return exported[1]
+  return undefined
+}
 // Kommandos, die die Testsuite ausfuehren. Fuer den implementer tabu: Jest & Co. geben bei
 // Matcher-Fehlern Codeframes aus den Testdateien aus und umgehen damit die Pfadsperre aus
 // (1) vollstaendig (constitution.md 2.2). Das Gate ruft die Suite als Subprozess des
@@ -366,8 +397,14 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
     }
   }
 
+  // Teilstring-Match bleibt (guard-inline-db-url/design.md D6): auch eine blosse Erwaehnung des
+  // Migrationskommandos (Heredoc, echo, Commit-Nachricht) blockt. Die Unterscheidung
+  // "Kommandoposition oder Zitat" hiesse Shell-Syntax parsen - ein Fehler dort waere fail-open an
+  // einer Grenze, die constitution.md 5.1 dem Menschen vorbehaelt. Ausweg: --body-file / Write-Tool.
   if (MIGRATION_COMMANDS.test(cmd)) {
-    const dbUrl = process.env.DATABASE_URL ?? ''
+    const dbUrl = databaseUrlForCommand(cmd, process.env.DATABASE_URL)
+    if (dbUrl === undefined)
+      return { blocked: true, message: 'Blockiert: Migration — nicht sicher bestimmbar, welches DATABASE_URL das Kommando sieht (mehrere Nennungen oder unbekannte Form). Erkannt werden `DATABASE_URL=… <cmd>`, `env DATABASE_URL=… <cmd>` und `export DATABASE_URL=… && <cmd>`.' }
     if (!EPHEMERAL_DB.test(dbUrl))
       return { blocked: true, message: 'Blockiert: Migration nur gegen die ephemere Test-DB, nie gegen eine produktive Zielumgebung.' }
   }

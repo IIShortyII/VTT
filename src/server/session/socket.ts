@@ -22,7 +22,7 @@ import { authorizeAction } from './authorize.js'
 import type { Presence } from './presence.js'
 import { broadcastParticipants, broadcastStatus, buildParticipants, emitParticipants, roomName } from './room.js'
 import { toSessionSummary } from './rules.js'
-import { broadcastTokens, loadTokens, registerTokenHandlers } from './tokens.js'
+import { broadcastTokens, loadTokensFor, registerTokenHandlers } from './tokens.js'
 
 // Socket-Handler des Raums (design.md D6-D9): Reihenfolge in jedem Handler ist zod-Parse der
 // Payload -> authorizeAction -> Regel -> DB -> Broadcast -> Acknowledgement. Nichts an der
@@ -98,7 +98,7 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
       })
     })
 
-    registerTokenHandlers(io, socket, { prisma, clock })
+    registerTokenHandlers(io, socket, { prisma, clock, presence })
 
     // Der disconnect-Handler hat keinen Absender, dem er antworten koennte - Fehler werden
     // nur geloggt (design.md D8, AGENTS.md: kein stilles catch{}).
@@ -170,7 +170,10 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
     const map = await loadActiveMap(prisma, sessionId)
     // session-token (#14, Requirement "Tokenbestand beim Betreten und Kartenwechsel"): der
     // Tokenbestand der aktiven Instanz erreicht den Betretenden mit demselben Acknowledgement.
-    const tokens = await loadTokens(prisma, sessionId)
+    // add-token-stats (#61, Requirement "Sichtbarkeit der Tokenwerte"): gefiltert fuer die
+    // Rolle und userId dieses Betretenden - Spielleiter alles, Besitzer sein Token, sonst
+    // nichts (constitution.md §9.2).
+    const tokens = await loadTokensFor(prisma, sessionId, { role, userId: user.id })
     callback({ ok: true, session: summary, participants, map, tokens })
   }
 
@@ -281,7 +284,7 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
     // session-token (#14, Requirement "Tokenbestand beim Betreten und Kartenwechsel"): nach
     // jedem Kartenwechsel folgt der Bestand der nun aktiven Instanz - Reihenfolge auf der
     // Leitung ist "session:map" vor "session:tokens".
-    await broadcastTokens(io, prisma, sessionId)
+    await broadcastTokens(io, prisma, presence, sessionId)
     callback({ ok: true, map })
   }
 

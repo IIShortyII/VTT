@@ -22,10 +22,33 @@ export const TOKEN_SIZE_MIN = 1
 export const TOKEN_SIZE_MAX = 4
 export const TOKEN_NAME_MAX_LENGTH = 40
 
+// add-token-stats (#61, design.md D2): Grenzen der Markierungsliste - ein Kurztext von 1 bis
+// 20 Zeichen, hoechstens 12 Markierungen je Token.
+export const CONDITION_MAX_LENGTH = 20
+export const CONDITIONS_MAX = 12
+
+/** Eine Markierung (spec.md "Werte"): getrimmter Text, 1 bis 20 Zeichen, keine
+ * Steuerzeichen - dasselbe Muster wie `name` in `CreateTokenInputSchema`. Der Server prueft
+ * NICHT gegen den 5e-Katalog (`client/session/conditions.ts`) - der Katalog ist eine
+ * Schnellwahl des Clients (spec.md Requirement "Markierungen setzen"). */
+export const ConditionLabelSchema = z
+  .string()
+  .transform((value) => value.trim())
+  .pipe(
+    z
+      .string()
+      .min(1, 'Die Markierung muss mindestens 1 Zeichen lang sein.')
+      .max(CONDITION_MAX_LENGTH, `Die Markierung darf höchstens ${CONDITION_MAX_LENGTH} Zeichen lang sein.`)
+      .regex(/^[^\p{Cc}]+$/u, 'Die Markierung darf keine Steuerzeichen enthalten.'),
+  )
+
 /** Tokendarstellung (spec.md "Begriffe"): `icon` ist ein Katalogeintrag oder `null`.
  * `ownerId` (add-token-assignment #15) ist die `userId` des Besitzers oder `null` ("gehört
  * dem Spielleiter") - fuer jeden Teilnehmer sichtbar, keine verdeckte Information
- * (constitution.md §9.2). */
+ * (constitution.md §9.2). add-token-stats (#61, design.md D2): die fuenf Wertefelder sind
+ * ganze Zahlen oder `null` - "nicht gesetzt" ODER "fuer diesen Empfaenger verborgen",
+ * ununterscheidbar (spec.md "Drahtformat"); `conditions` ist die Markierungsliste in
+ * gespeicherter Reihenfolge. */
 export const TokenSchema = z.object({
   id: z.string(),
   instanceId: z.string(),
@@ -36,6 +59,12 @@ export const TokenSchema = z.object({
   col: z.number(),
   row: z.number(),
   ownerId: z.string().nullable(),
+  hp: z.number().int().nullable(),
+  hpMax: z.number().int().nullable(),
+  tempHp: z.number().int().nullable(),
+  ac: z.number().int().nullable(),
+  initiative: z.number().int().nullable(),
+  conditions: z.array(z.string()),
 })
 export type Token = z.infer<typeof TokenSchema>
 
@@ -48,7 +77,8 @@ const TOKEN_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/
  * ist "kein Symbol" (Muster wie `instanceId` in `session-map.ts`). `col`/`row` ganzzahlig
  * ohne Bereich - negative Werte und Zellen ausserhalb des Bilds sind zulaessig. Kein
  * `ownerId` - ein neu angelegtes Token gehoert dem Spielleiter (add-token-assignment #15,
- * spec.md "Neu angelegtes Token gehört dem Spielleiter").
+ * spec.md "Neu angelegtes Token gehört dem Spielleiter"). Keine Werte - ein neu angelegtes
+ * Token hat keine (add-token-stats #61, spec.md "Neu angelegtes Token hat keine Werte").
  */
 export const CreateTokenInputSchema = z.object({
   sessionId: z.string(),
@@ -101,6 +131,41 @@ export const AssignTokenInputSchema = z.object({
 })
 export type AssignTokenInput = z.infer<typeof AssignTokenInputSchema>
 
+/**
+ * Payload von `session:token-stats` (add-token-stats #61, design.md D2): ein Teilobjekt -
+ * jedes Feld ist optional (fehlend = "unverändert") und nullable (`null` = "löschen"),
+ * `nullable().optional()` in dieser Reihenfolge (Muster wie `ownerId` in
+ * `AssignTokenInputSchema`, erweitert um "fehlend"). Die Kopplung `hp`/`hpMax` steht NICHT
+ * hier - sie haengt vom gespeicherten Stand ab und wird im Handler geprueft (design.md D3).
+ */
+export const TokenStatsInputSchema = z.object({
+  sessionId: z.string(),
+  tokenId: z.string(),
+  hp: z.number().int().min(0).nullable().optional(),
+  hpMax: z.number().int().min(1).nullable().optional(),
+  tempHp: z.number().int().min(0).nullable().optional(),
+  ac: z.number().int().min(0).nullable().optional(),
+  initiative: z.number().int().nullable().optional(),
+})
+export type TokenStatsInput = z.infer<typeof TokenStatsInputSchema>
+/** Fuer Fassade und Panel: das Teilobjekt ohne die Adressierung (design.md D2). */
+export type TokenStatsPatch = Omit<TokenStatsInput, 'sessionId' | 'tokenId'>
+
+/**
+ * Payload von `session:token-conditions` (add-token-stats #61, design.md D2): die
+ * vollstaendige Liste, die die bisherige ersetzt. Eindeutigkeit NACH dem Trimmen, deshalb
+ * `refine` auf dem Array, nicht auf dem Element.
+ */
+export const TokenConditionsInputSchema = z.object({
+  sessionId: z.string(),
+  tokenId: z.string(),
+  conditions: z
+    .array(ConditionLabelSchema)
+    .max(CONDITIONS_MAX, `Es sind höchstens ${CONDITIONS_MAX} Markierungen erlaubt.`)
+    .refine((labels) => new Set(labels).size === labels.length, 'Die Markierungen müssen sich unterscheiden.'),
+})
+export type TokenConditionsInput = z.infer<typeof TokenConditionsInputSchema>
+
 /** Acknowledgement von `session:token-create`. */
 export type CreateTokenAck = { ok: true; token: Token } | { ok: false; message: string }
 
@@ -112,6 +177,12 @@ export type RemoveTokenAck = { ok: true } | { ok: false; message: string }
 
 /** Acknowledgement von `session:token-assign` (add-token-assignment #15, design.md D2). */
 export type AssignTokenAck = { ok: true; token: Token } | { ok: false; message: string }
+
+/** Acknowledgement von `session:token-stats` (add-token-stats #61, design.md D2). */
+export type TokenStatsAck = { ok: true; token: Token } | { ok: false; message: string }
+
+/** Acknowledgement von `session:token-conditions` (add-token-stats #61, design.md D2). */
+export type TokenConditionsAck = { ok: true; token: Token } | { ok: false; message: string }
 
 /** Payload von `session:tokens` (Server -> Client, spec.md "Drahtformat"). */
 export interface TokensEvent {
@@ -126,6 +197,8 @@ export const SESSION_TOKEN_EVENTS = {
   move: 'session:token-move',
   remove: 'session:token-remove',
   assign: 'session:token-assign',
+  stats: 'session:token-stats',
+  conditions: 'session:token-conditions',
   tokens: 'session:tokens',
 } as const
 

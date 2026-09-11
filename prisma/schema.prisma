@@ -165,8 +165,11 @@ model MapInstance {
 // add-token-assignment (#15): `ownerId` ist ein nullabler Verweis auf `User` - `null` heisst
 // "gehoert dem Spielleiter" (design.md D1). `onDelete: SetNull`, weil ein geloeschter Nutzer
 // ein besitzerloses Token hinterlassen soll, kein geloeschtes.
+// add-token-stats (#61): fuenf nullable Wertespalten (design.md D1) - `null` heisst "nicht
+// gesetzt" (proposal.md), kein Default ausser `null`. `conditions` ist die Gegenrelation zu
+// `TokenCondition` (Tabelle statt JSON - SQLite kennt kein `Json`, design.md D1).
 model Token {
-  id         String      @id @default(cuid())
+  id         String           @id @default(cuid())
   instanceId String
   name       String
   color      String
@@ -175,10 +178,32 @@ model Token {
   col        Int
   row        Int
   ownerId    String?
-  createdAt  DateTime    @default(now())
-  instance   MapInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  owner      User?       @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  hp         Int?
+  hpMax      Int?
+  tempHp     Int?
+  ac         Int?
+  initiative Int?
+  createdAt  DateTime         @default(now())
+  instance   MapInstance      @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  owner      User?            @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  conditions TokenCondition[]
 
   @@index([instanceId])
   @@index([ownerId])
+}
+
+// add-token-stats (#61): eine Markierung (Kurztext) an einem Token, geordnet nach `position`
+// (design.md D1). Tabelle statt JSON-String, damit "je Token eindeutig" eine
+// Datenbank-Eigenschaft ist (`@@unique([tokenId, label])`), nicht eine Regel, die jeder
+// Schreibpfad selbst einhalten muss (Muster "Raster als vier Spalten statt JSON", #49 D1).
+// `onDelete: Cascade` - ein entferntes Token nimmt seine Markierungen mit.
+model TokenCondition {
+  id       String @id @default(cuid())
+  tokenId  String
+  label    String
+  position Int
+  token    Token  @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenId, label])
+  @@index([tokenId])
 }

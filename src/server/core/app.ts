@@ -105,7 +105,7 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   registerMapRoutes(app, { prisma, clock, uploadDir, io })
   // session-map (#50): Instanzrouten einer Spielsitzung (Liste, Einhaengen, Aushaengen) -
   // `io`, weil das Aushaengen der aktiven Instanz den Raum informiert (design.md D2).
-  registerSessionMapRoutes(app, { prisma, clock, io })
+  registerSessionMapRoutes(app, { prisma, clock, io, presence })
 
   return app
 }

@@ -95,4 +95,12 @@ export class Presence {
     const roomMap = this.rooms.get(gameSessionId)
     return roomMap ? [...roomMap.values()] : []
   }
+
+  /** add-token-stats (#61, design.md D3): dieselbe Map wie `socketsIn`, nur mit Schluessel -
+   * die Verteilung des Tokenbestands braucht die `userId` je Socket-ID, um die Filterung
+   * gegen die Zuweisung durchzufuehren. */
+  entriesIn(gameSessionId: string): Array<{ userId: string; socketId: string }> {
+    const roomMap = this.rooms.get(gameSessionId)
+    return roomMap ? [...roomMap.entries()].map(([userId, socketId]) => ({ userId, socketId })) : []
+  }
 }

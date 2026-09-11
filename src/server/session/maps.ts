@@ -7,6 +7,7 @@ import { resolveSession, SESSION_COOKIE_NAME } from '../auth/session.js'
 import type { Clock } from '../core/clock.js'
 import { findOwnMap, toMapSummary, type GameMapLike } from '../map/rules.js'
 import { emitActiveMap } from './active-map.js'
+import type { Presence } from './presence.js'
 import { broadcastTokens } from './tokens.js'
 
 // Duenne Fastify-Anbindung fuer die Karteninstanzen einer Spielsitzung (design.md D2, D3):
@@ -19,6 +20,7 @@ export interface SessionMapRoutesDeps {
   prisma: PrismaClient
   clock: Clock
   io: Server
+  presence: Presence
 }
 
 interface SessionIdParams {
@@ -90,7 +92,7 @@ function toInstanceView(instanceId: string, position: number, map: GameMapLike):
 }
 
 export function registerSessionMapRoutes(app: FastifyInstance, deps: SessionMapRoutesDeps): void {
-  const { prisma, io } = deps
+  const { prisma, io, presence } = deps
 
   app.get<{ Params: SessionIdParams }>('/api/sessions/:id/maps', async (request, reply) => {
     const user = await requireUser(request, reply, deps)
@@ -191,7 +193,7 @@ export function registerSessionMapRoutes(app: FastifyInstance, deps: SessionMapR
       // session-token (#14, Requirement "Aushängen löscht die Tokens der Instanz"): die
       // Cascade hat die Tokens bereits geloescht - der leere Bestand erreicht den Raum wie
       // bei jedem anderen Kartenwechsel.
-      await broadcastTokens(io, prisma, gameSession.id)
+      await broadcastTokens(io, prisma, presence, gameSession.id)
     }
 
     reply.status(204).send()

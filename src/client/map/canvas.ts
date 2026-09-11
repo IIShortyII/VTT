@@ -3,6 +3,7 @@ import { Application, Assets, Container, Graphics, Sprite, Text, type FederatedP
 import { cellAt, cellCenter, cellCorners, cellRange, type Cell } from '../../shared/grid.js'
 import type { Grid } from '../../shared/map.js'
 import type { Token } from '../../shared/token.js'
+import { conditionSymbol } from '../session/conditions.js'
 import { panBy, zoomAt, type View } from './viewport.js'
 
 // Die einzige Datei, die `pixi.js` importiert (design.md D8) - die Mock-Grenze der
@@ -70,6 +71,20 @@ const TOKEN_NAME_GAP = 4
 const TOKEN_MOVABLE_RING_COLOR = 0x33ff99
 const TOKEN_MOVABLE_RING_WIDTH = 2
 const TOKEN_MOVABLE_RING_GAP = 3
+
+// add-token-stats (#61, design.md D7): Healthbar unter dem Namen, nur wenn hp UND hpMax
+// gesetzt sind - tempHp als eigener (blauer) Abschnitt am linken Rand, halbe Hoehe.
+const TOKEN_BAR_HEIGHT = 5
+const TOKEN_BAR_BACKGROUND_COLOR = 0x000000
+const TOKEN_BAR_GREEN_COLOR = 0x33cc33
+const TOKEN_BAR_YELLOW_COLOR = 0xffcc00
+const TOKEN_BAR_RED_COLOR = 0xcc3333
+const TOKEN_BAR_TEMP_COLOR = 0x3399ff
+
+// add-token-stats (#61, design.md D7): bis zu drei Markierungssymbole am oberen Rand, ab der
+// vierten Markierung ersetzt das dritte Symbol ein "+N".
+const TOKEN_CONDITION_MAX_SYMBOLS = 3
+const TOKEN_CONDITION_SYMBOL_COLOR = 0xffffff
 
 /** Parst einen Hex-Farbwert (`#rrggbb`, aus `shared/token.ts` bereits validiert) in die von
  * PixiJS erwartete Zahl. */
@@ -279,6 +294,50 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
           dragTokenId = token.id
           dragContainer = tokenContainer
           dragOrigin = { x: tokenContainer.position.x, y: tokenContainer.position.y }
+        })
+      }
+
+      // add-token-stats (#61, design.md D7): Healthbar unter dem Namen, nur wenn hp UND
+      // hpMax gesetzt sind - "nicht gesetzt" und "fuer diesen Empfaenger verborgen" sind
+      // serverseitig ununterscheidbar (redactToken), die Karte zeigt also fuer beide nichts.
+      if (token.hp !== null && token.hpMax !== null) {
+        const barY = radius + TOKEN_NAME_GAP + TOKEN_NAME_FONT_SIZE + 2
+        const barWidth = radius * 2
+        const hpRatio = token.hpMax > 0 ? Math.max(0, Math.min(1, token.hp / token.hpMax)) : 0
+        const hpColor = hpRatio >= 0.5 ? TOKEN_BAR_GREEN_COLOR : hpRatio >= 0.25 ? TOKEN_BAR_YELLOW_COLOR : TOKEN_BAR_RED_COLOR
+
+        const bar = new Graphics()
+        bar.rect(-radius, barY, barWidth, TOKEN_BAR_HEIGHT)
+        bar.fill(TOKEN_BAR_BACKGROUND_COLOR)
+        bar.rect(-radius, barY, barWidth * hpRatio, TOKEN_BAR_HEIGHT)
+        bar.fill(hpColor)
+
+        if (token.tempHp !== null && token.tempHp > 0 && token.hpMax > 0) {
+          const tempRatio = Math.max(0, Math.min(1, Math.min(token.tempHp, token.hpMax) / token.hpMax))
+          bar.rect(-radius, barY, barWidth * tempRatio, TOKEN_BAR_HEIGHT / 2)
+          bar.fill(TOKEN_BAR_TEMP_COLOR)
+        }
+
+        tokenContainer.addChild(bar)
+      }
+
+      // add-token-stats (#61, design.md D7): bis zu drei Markierungssymbole am oberen Rand,
+      // ab der vierten Markierung ersetzt das dritte Symbol ein "+N".
+      if (token.conditions.length > 0) {
+        const count = Math.min(token.conditions.length, TOKEN_CONDITION_MAX_SYMBOLS)
+        const symbols =
+          token.conditions.length <= TOKEN_CONDITION_MAX_SYMBOLS
+            ? token.conditions.slice(0, count).map(conditionSymbol)
+            : [conditionSymbol(token.conditions[0]), conditionSymbol(token.conditions[1]), `+${token.conditions.length - 2}`]
+
+        symbols.forEach((symbol, index) => {
+          const conditionText = new Text({
+            text: symbol,
+            style: { fill: TOKEN_CONDITION_SYMBOL_COLOR, fontSize: TOKEN_NAME_FONT_SIZE },
+          })
+          conditionText.anchor.set(0.5)
+          conditionText.position.set((index - (count - 1) / 2) * (TOKEN_NAME_FONT_SIZE + 2), -radius - TOKEN_NAME_GAP)
+          tokenContainer.addChild(conditionText)
         })
       }
 

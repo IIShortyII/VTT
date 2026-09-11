@@ -48,6 +48,8 @@ jest.mock('../src/client/session/socket.js', () => {
     moveToken: jest.fn(),
     removeToken: jest.fn(),
     assignToken: jest.fn(),
+    setTokenStats: jest.fn(async () => ({ ok: true })),
+    setTokenConditions: jest.fn(async () => ({ ok: true })),
     on: jest.fn((event: string, handler: (payload: unknown) => void) => {
       handlers[event] = handler
     }),
@@ -74,6 +76,8 @@ type SocketTestApi = {
     moveToken: jest.Mock
     removeToken: jest.Mock
     assignToken: jest.Mock
+    setTokenStats: jest.Mock
+    setTokenConditions: jest.Mock
     on: jest.Mock
   }
   __handlers: Record<string, (payload: unknown) => void>
@@ -179,8 +183,40 @@ function spielleiterFetch(): void {
 // `ownerId` ist Teil der Tokendarstellung (spec.md "Drahtformat"). Standardwert `null`
 // ("gehört dem Spielleiter"); wo ein Besitzer gebraucht wird, entsteht eine lokale Variante.
 
-const GOBLIN = { id: 't-goblin', instanceId: 'i-tav', name: 'Goblin', color: '#3366ff', icon: '💀', size: 2, col: 3, row: 4, ownerId: null as string | null }
-const ORK = { id: 't-ork', instanceId: 'i-tav', name: 'Ork', color: '#aa2222', icon: null, size: 1, col: 1, row: 1, ownerId: null as string | null }
+const GOBLIN = {
+  id: 't-goblin',
+  instanceId: 'i-tav',
+  name: 'Goblin',
+  color: '#3366ff',
+  icon: '💀',
+  size: 2,
+  col: 3,
+  row: 4,
+  ownerId: null as string | null,
+  hp: null as number | null,
+  hpMax: null as number | null,
+  tempHp: null as number | null,
+  ac: null as number | null,
+  initiative: null as number | null,
+  conditions: [] as string[],
+}
+const ORK = {
+  id: 't-ork',
+  instanceId: 'i-tav',
+  name: 'Ork',
+  color: '#aa2222',
+  icon: null,
+  size: 1,
+  col: 1,
+  row: 1,
+  ownerId: null as string | null,
+  hp: null as number | null,
+  hpMax: null as number | null,
+  tempHp: null as number | null,
+  ac: null as number | null,
+  initiative: null as number | null,
+  conditions: [] as string[],
+}
 const AKTIVE_KARTE = { instanceId: 'i-tav', mapId: 'm-tav', name: 'Taverne', hasImage: true, grid: QUADRAT }
 
 // Teilnehmer fuer die Zuweisungs-Szenarien (design.md D8): meister (Spielleiter, selbst) und
@@ -431,6 +467,199 @@ test('Abgelehnte Aktion zeigt die Meldung', async () => {
   expect(await screen.findByText('Keine Karte aktiv.')).toBeTruthy()
 })
 
+// ============================================================================================
+// Delta add-token-stats (#61): die 10 neuen Szenarien der Requirement "Tokenansicht im Raum"
+// (tasks.md 1.2). Ein Test je Szenario, Testname = Szenarioname. Elemente ausschliesslich ueber
+// die Schnittstellentabelle design.md D9 (Rolle + zugaenglicher Name, genauer Text). Rote Phase:
+// die Wertefelder, Schaltflaechen, das Auswahlfeld "Markierung wählen", die Ueberschrift
+// "Tokenwerte" und die Fassadenmethoden `setTokenStats`/`setTokenConditions` fehlen — die
+// Abfragen finden ihr Element nicht bzw. der erwartete Fassaden-Aufruf bleibt aus.
+
+test('Spielleiter setzt Werte über die Liste', async () => {
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  fireEvent.change(await screen.findByRole('spinbutton', { name: 'Goblin HP' }), { target: { value: '23' } })
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Goblin HP-Maximum' }), { target: { value: '40' } })
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Goblin RK' }), { target: { value: '16' } })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Goblin Werte speichern' }))
+  })
+
+  await waitFor(() =>
+    expect(socketMock.__facade.setTokenStats).toHaveBeenCalledWith('s1', 't-goblin', {
+      hp: 23,
+      hpMax: 40,
+      tempHp: null,
+      ac: 16,
+      initiative: null,
+    }),
+  )
+})
+
+test('Wertefelder folgen dem Bestand', async () => {
+  const GOBLIN_VOLL = { ...GOBLIN, hp: 23, hpMax: 40, tempHp: 5, ac: 16, initiative: 12 }
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN_VOLL] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  expect(((await screen.findByRole('spinbutton', { name: 'Goblin HP' })) as HTMLInputElement).value).toBe('23')
+  expect((screen.getByRole('spinbutton', { name: 'Goblin HP-Maximum' }) as HTMLInputElement).value).toBe('40')
+  expect((screen.getByRole('spinbutton', { name: 'Goblin Temp-HP' }) as HTMLInputElement).value).toBe('5')
+  expect((screen.getByRole('spinbutton', { name: 'Goblin RK' }) as HTMLInputElement).value).toBe('16')
+  expect((screen.getByRole('spinbutton', { name: 'Goblin Initiative' }) as HTMLInputElement).value).toBe('12')
+
+  expect(screen.getByText('HP 23/40')).toBeTruthy()
+  expect(screen.getByText('Temp 5')).toBeTruthy()
+  expect(screen.getByText('RK 16')).toBeTruthy()
+  expect(screen.getByText('Ini 12')).toBeTruthy()
+})
+
+test('Schaden über die Liste', async () => {
+  const GOBLIN_HP = { ...GOBLIN, hp: 23, hpMax: 40 }
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN_HP] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  fireEvent.change(await screen.findByRole('spinbutton', { name: 'Goblin Änderung' }), { target: { value: '7' } })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Goblin Schaden' }))
+  })
+
+  await waitFor(() => expect(socketMock.__facade.setTokenStats).toHaveBeenCalledWith('s1', 't-goblin', { hp: 16 }))
+})
+
+test('Heilung deckelt am Maximum', async () => {
+  const GOBLIN_HP = { ...GOBLIN, hp: 38, hpMax: 40 }
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN_HP] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  fireEvent.change(await screen.findByRole('spinbutton', { name: 'Goblin Änderung' }), { target: { value: '5' } })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Goblin Heilung' }))
+  })
+
+  await waitFor(() => expect(socketMock.__facade.setTokenStats).toHaveBeenCalledWith('s1', 't-goblin', { hp: 40 }))
+})
+
+test('Schaden ohne Trefferpunkte sendet nichts', async () => {
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  fireEvent.change(await screen.findByRole('spinbutton', { name: 'Goblin Änderung' }), { target: { value: '7' } })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Goblin Schaden' }))
+  })
+
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  expect(socketMock.__facade.setTokenStats).not.toHaveBeenCalled()
+})
+
+test('Spielleiter setzt eine Markierung über die Schnellwahl', async () => {
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  const select = (await screen.findByRole('combobox', { name: 'Goblin Markierung wählen' })) as HTMLSelectElement
+  expect(within(select).getByRole('option', { name: 'Liegend' })).toBeTruthy()
+  expect(within(select).getByRole('option', { name: 'Vergiftet' })).toBeTruthy()
+  expect(within(select).getByRole('option', { name: 'Bewusstlos' })).toBeTruthy()
+
+  await act(async () => {
+    fireEvent.change(select, { target: { value: 'Liegend' } })
+  })
+
+  await waitFor(() => expect(socketMock.__facade.setTokenConditions).toHaveBeenCalledWith('s1', 't-goblin', ['Liegend']))
+})
+
+test('Spielleiter fügt eine freie Markierung hinzu', async () => {
+  const GOBLIN_LIEGEND = { ...GOBLIN, conditions: ['Liegend'] }
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN_LIEGEND] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  fireEvent.change(await screen.findByRole('textbox', { name: 'Goblin Markierung' }), { target: { value: 'Segen' } })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Goblin Markierung hinzufügen' }))
+  })
+
+  await waitFor(() =>
+    expect(socketMock.__facade.setTokenConditions).toHaveBeenCalledWith('s1', 't-goblin', ['Liegend', 'Segen']),
+  )
+})
+
+test('Spielleiter entfernt eine Markierung', async () => {
+  const GOBLIN_ZWEI = { ...GOBLIN, conditions: ['Liegend', 'Segen'] }
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN_ZWEI] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Goblin Markierung Liegend entfernen' }))
+  })
+
+  await waitFor(() => expect(socketMock.__facade.setTokenConditions).toHaveBeenCalledWith('s1', 't-goblin', ['Segen']))
+})
+
+test('Spieler sieht die Werte seines Tokens', async () => {
+  const MEIN_GOBLIN = { ...GOBLIN, ownerId: 'u-selbst', hp: 23, hpMax: 40, tempHp: 5, ac: 16, initiative: 12, conditions: ['Liegend', 'Segen'] }
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [MEIN_GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  expect(await screen.findByRole('heading', { name: 'Tokenwerte' })).toBeTruthy()
+  expect(screen.getByText('HP 23/40')).toBeTruthy()
+  expect(screen.getByText('Temp 5')).toBeTruthy()
+  expect(screen.getByText('RK 16')).toBeTruthy()
+  expect(screen.getByText('Ini 12')).toBeTruthy()
+  expect(screen.getByText('Liegend')).toBeTruthy()
+  expect(screen.getByText('Segen')).toBeTruthy()
+})
+
+test('Spieler sieht ohne Werte keine Werte', async () => {
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [ORK] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  expect(await screen.findByRole('heading', { name: 'Tokenwerte' })).toBeTruthy()
+  // Der Tokenname erscheint, aber kein Werte-Span (queryByText mit dem Werte-Praefix ist null).
+  expect(screen.getByText('Ork')).toBeTruthy()
+  expect(screen.queryByText(/^(HP|Temp|RK|Ini)/)).toBeNull()
+})
+
 test('Spieler sieht keine Token-Verwaltung', async () => {
   installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
   enterAck('spieler', { map: AKTIVE_KARTE, tokens: [GOBLIN] })
@@ -447,4 +676,10 @@ test('Spieler sieht keine Token-Verwaltung', async () => {
   expect(screen.queryByRole('button', { name: 'Anlegen' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Goblin entfernen' })).toBeNull()
   expect(screen.queryByRole('combobox', { name: 'Goblin zuweisen' })).toBeNull()
+  // Delta #61: auch die Werte- und Markierungsbedienung bleibt dem Spieler verborgen.
+  expect(screen.queryByRole('spinbutton', { name: 'Goblin HP' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Goblin Werte speichern' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Goblin Schaden' })).toBeNull()
+  expect(screen.queryByRole('combobox', { name: 'Goblin Markierung wählen' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Goblin Markierung hinzufügen' })).toBeNull()
 })

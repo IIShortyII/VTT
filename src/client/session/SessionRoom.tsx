@@ -64,6 +64,14 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
   // den *aktuellen* Wert, ein `useState`-Wert in der Effekt-Closure waere veraltet
   // (design.md D3, "Achtung bei der Umsetzung").
   const replacedRef = useRef(false)
+  // Reviewer-Finding #46 Runde 1: der Mount-Effekt trennt im Cleanup nur die Fassade, die er
+  // selbst erzeugt hat - "Hier weiterspielen" ersetzt `socketRef.current` zwischenzeitlich
+  // durch eine zweite Fassade, ohne dass der Effekt neu liefe. Diese Sperre gilt fuer *jede*
+  // aktuell gueltige Fassade (Mount-Effekt wie `handleReconnect`) und kippt im Cleanup des
+  // Mount-Effekts - dem einzigen Punkt, der ein echtes Unmount von einem blossen Re-Render
+  // unterscheidet (analog zur bisherigen lokalen `cancelled`-Variable, aber komponentenweit
+  // sichtbar statt effekt-lokal).
+  const cancelledRef = useRef(false)
   // Eingabefeld der eigenen Zeile (design.md D6): einmal beim Betreten mit dem aktuell
   // gesetzten Alias vorbelegt, danach eine unabhaengige Absicht - die angezeigte Benennung
   // (`displayName`) folgt ausschliesslich `state.participants`, nicht dieser Eingabe
@@ -74,10 +82,8 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
 
   // Registriert die fuenf Server-Ereignisse und das erneute Betreten bei Wiederverbindung auf
   // einer gegebenen Fassade, und betritt den Raum ueber sie (design.md D3, D10). `isCancelled`
-  // entscheidet, ob ein inzwischen veraltetes Acknowledgement noch State setzen darf - beim
-  // Mounten die `cancelled`-Sperre des Effekts, bei "Hier weiterspielen" nie (kein Rerun, kein
-  // Cleanup zwischen Klick und Antwort ausser dem Unmount, den die Fassade per `disconnect()`
-  // ohnehin stumm schaltet).
+  // entscheidet, ob ein inzwischen veraltetes Acknowledgement noch State setzen darf - beide
+  // Aufrufer (Mount-Effekt, "Hier weiterspielen") reichen dafuer `cancelledRef` durch.
   const wireSocket = useCallback(
     (socket: SessionSocketFacade, isCancelled: () => boolean) => {
       function applyEnterAck(ack: EnterAck): void {
@@ -139,7 +145,8 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
       })
       // reenter-room-after-reconnect (#46, design.md D2/D3): der Server kennt den Raum einer
       // Verbindung nach einer Trennung nicht mehr - eine gemeldete Wiederverbindung betritt ihn
-      // ueber dieselbe Fassade erneut, ausser die Verbindung wurde inzwischen ersetzt.
+      // ueber dieselbe Fassade erneut, ausser die Verbindung wurde inzwischen ersetzt oder die
+      // Komponente ist inzwischen unmounted (Reviewer-Finding #46 Runde 1).
       socket.on('reconnect', () => {
         if (replacedRef.current || isCancelled()) {
           return
@@ -154,17 +161,20 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
   )
 
   // Betritt den Raum beim Mounten und bei einem Wechsel der `sessionId` - eine neue Fassade
-  // je Betreten, getrennt beim Unmount (design.md D10: "Fassade beim Unmount trennen").
+  // je Betreten. Das Cleanup trennt `socketRef.current`, nicht die hier erzeugte lokale
+  // Variable: "Hier weiterspielen" kann zwischenzeitlich eine andere Fassade dort abgelegt
+  // haben, und genau die - nicht die des urspruenglichen Mounts - ist beim Unmount noch am
+  // Leben (Reviewer-Finding #46 Runde 1; design.md D10: "Fassade beim Unmount trennen").
   useEffect(() => {
+    cancelledRef.current = false
     const socket = createSessionSocket()
     socketRef.current = socket
-    let cancelled = false
 
-    wireSocket(socket, () => cancelled)
+    wireSocket(socket, () => cancelledRef.current)
 
     return () => {
-      cancelled = true
-      socket.disconnect()
+      cancelledRef.current = true
+      socketRef.current?.disconnect()
     }
   }, [wireSocket])
 
@@ -213,16 +223,22 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
   }
 
   // "Hier weiterspielen" (Requirement "Sitzungsoberflaeche"): eine bewusste Handlung des
-  // Nutzers, keine Automatik - die Sperre wird zurueckgesetzt, die neue Fassade beginnt ohne
-  // Vorgeschichte (design.md D3).
+  // Nutzers, keine Automatik - die Sperren werden zurueckgesetzt, die neue Fassade beginnt
+  // ohne Vorgeschichte (design.md D3). Die bisherige Fassade wird zusaetzlich explizit
+  // getrennt (Reviewer-Finding #46 Runde 1) - der Server hat sie zwar bereits getrennt
+  // (design.md D8, "io server disconnect"), aber keine lebende Fassade mit aktiven Handlern
+  // bleibt so in keinem Fall zurueck, bevor die neue erzeugt wird.
   const handleReconnect = () => {
     replacedRef.current = false
+    cancelledRef.current = false
     setReplaced(false)
     setState({ status: 'lädt' })
 
+    socketRef.current?.disconnect()
+
     const socket = createSessionSocket()
     socketRef.current = socket
-    wireSocket(socket, () => false)
+    wireSocket(socket, () => cancelledRef.current)
   }
 
   if (replaced) {

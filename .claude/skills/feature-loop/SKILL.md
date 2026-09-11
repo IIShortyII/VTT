@@ -40,9 +40,12 @@ nächsten Schritt raten:
   `pnpm harness preflight-archive <issue>`). Hake abgeschlossene Tasks anhand des tatsächlichen
   Stands (Gate grün, Review ok, App-Test freigegeben) ab; bei inhaltlicher Unklarheit an den
   Menschen eskalieren statt zu raten. Danach erneut `pnpm harness next <issue>`.
-- `present-app-review` → App im Worktree starten (`pnpm dev` in `.harness/wt/<issue>`), dem
-  Menschen den lokalen Link sowie eine Liste der Changes zum manuellen Testen präsentieren
-  (z. B. aus `tasks.md`/`git diff` abgeleitet). Dann **stoppen und auf eine echte Chat-Antwort
+- `present-app-review` → Zuerst stderr von `next` lesen: meldet es einen belegten Port 3001
+  oder 5173 (PID + Kommandozeile), den Menschen bitten, den Prozess zu beenden — ein neuer
+  Server scheitert daran still. Dann App im Worktree starten (in `.harness/wt/<issue>`: Server
+  mit `node --env-file=.env --import tsx src/server/index.ts`, Client mit `pnpm dev:client`;
+  `pnpm dev:server` lädt keine `.env`), dem Menschen den lokalen Link sowie eine Liste der
+  Changes zum manuellen Testen präsentieren (z. B. aus `tasks.md`/`git diff` abgeleitet). Dann **stoppen und auf eine echte Chat-Antwort
   des Menschen warten** — niemals selbst "ja" annehmen oder simulieren. Erst bei einer
   expliziten Antwort `pnpm harness confirm-app-review <issue> ja` bzw. bei Ablehnung
   `pnpm harness confirm-app-review <issue> nein "<Feedback>"` aufrufen und mit dessen Ausgabe

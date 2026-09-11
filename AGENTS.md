@@ -11,6 +11,13 @@ und NPC-Tokens.
 ## Kommandos
 - Install: `pnpm install` (CI: `pnpm install --frozen-lockfile`)
 - Dev: `pnpm dev` (Client auf Vite + Server parallel) · einzeln: `pnpm dev:client`, `pnpm dev:server`
+  — `pnpm dev:server` lädt **keine** `.env` (tsx tut das nicht, Vite nur für den Client). Für den
+  App-Test im Worktree: `node --env-file=.env --import tsx src/server/index.ts` plus
+  `pnpm dev:client`.
+- Rollen-Antworten: `pnpm harness record-round-summary <issue> <rolle> -` und
+  `pnpm harness record-review <issue> -` — das JSON **ausschließlich über stdin** (`-`); ein
+  Argument bricht ab (pnpm reicht es unter Windows durch cmd.exe, dessen Parser an Klammern
+  und Semikolons bricht).
 - Build: `pnpm build`
 - Typecheck: `pnpm typecheck` (tsc --noEmit, gesamtes Projekt inkl. `tests/`)
 - Typecheck nur der Quellpfade: `pnpm typecheck:src` (`tsconfig.src.json`) — der Lauf, den der
@@ -215,7 +222,11 @@ Sitzung, solange der Marker auf einer Rolle steht.
   durch den freigebenden Menschen, danach regulärer Squash-Merge. Der
   Admin-Bypass ist nur für den Fall reserviert, dass ein Required Check aus
   akzeptiertem Grund rot bleibt (z. B. `traceability` bei reinen Chore-PRs).
-- Nach dem Merge: `pnpm harness cleanup <issue>` entfernt den Feature-Worktree.
+- Nach dem Merge: `pnpm harness cleanup <issue>` entfernt den Feature-Worktree. Hält danach
+  noch ein Prozess Port 3001 oder 5173 (ein Dev-Server aus dem Worktree überlebt das Entfernen
+  und hält die gelöschte `dev.db` per Handle offen), nennt `cleanup` PID und Kommandozeile auf
+  stderr — dieselbe Warnung erscheint vor jedem App-Test. Beenden ist Menschensache
+  (constitution.md §5.1).
 
 ## Versionen
 - Es gelten die Versionen aus `package.json`. Keine Major-Upgrades ohne Freigabe.

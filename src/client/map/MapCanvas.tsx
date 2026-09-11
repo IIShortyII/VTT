@@ -32,6 +32,12 @@ export interface MapCanvasProps {
 export function MapCanvas({ imageUrl, grid, tokens, onTokenMove }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const handleRef = useRef<MapCanvasHandle | null>(null)
+  // App-Test Runde 2 (#14): `createMapCanvas` laeuft asynchron (`app.init`) - trifft waehrend
+  // dieser Zeit ein neuer Wert ein (z. B. `session:tokens`), laeuft kein Effekt unten dafuer
+  // erneut (das Handle stand ja noch nicht). Dieser Ref haelt die jeweils aktuellsten Props,
+  // damit der Mount-Effekt sie nach dem Erzeugen einmalig nachziehen kann.
+  const latestPropsRef = useRef({ grid, imageUrl, tokens })
+  latestPropsRef.current = { grid, imageUrl, tokens }
 
   // Nur beim Mounten erzeugen - spaetere Aenderungen von `grid`/`imageUrl`/`tokens` gehen
   // ueber die Effekte darunter (`setGrid`/`setImage`/`setTokens`), nicht ueber eine
@@ -45,14 +51,31 @@ export function MapCanvas({ imageUrl, grid, tokens, onTokenMove }: MapCanvasProp
     // verwaisten Canvas hinterlassen: das `cancelled`-Flag laesst die dann verspaetet
     // ankommende Instanz sofort wieder zerstoeren, statt sie zu behalten.
     let cancelled = false
+    const initialGrid = grid
+    const initialImageUrl = imageUrl
+    const initialTokens = tokens
     import('./canvas.js')
-      .then(({ createMapCanvas }) => createMapCanvas(container, { imageUrl, grid, tokens, onTokenMove }))
+      .then(({ createMapCanvas }) =>
+        createMapCanvas(container, { imageUrl: initialImageUrl, grid: initialGrid, tokens: initialTokens, onTokenMove }),
+      )
       .then((handle) => {
         if (cancelled) {
           handle.destroy()
           return
         }
         handleRef.current = handle
+        // App-Test Runde 2 (#14): nur nachziehen, was sich waehrend des Aufbaus tatsaechlich
+        // geaendert hat - sonst laedt `setImage` dasselbe Bild ein zweites Mal.
+        const latest = latestPropsRef.current
+        if (latest.grid !== initialGrid) {
+          handle.setGrid(latest.grid)
+        }
+        if (latest.imageUrl !== initialImageUrl) {
+          handle.setImage(latest.imageUrl)
+        }
+        if (latest.tokens !== initialTokens) {
+          handle.setTokens?.(latest.tokens)
+        }
       })
       .catch((error: unknown) => {
         console.error(error)

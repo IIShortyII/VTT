@@ -1,7 +1,8 @@
 /** @jest-environment jsdom */
 // Komponententests zum Requirement "Sitzungsoberfläche" aus
-// openspec/changes/add-game-session/specs/game-session/spec.md und dem Delta
-// openspec/changes/add-username-and-alias/specs/game-session/spec.md (#45; tasks.md 1.1/1.5).
+// openspec/changes/add-game-session/specs/game-session/spec.md und den Deltas
+// openspec/changes/add-username-and-alias/specs/game-session/spec.md (#45) sowie
+// openspec/changes/reenter-room-after-reconnect/specs/game-session/spec.md (#46; tasks.md 1.1/1.2).
 // Ein Test je GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname.
 //
 // Geprueft wird, *was* die Anwendung anbietet und anzeigt — nicht, wie es aussieht (AGENTS.md:
@@ -11,9 +12,9 @@
 // Aufruf der registrierten Handler ausgeloest (design.md D10/D11).
 //
 // Ab #45 tragen Teilnehmer `username`/`alias` statt `email`; benannt wird ueber `displayName`
-// (Alias, sonst Nutzername). Die umgestellten und die neuen Szenarien sind rot, weil die
-// Raumansicht noch `email` rendert und weder das Alias-Feld noch die `displayName`-Anzeige
-// kennt.
+// (Alias, sonst Nutzername). Ab #46 meldet die Fassade eine Wiederverbindung als eigenes
+// Ereignis `reconnect` (Handler ohne Argument) ueber denselben Handler-Mechanismus wie
+// `participants` oder `replaced` (design.md D2).
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
@@ -254,6 +255,61 @@ test('Zustand folgt dem Server', async () => {
   expect(container.innerHTML).not.toMatch(/geoeffnet|geöffnet/i)
 })
 
+test('Wiederverbindung betritt den Raum erneut', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' }]),
+    },
+  ])
+  // Zwei vorbereitete Acknowledgements (design.md D5): das erste beim Oeffnen des Raums, das
+  // zweite auf die gemeldete Wiederverbindung hin — mit anderem Zustand und anderer Anwesenheit,
+  // damit der frische Server-Stand beobachtbar ist (§9.1).
+  socketMock.__facade.enter
+    .mockResolvedValueOnce({
+      ok: true,
+      session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
+      participants: [
+        { userId: 'u-selbst', username: 'ich', role: 'spieler', online: true },
+        { userId: 'u-meister', username: 'meister', role: 'spielleiter', online: true },
+      ],
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      session: { id: 's1', name: 'Abendrunde', status: 'gestartet', role: 'spieler' },
+      participants: [
+        { userId: 'u-selbst', username: 'ich', role: 'spieler', online: true },
+        { userId: 'u-meister', username: 'meister', role: 'spielleiter', online: false },
+      ],
+    })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+  await screen.findByText(/Zustand: geoeffnet|Zustand: geöffnet/i)
+
+  // Die Socket-Fassade meldet eine Wiederverbindung (Ereignis `reconnect`, Handler ohne
+  // Argument) ueber denselben Mechanismus wie die uebrigen Server-Ereignisse (design.md D2).
+  await act(async () => {
+    socketMock.__emit('reconnect', undefined)
+  })
+
+  // Erneutes Betreten ueber dieselbe Fassade: `enter` genau zweimal mit der `sessionId` des
+  // Raums, genau eine erzeugte Fassade, genau ein `connect` (design.md D2/D3, §9.1 — keine
+  // neue Verbindung).
+  await waitFor(() => expect(socketMock.__facade.enter).toHaveBeenCalledTimes(2))
+  expect(socketMock.__facade.enter).toHaveBeenNthCalledWith(1, 's1')
+  expect(socketMock.__facade.enter).toHaveBeenNthCalledWith(2, 's1')
+  expect(socketMock.createSessionSocket).toHaveBeenCalledTimes(1)
+  expect(socketMock.__facade.connect).toHaveBeenCalledTimes(1)
+
+  // Zustand und Anwesenheit folgen dem frischen Acknowledgement: `gestartet`, `meister` abwesend.
+  await screen.findByText(/Zustand: gestartet/i)
+  expect(screen.getByText(/\bmeister\b/)).toBeTruthy()
+  expect(screen.getByText(/abwesend/i)).toBeTruthy()
+})
+
 test('Ersetzte Verbindung verbindet sich nicht neu', async () => {
   mockFetch([
     { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
@@ -271,20 +327,24 @@ test('Ersetzte Verbindung verbindet sich nicht neu', async () => {
   render(<App />)
   await screen.findByText(/Abendrunde/)
   await betreten()
-  await waitFor(() => expect(socketMock.__facade.enter).toHaveBeenCalled())
+  await waitFor(() => expect(socketMock.__facade.enter).toHaveBeenCalledTimes(1))
 
   const connectRufeVorher = socketMock.__facade.connect.mock.calls.length
-  const enterRufeVorher = socketMock.__facade.enter.mock.calls.length
 
+  // Nach `replaced` und der Trennung meldet die Fassade zusaetzlich eine Wiederverbindung —
+  // die neue Automatik darf sie NICHT in ein erneutes Betreten uebersetzen (design.md D3,
+  // Requirement "Sitzungsoberflaeche").
   await act(async () => {
     socketMock.__emit('replaced', { sessionId: 's1' })
     socketMock.__emit('disconnect', 'io server disconnect')
+    socketMock.__emit('reconnect', undefined)
   })
 
   await waitFor(() => expect(screen.getByText(/an anderer stelle/i)).toBeTruthy())
-  // Kein selbsttaetiger Wiederaufbau, kein erneutes Betreten (constitution.md §9.1, design.md D10).
+  // Kein selbsttaetiger Wiederaufbau, kein erneutes Betreten (constitution.md §9.1, design.md D3):
+  // `enter` genau einmal, kein weiteres `connect`.
+  expect(socketMock.__facade.enter).toHaveBeenCalledTimes(1)
   expect(socketMock.__facade.connect.mock.calls.length).toBe(connectRufeVorher)
-  expect(socketMock.__facade.enter.mock.calls.length).toBe(enterRufeVorher)
 })
 
 test('Beendete Spielsitzung führt zur Liste zurück', async () => {

@@ -1,5 +1,6 @@
-// Integrationstests zu openspec/changes/add-game-session/specs/game-session/spec.md und dem
-// Delta openspec/changes/add-username-and-alias/specs/game-session/spec.md (Alias, #45).
+// Integrationstests zu openspec/changes/add-game-session/specs/game-session/spec.md und den
+// Deltas openspec/changes/add-username-and-alias/specs/game-session/spec.md (Alias, #45) sowie
+// openspec/changes/reenter-room-after-reconnect/specs/game-session/spec.md (Raumwechsel, #46).
 // Ein Test je GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname.
 //
 // Aufbau nach design.md D11: die App lauscht auf Port 0, ein `socket.io-client` verbindet mit
@@ -481,6 +482,48 @@ test('Verbindungsabbruch setzt das Mitglied auf abwesend', async () => {
   const eintrag = must(participantFor(participantsIn(payload), sp.userId), 'den Spieler weiterhin in der Liste')
   expect(eintrag.online).toBe(false)
   expect(await db().membership.count({ where: { userId: sp.userId, sessionId: gs.id } })).toBe(1)
+})
+
+test('Raumwechsel setzt das Mitglied im alten Raum auf abwesend', async () => {
+  // GIVEN: zwei Spielsitzungen A und B (beide `geoeffnet`). Nutzer `nora` ist Spielleiter von A
+  // und hat A betreten; Nutzer `sven` ist Spieler in A und Spielleiter der zweiten Spielsitzung
+  // B (per Mitgliedschaft — B muss dafuer nicht geoeffnet werden, ist es hier aber). `sven`
+  // betritt A ueber eine Verbindung (design.md D5).
+  const app = await startApp()
+  const nora = await registerUser(app, 'nora@example.com', 'nora')
+  const sven = await registerUser(app, 'sven@example.com', 'sven')
+  const a = await createGameSession({ name: 'A', code: 'AAA234', status: 'geoeffnet' })
+  const b = await createGameSession({ name: 'B', code: 'BBB234', status: 'geoeffnet' })
+  await addMembership(a.id, nora.userId, 'spielleiter')
+  await addMembership(a.id, sven.userId, 'spieler')
+  await addMembership(b.id, sven.userId, 'spielleiter')
+
+  const noraSocket = client(nora.sid)
+  await connect(noraSocket)
+  await enter(noraSocket, a.id)
+
+  const svenSocket = client(sven.sid)
+  await connect(svenSocket)
+
+  // Kontrolle: beim Betreten von A meldet der Server `sven` an nora als `online: true`.
+  const anwesend = once(noraSocket, 'session:participants')
+  await enter(svenSocket, a.id)
+  const svenVorher = must(participantFor(participantsIn(await anwesend), sven.userId), 'sven in der Liste von A')
+  expect(svenVorher.online).toBe(true)
+
+  // WHEN: `sven` betritt ueber DIESELBE Verbindung die Spielsitzung B.
+  const abwesend = once(noraSocket, 'session:participants')
+  const svenAckB = await enter(svenSocket, b.id)
+
+  // THEN: das Acknowledgement nennt B, und nora (im Raum A) erhaelt ein `session:participants`
+  // mit `sessionId` gleich A, das `sven` weiterhin enthaelt, jetzt mit `online: false`.
+  expect(svenAckB.ok).toBe(true)
+  expect(rec(svenAckB.session, 'session im Acknowledgement').id).toBe(b.id)
+
+  const payload = await abwesend
+  expect(rec(payload, 'session:participants nach dem Wechsel').sessionId).toBe(a.id)
+  const svenNachher = must(participantFor(participantsIn(payload), sven.userId), 'sven weiterhin in der Liste von A')
+  expect(svenNachher.online).toBe(false)
 })
 
 test('Teilnehmerliste enthält Nutzername und Alias, aber keine E-Mail', async () => {

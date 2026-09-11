@@ -8,7 +8,7 @@
 
 ## 1. Tests (test-author)
 
-- [ ] 1.1 Socket-Integrationstests in der bestehenden Token-Socket-Suite: die 8 Szenarien
+- [x] 1.1 Socket-Integrationstests in der bestehenden Token-Socket-Suite: die 8 Szenarien
       „Tokenwerte setzen", die 5 Szenarien „Markierungen setzen" und die 6 Szenarien
       „Sichtbarkeit der Tokenwerte". Aufbau wie bisher (echte Socket.IO-Clients, Routen,
       `session:activate-map`); Helfer `createTokenDirect` um optionale Werte und
@@ -17,7 +17,7 @@
       die Tests rot sind, weil `session:token-stats`/`session:token-conditions` unbekannt
       sind, die Spalten fehlen bzw. die Werte beim Spieler nicht `null` sind
       (Prisma-Typfehler beim Rot-Bestätigen unterscheiden)
-- [ ] 1.2 Komponententests in der bestehenden Token-UI-Suite: die 10 neuen Szenarien der
+- [x] 1.2 Komponententests in der bestehenden Token-UI-Suite: die 10 neuen Szenarien der
       „Tokenansicht im Raum" („Spielleiter setzt Werte über die Liste", „Wertefelder folgen
       dem Bestand", „Schaden über die Liste", „Heilung deckelt am Maximum", „Schaden ohne
       Trefferpunkte sendet nichts", „Spielleiter setzt eine Markierung über die Schnellwahl",
@@ -33,7 +33,7 @@
 
 ## 2. Schema (implementer)
 
-- [ ] 2.1 `prisma/schema.prisma`: `Token.hp`, `hpMax`, `tempHp`, `ac`, `initiative` als
+- [x] 2.1 `prisma/schema.prisma`: `Token.hp`, `hpMax`, `tempHp`, `ac`, `initiative` als
       `Int?` und Relation `conditions TokenCondition[]`; Modell `TokenCondition` (`tokenId`,
       `label`, `position`, `@@unique([tokenId, label])`, `@@index([tokenId])`, `onDelete:
       Cascade`) (design.md D1); Migrationsdatei
@@ -45,7 +45,7 @@
 
 ## 3. Gemeinsamer Vertrag (implementer)
 
-- [ ] 3.1 `src/shared/token.ts`: `TokenSchema` um `hp`, `hpMax`, `tempHp`, `ac`,
+- [x] 3.1 `src/shared/token.ts`: `TokenSchema` um `hp`, `hpMax`, `tempHp`, `ac`,
       `initiative` (`int().nullable()`) und `conditions` (`string[]`) erweitern;
       Konstanten `CONDITION_MAX_LENGTH = 20`, `CONDITIONS_MAX = 12`; `ConditionLabelSchema`
       (getrimmt, 1–20, keine Steuerzeichen); `TokenStatsInputSchema` (fünf Felder
@@ -57,10 +57,10 @@
 
 ## 4. Server (implementer)
 
-- [ ] 4.1 `src/server/session/presence.ts`: `entriesIn(gameSessionId)` liefert
+- [x] 4.1 `src/server/session/presence.ts`: `entriesIn(gameSessionId)` liefert
       `[{ userId, socketId }]` des Raums (design.md D3); verifizieren mit
       `pnpm typecheck:src`
-- [ ] 4.2 `src/server/session/tokens.ts`: `TOKEN_INCLUDE` (Markierungen nach `position`);
+- [x] 4.2 `src/server/session/tokens.ts`: `TOKEN_INCLUDE` (Markierungen nach `position`);
       `toToken` mit den fünf Werten und `conditions` als Label-Liste; `redactToken(token,
       viewer)` (Spielleiter oder Besitzer: unverändert, sonst fünf Werte `null` und
       `conditions` leer); `loadTokensFor(prisma, sessionId, viewer)`; `broadcastTokens(io,
@@ -77,7 +77,7 @@
       und `presence` im Broadcast; das Ack von `session:token-move` für den Absender mit
       `redactToken` filtern (design.md D3, Risks); verifiziert durch die Socket-Szenarien
       im Gate
-- [ ] 4.3 `src/server/session/socket.ts`: `registerTokenHandlers` mit `presence`;
+- [x] 4.3 `src/server/session/socket.ts`: `registerTokenHandlers` mit `presence`;
       `handleActivateMap` ruft `broadcastTokens` mit `presence`; `handleEnter` legt
       `loadTokensFor(prisma, sessionId, { role, userId })` ins Acknowledgement (design.md
       D4); `src/server/session/maps.ts`: `presence` in den Deps, Aufruf beim Aushängen mit
@@ -87,22 +87,22 @@
 
 ## 5. Client (implementer)
 
-- [ ] 5.1 `src/client/session/socket.ts`: `setTokenStats(sessionId, tokenId, patch)` und
+- [x] 5.1 `src/client/session/socket.ts`: `setTokenStats(sessionId, tokenId, patch)` und
       `setTokenConditions(sessionId, tokenId, conditions)` mit Acknowledgement (design.md
       D5); verifizieren mit `pnpm typecheck:src`
-- [ ] 5.2 `src/client/session/conditions.ts`: `CONDITION_CATALOG` (15 Einträge, Reihenfolge
+- [x] 5.2 `src/client/session/conditions.ts`: `CONDITION_CATALOG` (15 Einträge, Reihenfolge
       und Schreibweise aus design.md D6) und `conditionSymbol(label)`; verifizieren mit
       `pnpm typecheck:src` und `pnpm lint`
-- [ ] 5.3 `src/client/map/canvas.ts`: in `buildTokenContainer` Healthbar (nur bei `hp` und
+- [x] 5.3 `src/client/map/canvas.ts`: in `buildTokenContainer` Healthbar (nur bei `hp` und
       `hpMax`, `tempHp` als eigener Abschnitt) und bis zu drei Markierungssymbole am oberen
       Rand, ab der vierten `+N` (design.md D7); keine neuen Optionen; verifizieren mit
       `pnpm typecheck:src` und `pnpm lint` — Aussehen im App-Test
-- [ ] 5.4 `src/client/session/TokenStats.tsx`: `TokenStatsText` (Spans `HP <hp>/<hpMax>`,
+- [x] 5.4 `src/client/session/TokenStats.tsx`: `TokenStatsText` (Spans `HP <hp>/<hpMax>`,
       `Temp <tempHp>`, `RK <ac>`, `Ini <initiative>` nur bei gesetztem Wert; Markierungen als
       `<li>`) und `PlayerTokenList` (`<h2>Tokenwerte</h2>`, je Token Name + `TokenStatsText`)
       (design.md D8); verifiziert durch „Spieler sieht die Werte seines Tokens" und „Spieler
       sieht ohne Werte keine Werte" im Gate
-- [ ] 5.5 `src/client/session/TokenPanel.tsx`: Props `onSetStats`, `onSetConditions`; je
+- [x] 5.5 `src/client/session/TokenPanel.tsx`: Props `onSetStats`, `onSetConditions`; je
       Token eine `TokenRow` mit den fünf Wertefeldern (vorbelegt, bei geändertem Bestand neu
       vorbelegt), `Werte speichern` (alle fünf Schlüssel, leer → `null`), `Änderung` mit
       `Schaden`/`Heilung` (nur `{ hp }`, nichts bei `hp` `null` oder ungültiger Änderung),
@@ -111,7 +111,7 @@
       und `name`-Attribute genau nach der Schnittstellentabelle in design.md D9; `Anlegen`
       schickt weiterhin nur das Anlegeformular ab; verifiziert durch die
       Verwaltungs-Szenarien im Gate
-- [ ] 5.6 `src/client/session/SessionRoom.tsx`: `handleTokenStats` und
+- [x] 5.6 `src/client/session/SessionRoom.tsx`: `handleTokenStats` und
       `handleTokenConditions` über die Fassade mit derselben `tokenError`-Meldung;
       `TokenPanel` mit `onSetStats`/`onSetConditions`; für Rolle `spieler`
       `<PlayerTokenList tokens={state.tokens} />` (design.md D10); bestehende Szenarien der
@@ -120,9 +120,9 @@
 
 ## 6. Abschluss
 
-- [ ] 6.1 Gate grün (Typecheck, Lint, komplette Jest-Suite inkl. der bestehenden Tests),
+- [x] 6.1 Gate grün (Typecheck, Lint, komplette Jest-Suite inkl. der bestehenden Tests),
       Review „ok"
-- [ ] 6.2 App-Test durch den Menschen (zwei Browser, Spielleiter und Spieler `sam`): Karte
+- [x] 6.2 App-Test durch den Menschen (zwei Browser, Spielleiter und Spieler `sam`): Karte
       aktivieren, Token `Goblin` (an `sam` zugewiesen) und `Ork` anlegen → beide ohne
       Healthbar; Spielleiter setzt bei `Goblin` HP 23 / Maximum 40 / Temp 5 → beim
       Spielleiter und bei `sam` erscheint die Healthbar mit blauem Temp-Abschnitt, in der
@@ -136,7 +136,7 @@
       verschwinden Healthbar und Werte sofort; erneut zuweisen → sie erscheinen wieder;
       Server neu starten und Raum betreten → Werte und Markierungen erhalten; Spieler-Tab
       zeigt weiterhin keine Token-Verwaltung, aber die Liste `Tokenwerte`
-- [ ] 6.3 Change nach `openspec/changes/archive/YYYY-MM-DD-add-token-stats/` verschieben
+- [x] 6.3 Change nach `openspec/changes/archive/YYYY-MM-DD-add-token-stats/` verschieben
       (Delta in `openspec/specs/session-token/` einsynchronisieren; danach prüfen, ob die
       Abschnitte „Begriffe"/„Drahtformat" der Hauptspec die fünf Werte, `conditions`,
       `session:token-stats`, `session:token-conditions` und „`session:tokens` je

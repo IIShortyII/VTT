@@ -111,10 +111,13 @@ const ACTION_STATUS: Record<string, BoardStatus> = {
   'invoke-implementer': 'implementierung',
   'present-app-review': 'app-test',
 }
-function emit(issue: string, a: string, role: Role = 'none'): string {
+function emit(issue: string, a: string, role: Role = 'none', run: Sh = sh): string {
   setRole(issue, role)
   const status = ACTION_STATUS[a]
   if (status) setBoardStatus(issue, status) // Beiwerk: wirft nie, Rueckgabe bewusst ungeprueft
+  // Zweites Beiwerk am selben Trichter (harness-followups/design.md D1): vor dem App-Test die
+  // belegten App-Ports nennen. Aendert nichts am Automaten, blockt nie.
+  if (a === 'present-app-review') warnBusyPorts(run)
   return JSON.stringify({ action: a })
 }
 function fail(msg: string): never { console.error(msg); process.exit(1) }
@@ -142,7 +145,7 @@ function updateLastRound(s: Status, patch: Partial<RoundRecord>) {
 }
 
 // --- Die harten Invarianten: der Zustandsautomat ---
-export function next(i: string): string {
+export function next(i: string, run: Sh = sh): string {
   const s = readStatus(i)
   assertNotPaused(s)
   switch (s.phase) {
@@ -174,10 +177,10 @@ export function next(i: string): string {
       // wurde (z.B. bei einer Eskalations-Nachbearbeitung durch den Menschen) und lastReview
       // dabei geloescht, phase aber auf 'review' stehen gelassen wurde.
       if (!s.lastReview) return emit(i, 'invoke-reviewer', 'reviewer')
-      if (s.lastReview.recommendation === 'ok') { s.phase = 'app-review'; writeStatus(s); return emit(i, 'present-app-review') }
+      if (s.lastReview.recommendation === 'ok') { s.phase = 'app-review'; writeStatus(s); return emit(i, 'present-app-review', 'none', run) }
       return reviewRework(s)
     case 'app-review':
-      if (!s.lastAppReview) return emit(i, 'present-app-review')
+      if (!s.lastAppReview) return emit(i, 'present-app-review', 'none', run)
       if (s.lastAppReview.freigegeben) { s.phase = 'done'; writeStatus(s); return next(i) }
       return reworkImplementer(s) // Ablehnung zaehlt als Nacharbeit-Runde (constitution.md §3.4/§3.5)
     case 'done': {
@@ -270,7 +273,16 @@ export function start(i: string, change?: string, run: Sh = sh) {
   // den git-Aufrufen ungeprueft; ein Fehlschlag faellt spaetestens am Gate auf (setup-start-worktree #24).
   run('pnpm install', worktreeDir(i))
   reportMissingEnv(i)
-  if (change) seedChangeDocs(i, change)
+  if (change) {
+    seedChangeDocs(i, change)
+    // harness-followups/design.md D2: der Leak-Waechter laeuft, sobald er etwas pruefen kann - hier
+    // gegen die Tests, die der Worktree von origin/main schon traegt, und BEVOR Run-State und
+    // Rollenmarker entstehen. Die Sitzung ist rollenlos und korrigiert die Docs direkt (sie liegen
+    // bereits committed im Worktree); ein erneutes `start` findet den Worktree vor und prueft neu.
+    const parts = readChangeParts(i, { issue: i, branch, round: 0, phase: 'red', change })
+    assertNoTestLeak(formatChangeParts(parts), i, parts,
+      'Docs im Worktree korrigieren und `pnpm harness start` erneut aufrufen — es gibt noch keinen Lauf.')
+  }
   writeStatus({ issue: i, branch, round: 0, phase: 'red', change, rounds: [] })
   console.log(next(i))
 }
@@ -318,8 +330,14 @@ export function removeUntrackedSourceDocs(src: string, run: Sh = sh) {
   // `src` bleibt nativ, weil er auch an existsSync/rmSync geht - dort ist die native Form die
   // richtige. Ein Pfad, zwei Verwendungen, zwei Schreibweisen; die Umwandlung gehoert an die
   // Stelle, die sie braucht.
-  const tracked = run(`git ls-files --error-unmatch -- "${fwd(src)}"`)
-  if (tracked.ok) return
+  //
+  // Entschieden wird an der AUSGABE, nicht am Exit-Code (harness-followups/design.md D4): mit
+  // --error-unmatch waere "untracked" ein Fehler samt "error: pathspec ..." auf stderr, obwohl es
+  // der Regelfall ist - jeder Lauf begann mit einer Fehlermeldung, die keine war (#44, Punkt 8).
+  // Ein git-Fehler (kein Repo, git fehlt) liefert ueber sh eine nichtleere Fehlerausgabe und
+  // faellt damit in "behalten" - Unsicherheit heisst hier nicht loeschen (Review-Hinweis).
+  const tracked = run(`git ls-files -- "${fwd(src)}"`)
+  if (tracked.out.trim() !== '') return
   rmSync(src, { recursive: true, force: true })
 }
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
@@ -335,6 +353,14 @@ export function confirmRed(i: string, run: Sh = sh) {
   const missingImpl = /error TS2307|error TS2305|error TS2339|error TS2459|Cannot find module|has no exported member|is not exported/.test(out)
   const compileError = !missingImpl && /error TS\d+|SyntaxError/.test(out)
   const red = !r.ok && !compileError
+  // harness-followups/design.md D2: bestaetigtes Rot, aber die Docs nennen eine der neuen
+  // Testdateien - Abbruch VOR dem Uebergang nach implement, kein Rundenverbrauch, kein
+  // Board-Wechsel. Kein "Rot aus dem falschen Grund": ein Leak ist kein Testergebnis.
+  if (red) {
+    const parts = readChangeParts(i, s)
+    assertNoTestLeak(formatChangeParts(parts), i, parts,
+      `Pausieren (\`pnpm harness pause ${i} "<grund>"\`), Docs im Worktree korrigieren, \`resume\`, dann \`confirm-red\` erneut.`)
+  }
   s.phase = red ? 'implement' : 'red'; writeStatus(s)
   // Nur das BESTAETIGTE Rot schaltet das Board weiter: ein Rot aus dem falschen Grund
   // (Setup-/Compile-Fehler, constitution.md §3.1) ist kein erreichter Schritt.
@@ -741,10 +767,10 @@ function formatReviewFindings(findings: unknown[]): string {
 // Der Abbruch bleibt hart. Filtern wuerde die betroffene Zeile entfernen und den Lauf
 // weiterlaufen lassen - mit einer Spec, die der implementer nur unvollstaendig sieht, ohne dass
 // es jemand merkt. Ein Waechter, der bei einem Treffer weiterlaeuft, waere keiner (G1).
-function assertNoTestLeak(prompt: string, i: string, parts: ChangePart[] = []) {
+function assertNoTestLeak(prompt: string, i: string, parts: ChangePart[] = [], hinweis = '') {
   const fundstelle = (fund: string) => {
     const p = parts.find(x => x.text.includes(fund))
-    return p ? ` (Fundstelle: ${p.quelle})` : ''
+    return (p ? ` (Fundstelle: ${p.quelle})` : '') + (hinweis ? `\n${hinweis}` : '')
   }
   const konventionen = readKonventionen(i)
   for (const f of listTestFiles(i)) {
@@ -908,7 +934,7 @@ function preflightArchive(i: string) { console.log(JSON.stringify(checkPreflight
 // Bewusst nur fuer terminale Phasen: ein laufender Run wuerde sich selbst den Boden
 // entziehen, und ein eskalierter Run muss fuer den Menschen inspizierbar bleiben.
 const CLEANUP_PHASES = new Set<Status['phase']>(['done', 'archived'])
-export function cleanup(i: string, run?: GhRunner) {
+export function cleanup(i: string, run?: GhRunner, shRun: Sh = sh) {
   const s = readStatus(i)
   assertNotPaused(s)
   if (!CLEANUP_PHASES.has(s.phase))
@@ -925,7 +951,66 @@ export function cleanup(i: string, run?: GhRunner) {
   // zur Laufzeit auswertet.
   const marker = join(runDir(i), 'active-role')
   if (existsSync(marker)) rmSync(marker)
+  // Ein Dev-Server aus diesem Worktree ueberlebt das Entfernen des Worktree und haelt Port und
+  // geloeschte dev.db per Handle offen (#44, Punkt 4). Nennen, nicht beenden (constitution.md 5.1).
+  warnBusyPorts(shRun)
   console.log(JSON.stringify({ ok: true, phase: s.phase, worktreeEntfernt }))
+}
+// --- Belegte App-Ports (harness-followups/design.md D1) ---
+// Portbelegung statt Prozesssuche: `pnpm dev:server` startet den Server als
+// `node --import tsx src/server/index.ts` - relativ, ohne Worktree-Pfad in der Kommandozeile, und
+// das Arbeitsverzeichnis eines fremden Prozesses ist unter Windows nicht lesbar. Was der Mensch
+// braucht: wer den Port haelt, den der neue Server gleich brauchen wird.
+export const APP_PORTS = [3001, 5173]
+export type PortOwner = { port: number; pid?: string; commandLine?: string }
+export function busyPorts(run: Sh = sh, platform: NodeJS.Platform = process.platform): { belegt: PortOwner[]; hinweis?: string } {
+  const belegt: PortOwner[] = []
+  const merke = (port: number, pid: string, cmd: { ok: boolean; out: string }) => {
+    if (belegt.some(b => b.port === port)) return
+    belegt.push({ port, pid, commandLine: cmd.ok && cmd.out.trim() !== '' ? cmd.out.trim() : undefined })
+  }
+  if (platform === 'win32') {
+    const r = run('netstat -ano -p tcp')
+    if (!r.ok) return { belegt, hinweis: firstErrorLine(r.out) }
+    for (const line of r.out.split(/\r?\n/)) {
+      // "  TCP    0.0.0.0:3001    0.0.0.0:0    ABHÖREN    20448" - die Statusspalte ist lokalisiert
+      // und wird nicht gelesen; horchend heisst: Gegenstelle 0.0.0.0:0 bzw. [::]:0.
+      const m = /^\s*TCP\s+(\S+):(\d+)\s+(\S+)\s+\S+\s+(\d+)\s*$/.exec(line)
+      if (!m) continue
+      const port = Number(m[2])
+      if (!APP_PORTS.includes(port) || !/^(?:0\.0\.0\.0:0|\[::\]:0)$/.test(m[3])) continue
+      merke(port, m[4], run(`powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${m[4]}').CommandLine"`))
+    }
+    return { belegt }
+  }
+  const r = run('ss -ltnpH')
+  if (!r.ok) return { belegt, hinweis: firstErrorLine(r.out) }
+  for (const line of r.out.split(/\r?\n/)) {
+    // 'LISTEN 0 511 *:5173 *:* users:(("node",pid=4242,fd=20))'
+    // Bekannte Grenze (Review-Hinweis): fehlt der pid=-Teil - ss zeigt fremde Prozesse ohne
+    // Privileg nicht -, bleibt der Port still ungemeldet. Der Regelfall (Dev-Server desselben
+    // Nutzers) ist davon nicht betroffen; nur ein Scheitern des Werkzeugs selbst ergibt den Hinweis.
+    const m = /:(\d+)\s.*pid=(\d+)/.exec(line)
+    if (!m) continue
+    const port = Number(m[1])
+    if (!APP_PORTS.includes(port)) continue
+    merke(port, m[2], run(`ps -o args= -p ${m[2]}`))
+  }
+  return { belegt }
+}
+// Beiwerk wie das Board: stderr, kein Rueckgabewert, kein Abbruch.
+function warnBusyPorts(run: Sh = sh) {
+  const { belegt, hinweis } = busyPorts(run)
+  if (hinweis !== undefined) { console.error(`[app-test] Portprüfung nicht möglich: ${hinweis}`); return }
+  for (const b of belegt)
+    console.error(`[app-test] Port ${b.port} ist belegt — PID ${b.pid ?? '?'}: ${b.commandLine ?? '(Kommandozeile nicht lesbar)'}. Ein neuer Server würde daran still scheitern; Beenden ist Menschensache.`)
+}
+// harness-followups/design.md D3: JSON der Rollen nur ueber stdin. Ein Argument reicht pnpm unter
+// Windows durch cmd.exe - Klammern und Semikolons brechen dessen Parser (Exit 255), Umlaute
+// kommen verstuemmelt an, und der Fehler laege scheinbar bei der Rolle (#44, Punkt 7).
+export function jsonArgOrStdin(arg: string | undefined): string {
+  if (arg === '-') return readFileSync(0, 'utf8')
+  return fail('JSON nur über stdin: `pnpm harness record-round-summary <issue> <rolle> -` bzw. `record-review <issue> -`, das JSON auf stdin. Ein Argument reicht pnpm unter Windows durch cmd.exe, dessen Parser an Klammern und Semikolons bricht und Umlaute verstümmelt.')
 }
 // --- Pause & Fortsetzen (add-harness-pause, Issue #23) ---
 // Der Zustand zwischen den Rollen: der naechste sinnvolle Schritt gehoert keiner. Ohne dieses
@@ -1071,15 +1156,14 @@ const invokedPath = process.argv[1] !== undefined ? resolvePath(process.argv[1])
 const isMain = invokedPath !== undefined && /orchestrator\.ts$/.test(invokedPath.replace(/\\/g, '/'))
 if (isMain) {
   const [verb, ...a] = process.argv.slice(2)
-  const stdin = () => readFileSync(0, 'utf8')
   switch (verb) {
     case 'start': start(a[0], a[1]); break
     case 'confirm-red': confirmRed(a[0]); break
     case 'gate': gate(a[0]); break
     case 'build-impl-prompt': buildImplPrompt(a[0]); break
     case 'build-test-rework-prompt': buildTestReworkPrompt(a[0]); break
-    case 'record-round-summary': recordRoundSummary(a[0], a[1] as Role, a[2] === '-' ? stdin() : a[2]); break
-    case 'record-review': recordReview(a[0], a[1] === '-' ? stdin() : a[1]); break
+    case 'record-round-summary': recordRoundSummary(a[0], a[1] as Role, jsonArgOrStdin(a[2])); break
+    case 'record-review': recordReview(a[0], jsonArgOrStdin(a[1])); break
     case 'confirm-test-rework': confirmTestRework(a[0]); break
     case 'confirm-app-review': confirmAppReview(a[0], a[1], a[2]); break
     case 'preflight-archive': preflightArchive(a[0]); break

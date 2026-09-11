@@ -6,6 +6,7 @@ import {
   cleanup as cleanupRun,
   confirmRed, gate, boardVerb, start,
   buildImplPrompt, buildTestReworkPrompt, readChangeSpec, removeUntrackedSourceDocs,
+  busyPorts, jsonArgOrStdin,
   MAX_ROUNDS,
 } from '../orchestrator.js'
 import type { Status, Sh } from '../orchestrator.js'
@@ -908,7 +909,7 @@ describe('Pfadvergleiche unabhängig von der Schreibweise', () => {
   })
 
   it('Getrackte Propose-Originale bleiben erhalten', () => {
-    const getrackt: Sh = () => ({ ok: true, out: '' }) // ok = git kennt den Pfad
+    const getrackt: Sh = () => ({ ok: true, out: 'openspec/changes/x/proposal.md\n' }) // nichtleere Ausgabe = git kennt den Pfad (harness-followups/design.md D4)
 
     // Erstens die Sache selbst: an einem WIRKLICH vorhandenen Verzeichnis, sonst sagt der Test
     // ueber die Loeschverhinderung nichts aus - rmSync mit force:true wirft auf einem nicht
@@ -946,7 +947,7 @@ describe('Pfadvergleiche unabhängig von der Schreibweise', () => {
     try {
       mkdirSync(src, { recursive: true })
       writeFileSync(join(src, 'proposal.md'), 'x')
-      const run: Sh = () => ({ ok: false, out: 'did not match any file(s) known to git' })
+      const run: Sh = () => ({ ok: true, out: '' }) // leere Ausgabe = untracked, kein Fehler (design.md D4)
       removeUntrackedSourceDocs(src, run)
       expect(existsSync(src)).toBe(false)
     } finally { cleanup(issue) }
@@ -1226,6 +1227,146 @@ describe('Gate-Feedback aus jeder Quelle (harness-gate-feedback)', () => {
       expect(failures[0].message).toContain('Test suite failed to run')
       expect(failures[0].message).toContain('src/server/index.ts:2:24') // der Modulfehler hinter der Kopfzeile bleibt erhalten
       expect(failures[0].message).not.toContain('app.integration.test.ts')
+    })
+  })
+})
+
+describe('Harness-Nacharbeiten aus #44, Teil 3', () => {
+  let exitSpy: jest.SpyInstance
+  let errorSpy: jest.SpyInstance
+  let logSpy: jest.SpyInstance
+  beforeEach(() => {
+    exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => { throw new Error(`process.exit(${code})`) }) as never)
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+    logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined)
+  })
+  afterEach(() => { exitSpy.mockRestore(); errorSpy.mockRestore(); logSpy.mockRestore() })
+  const stderr = () => errorSpy.mock.calls.map(a => a.map(String).join(' ')).join('\n')
+
+  describe('Belegte App-Ports (harness-app-test-preflight)', () => {
+    const NETSTAT = [
+      'Aktive Verbindungen', '',
+      '  Proto  Lokale Adresse         Remoteadresse          Status          PID',
+      '  TCP    0.0.0.0:3001           0.0.0.0:0              ABHÖREN         20448',
+      '  TCP    127.0.0.1:3001         127.0.0.1:52000        HERGESTELLT     20448',
+      '  TCP    [::]:135               [::]:0                 ABHÖREN         1234',
+    ].join('\r\n')
+    const WIN_CMDLINE = '"C:\\Program Files\\nodejs\\node.exe" --import tsx src/server/index.ts'
+    const SS = 'LISTEN 0      511          *:5173       *:*    users:(("node",pid=4242,fd=20))\n'
+      + 'LISTEN 0      4096   127.0.0.1:631    0.0.0.0:*    users:(("cupsd",pid=1,fd=7))\n'
+    const POSIX_CMDLINE = 'node /wt/node_modules/.bin/vite'
+    // Antwortet fuer beide Werkzeugketten, damit der Test unter Windows wie unter Linux dasselbe
+    // sieht - next()/cleanup() fragen die Plattform des Laeufers.
+    const win: Sh = (cmd) =>
+      cmd.startsWith('netstat') ? { ok: true, out: NETSTAT }
+      : cmd.includes('Get-CimInstance') && cmd.includes('20448') ? { ok: true, out: `${WIN_CMDLINE}\r\n` }
+      : { ok: true, out: '' }
+    const posix: Sh = (cmd) =>
+      cmd.startsWith('ss ') ? { ok: true, out: SS }
+      : cmd.startsWith('ps ') && cmd.includes('4242') ? { ok: true, out: `${POSIX_CMDLINE}\n` }
+      : { ok: true, out: '' }
+    const beide: Sh = (cmd) => cmd.startsWith('netstat') || cmd.includes('Get-CimInstance') ? win(cmd) : posix(cmd)
+    const kaputt: Sh = () => ({ ok: false, out: "'netstat' is not recognized as an internal or external command" })
+
+    it('Unter Windows werden netstat und Get-CimInstance gelesen', () => {
+      expect(busyPorts(win, 'win32').belegt).toEqual([{ port: 3001, pid: '20448', commandLine: WIN_CMDLINE }])
+    })
+    it('Unter POSIX werden ss und ps gelesen', () => {
+      expect(busyPorts(posix, 'linux').belegt).toEqual([{ port: 5173, pid: '4242', commandLine: POSIX_CMDLINE }])
+    })
+    it('Ein belegter Port wird bei der Ankündigung des App-Tests genannt', () => {
+      const issue = freshIssue()
+      try {
+        makeStatus(issue, { phase: 'review', lastReview: { recommendation: 'ok', findings: [] } })
+        expect(JSON.parse(next(issue, beide)).action).toBe('present-app-review')
+        expect(stderr()).toMatch(process.platform === 'win32' ? /3001[\s\S]*20448[\s\S]*src\/server\/index\.ts/ : /5173[\s\S]*4242[\s\S]*vite/)
+      } finally { cleanup(issue) }
+    })
+    it('Ein belegter Port wird beim Aufräumen genannt', () => {
+      const issue = freshIssue()
+      try {
+        makeStatus(issue, { phase: 'archived' })
+        cleanupRun(issue, undefined, beide)
+        expect(stderr()).toMatch(process.platform === 'win32' ? /3001[\s\S]*20448/ : /5173[\s\S]*4242/)
+      } finally { cleanup(issue) }
+    })
+    it('Ein fehlendes Werkzeug ergibt einen Hinweis, keinen Abbruch', () => {
+      const issue = freshIssue()
+      try {
+        makeStatus(issue, { phase: 'review', lastReview: { recommendation: 'ok', findings: [] } })
+        expect(JSON.parse(next(issue, kaputt)).action).toBe('present-app-review')
+        expect(stderr()).toMatch(/Portprüfung/)
+        expect(exitSpy).not.toHaveBeenCalled()
+      } finally { cleanup(issue) }
+    })
+  })
+
+  describe('Der Leak-Wächter läuft, sobald er etwas prüfen kann (harness-spec-delivery)', () => {
+    const CHANGE = 'leak-change'
+    const TESTDATEI = 'session.integration.test.ts'
+    function worktreeMitLeak(issue: string) {
+      mkdirSync(join(worktreeDir(issue), 'tests'), { recursive: true })
+      writeFileSync(join(worktreeDir(issue), 'tests', TESTDATEI), 'it("x", () => {})\n')
+      const dir = join(worktreeDir(issue), 'openspec', 'changes', CHANGE)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'proposal.md'), 'Warum: eine Sitzung.')
+      writeFileSync(join(dir, 'design.md'), `D11 — Die Integrationstests liegen in ${TESTDATEI}.`)
+    }
+    it('Ein Leak im Change-Material hält start an, bevor ein Lauf entsteht', () => {
+      const issue = freshIssue()
+      try {
+        worktreeMitLeak(issue)
+        const stumm: Sh = () => ({ ok: true, out: '' })
+        expect(() => start(issue, CHANGE, stumm)).toThrow(/process\.exit/)
+        expect(stderr()).toMatch(/Leak[\s\S]*design\.md/)
+        expect(existsSync(join(runDir(issue), 'status.json'))).toBe(false)
+        expect(existsSync(join(runDir(issue), 'active-role'))).toBe(false)
+      } finally { cleanup(issue) }
+    })
+    it('Ein Leak gegen die neuen Tests hält confirm-red vor dem Übergang an', () => {
+      const issue = freshIssue()
+      try {
+        worktreeMitLeak(issue)
+        makeStatus(issue, { phase: 'red', change: CHANGE, round: 0 })
+        const rot: Sh = () => ({ ok: false, out: 'expect(received).toBe(expected)\n\nExpected: 3\nReceived: undefined' })
+        expect(() => confirmRed(issue, rot)).toThrow(/process\.exit/)
+        expect(stderr()).toMatch(/Leak[\s\S]*design\.md/)
+        expect(readStatus(issue).phase).toBe('red')
+        expect(readStatus(issue).round).toBe(0)
+      } finally { cleanup(issue) }
+    })
+  })
+
+  describe('Tracked-Abfrage der Propose-Originale (harness-worktree-setup)', () => {
+    it('Untracked wird an der leeren Ausgabe erkannt, nicht am Fehler', () => {
+      const issue = freshIssue()
+      const src = join(runDir(issue), 'propose-original')
+      try {
+        mkdirSync(src, { recursive: true })
+        writeFileSync(join(src, 'proposal.md'), 'x')
+        const kommandos: string[] = []
+        removeUntrackedSourceDocs(src, cmd => { kommandos.push(cmd); return { ok: true, out: '' } })
+        expect(existsSync(src)).toBe(false)
+        expect(kommandos.find(c => c.includes('ls-files'))).not.toContain('--error-unmatch')
+      } finally { cleanup(issue) }
+    })
+    it('Getrackt wird an der nichtleeren Ausgabe erkannt', () => {
+      const issue = freshIssue()
+      const src = join(runDir(issue), 'propose-original')
+      try {
+        mkdirSync(src, { recursive: true })
+        writeFileSync(join(src, 'proposal.md'), 'x')
+        removeUntrackedSourceDocs(src, () => ({ ok: true, out: 'openspec/changes/x/proposal.md\n' }))
+        expect(existsSync(src)).toBe(true)
+      } finally { cleanup(issue) }
+    })
+  })
+
+  describe('Rollen-Antworten nur über stdin (harness-run-state-access)', () => {
+    it('Ein JSON-Argument statt stdin wird abgelehnt', () => {
+      expect(() => jsonArgOrStdin('{"zusammenfassung":"x"}')).toThrow(/process\.exit/)
+      expect(stderr()).toMatch(/stdin/)
+      expect(stderr()).toMatch(/cmd\.exe/)
     })
   })
 })

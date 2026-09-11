@@ -22,6 +22,7 @@ import { authorizeAction } from './authorize.js'
 import type { Presence } from './presence.js'
 import { broadcastParticipants, broadcastStatus, buildParticipants, emitParticipants, roomName } from './room.js'
 import { toSessionSummary } from './rules.js'
+import { broadcastTokens, loadTokens, registerTokenHandlers } from './tokens.js'
 
 // Socket-Handler des Raums (design.md D6-D9): Reihenfolge in jedem Handler ist zod-Parse der
 // Payload -> authorizeAction -> Regel -> DB -> Broadcast -> Acknowledgement. Nichts an der
@@ -97,6 +98,8 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
       })
     })
 
+    registerTokenHandlers(io, socket, { prisma, clock })
+
     // Der disconnect-Handler hat keinen Absender, dem er antworten koennte - Fehler werden
     // nur geloggt (design.md D8, AGENTS.md: kein stilles catch{}).
     socket.on('disconnect', () => {
@@ -165,7 +168,10 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
     // erreicht den Betretenden mit dem Acknowledgement - keine uebrigen Instanzen, auch nicht
     // fuer den Spielleiter (die erhaelt er ueber die Instanzliste).
     const map = await loadActiveMap(prisma, sessionId)
-    callback({ ok: true, session: summary, participants, map })
+    // session-token (#14, Requirement "Tokenbestand beim Betreten und Kartenwechsel"): der
+    // Tokenbestand der aktiven Instanz erreicht den Betretenden mit demselben Acknowledgement.
+    const tokens = await loadTokens(prisma, sessionId)
+    callback({ ok: true, session: summary, participants, map, tokens })
   }
 
   async function handleTransition(socket: Socket, payload: unknown, callback: (ack: TransitionAck) => void): Promise<void> {
@@ -272,6 +278,10 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
     await prisma.gameSession.update({ where: { id: sessionId }, data: { activeInstanceId: instanceId } })
     const map = await loadActiveMap(prisma, sessionId)
     emitActiveMap(io, sessionId, map)
+    // session-token (#14, Requirement "Tokenbestand beim Betreten und Kartenwechsel"): nach
+    // jedem Kartenwechsel folgt der Bestand der nun aktiven Instanz - Reihenfolge auf der
+    // Leitung ist "session:map" vor "session:tokens".
+    await broadcastTokens(io, prisma, sessionId)
     callback({ ok: true, map })
   }
 

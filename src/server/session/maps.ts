@@ -7,6 +7,7 @@ import { resolveSession, SESSION_COOKIE_NAME } from '../auth/session.js'
 import type { Clock } from '../core/clock.js'
 import { findOwnMap, toMapSummary, type GameMapLike } from '../map/rules.js'
 import { emitActiveMap } from './active-map.js'
+import { broadcastTokens } from './tokens.js'
 
 // Duenne Fastify-Anbindung fuer die Karteninstanzen einer Spielsitzung (design.md D2, D3):
 // Liste, Einhaengen, Aushaengen. Jede Route laedt die Spielsitzung ausschliesslich ueber
@@ -187,6 +188,10 @@ export function registerSessionMapRoutes(app: FastifyInstance, deps: SessionMapR
 
     if (wasActive) {
       emitActiveMap(io, gameSession.id, null)
+      // session-token (#14, Requirement "Aushängen löscht die Tokens der Instanz"): die
+      // Cascade hat die Tokens bereits geloescht - der leere Bestand erreicht den Raum wie
+      // bei jedem anderen Kartenwechsel.
+      await broadcastTokens(io, prisma, gameSession.id)
     }
 
     reply.status(204).send()

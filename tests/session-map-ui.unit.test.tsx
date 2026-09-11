@@ -13,10 +13,16 @@
 //    `/api/sessions/<id>/maps`, `/api/maps`).
 // Elemente ausschliesslich ueber getByRole/getByLabelText/getByText (D7-Schnittstellentabelle).
 //
-// Rote Phase (tasks.md 1.3): `SessionRoom` kennt weder Kartenansicht noch Hinweis noch
-// Kartenverwaltung; `MapPanel` und die Fassaden-Methode `activateMap` fehlen. Die Szenarien
-// scheitern daher am fehlenden Text/Bedienelement bzw. Verhalten — der erwartete rote Grund,
-// kein Compile-/Setup-Fehler.
+// Delta add-fog-of-war (tasks.md 1.6, MODIFIED-Delta session-map): die Szenarien "Raum mit
+// aktiver Karte zeigt die Kartenansicht" und "Kartenwechsel folgt dem Server" sind auf die neue
+// Bild-URL `/api/sessions/<sessionId>/map-image?fog=<version>` umgestellt und das
+// Enter-Acknowledgement um `fog` ergaenzt. Die uebrigen neun Szenarien bleiben unveraendert.
+//
+// Rote Phase (tasks.md 1.3/1.6): `SessionRoom` kennt weder Kartenansicht noch Hinweis noch
+// Kartenverwaltung; `MapPanel` und die Fassaden-Methode `activateMap` fehlen; die aktive Karte
+// wird heute ueber `/api/maps/<mapId>/image` statt ueber die Sitzungsroute bezogen. Die
+// Szenarien scheitern daher am fehlenden Text/Bedienelement/Verhalten bzw. an der falschen
+// Bild-URL — der erwartete rote Grund, kein Compile-/Setup-Fehler.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
@@ -76,6 +82,17 @@ type CanvasMock = {
   __handle: { setGrid: jest.Mock; setImage: jest.Mock; destroy: jest.Mock }
 }
 const canvasMock = jest.requireMock('../src/client/map/canvas.js') as CanvasMock
+
+/** Die zuletzt an die Kartenansicht uebergebene Bild-URL: die letzte `setImage`-Zeichenkette,
+ * sonst die `imageUrl` aus dem letzten `createMapCanvas`-Aufruf (design.md D7: `setImage` feuert
+ * nur bei geaenderter URL). */
+function aktuelleBildUrl(): string | undefined {
+  const setImageCalls = canvasMock.__handle.setImage.mock.calls
+  if (setImageCalls.length > 0) return setImageCalls[setImageCalls.length - 1][0] as string
+  const createCalls = canvasMock.createMapCanvas.mock.calls
+  if (createCalls.length > 0) return (createCalls[createCalls.length - 1][1] as Record<string, unknown>).imageUrl as string
+  return undefined
+}
 
 // --- fetch-Mock (nach Pfad und Methode, wie tests/map-library-ui.unit.test.tsx) -------------
 
@@ -176,6 +193,7 @@ test('Raum mit aktiver Karte zeigt die Kartenansicht', async () => {
     session: { id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' },
     participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
     map: { instanceId: 'i-tav', mapId: 'm1', name: 'Taverne', hasImage: true, grid: QUADRAT },
+    fog: { instanceId: 'i-tav', version: 0, revealed: [], areas: [] },
   })
 
   render(<App />)
@@ -183,9 +201,11 @@ test('Raum mit aktiver Karte zeigt die Kartenansicht', async () => {
   await betreten()
 
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
+  // MODIFIED (add-fog-of-war): Bild-URL ueber die Sitzungsroute, fuer einen Spieler mit
+  // Fog-Version.
   expect(canvasMock.createMapCanvas).toHaveBeenCalledWith(
     expect.anything(),
-    expect.objectContaining({ imageUrl: '/api/maps/m1/image', grid: QUADRAT }),
+    expect.objectContaining({ imageUrl: '/api/sessions/s1/map-image?fog=0', grid: QUADRAT }),
   )
   expect(screen.getByText('Aktive Karte: Taverne')).toBeTruthy()
 })
@@ -214,6 +234,7 @@ test('Kartenwechsel folgt dem Server', async () => {
     session: { id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' },
     participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
     map: { instanceId: 'i-tav', mapId: 'm1', name: 'Taverne', hasImage: true, grid: QUADRAT },
+    fog: { instanceId: 'i-tav', version: 0, revealed: [], areas: [] },
   })
 
   render(<App />)
@@ -226,10 +247,14 @@ test('Kartenwechsel folgt dem Server', async () => {
   await act(async () => {
     socketMock.__emit('map', { sessionId: 's1', map: { instanceId: 'i-kry', mapId: 'm2', name: 'Krypta', hasImage: true, grid: krypta } })
   })
+  await act(async () => {
+    socketMock.__emit('fog', { sessionId: 's1', fog: { instanceId: 'i-kry', version: 0, revealed: [], areas: null } })
+  })
 
-  await waitFor(() => expect(canvasMock.__handle.setImage).toHaveBeenCalledWith('/api/maps/m2/image'))
-  expect(canvasMock.__handle.setGrid).toHaveBeenCalledWith(krypta)
-  // Dieselbe Kartenansicht wird umgestellt, nicht neu erzeugt (design.md D7).
+  // MODIFIED (add-fog-of-war): die bestehende Kartenansicht wird auf die Sitzungs-Bild-URL und
+  // das neue Raster umgestellt, nicht neu erzeugt (design.md D7).
+  await waitFor(() => expect(canvasMock.__handle.setGrid).toHaveBeenCalledWith(krypta))
+  expect(aktuelleBildUrl()).toBe('/api/sessions/s1/map-image?fog=0')
   expect(canvasMock.createMapCanvas).toHaveBeenCalledTimes(1)
   expect(screen.getByText('Aktive Karte: Krypta')).toBeTruthy()
 })

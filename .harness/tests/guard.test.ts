@@ -701,3 +701,63 @@ describe('Migrationssperre liest DATABASE_URL aus dem Kommandotext (harness-migr
     })
   })
 })
+
+describe('Nacharbeit Runde 1 (harness-migration-guard): Wert als Ganzes, D2/D3-Zusagen', () => {
+  const withDbUrl = (url: string | undefined, fn: () => void) => {
+    const prev = process.env.DATABASE_URL
+    if (url === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = url
+    try { fn() } finally { if (prev === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = prev }
+  }
+  const TEST_DB = 'file:./prisma/test.db'
+  const PROD_MIT_TEILSTUECK = 'postgres://user@prod-host/db?options=test.db'
+
+  describe('Die Migrationssperre prüft den Wert, den das Kommando sieht (Ergänzungen)', () => {
+    it('Weitere Zuweisungen vor DATABASE_URL ändern nichts', () => {
+      withDbUrl(undefined, () => {
+        expect(evaluate(bash(`env FOO=1 DATABASE_URL=${TEST_DB} prisma migrate deploy`), defaultDeps).blocked).toBe(false)
+      })
+    })
+    it('Die export-Form gilt auch mit Semikolon oder Zeilenumbruch', () => {
+      withDbUrl(undefined, () => {
+        expect(evaluate(bash(`export DATABASE_URL=${TEST_DB}; prisma migrate deploy`), defaultDeps).blocked).toBe(false)
+        expect(evaluate(bash(`export DATABASE_URL=${TEST_DB}\nprisma migrate deploy`), defaultDeps).blocked).toBe(false)
+      })
+    })
+  })
+
+  describe('Jede nicht erkannte Form blockt (Ergänzung)', () => {
+    it('Eine Pipe hinter dem Präfix ist ein Trenner', () => {
+      withDbUrl(undefined, () => {
+        expect(evaluate(bash(`DATABASE_URL=${TEST_DB} true | prisma migrate deploy`), defaultDeps).blocked).toBe(true)
+      })
+    })
+  })
+
+  describe('Der Wegwerf-Charakter wird am ganzen Wert geprüft', () => {
+    it('Eine produktive URL mit einem Wegwerf-Muster als Teilstück blockt', () => {
+      withDbUrl(undefined, () => {
+        expect(evaluate(bash(`DATABASE_URL=${PROD_MIT_TEILSTUECK} prisma migrate deploy`), defaultDeps).blocked).toBe(true)
+      })
+    })
+    it('Eine Kommandosubstitution im Wert blockt', () => {
+      withDbUrl(undefined, () => {
+        expect(evaluate(bash('DATABASE_URL=file:$(dir)/test.db prisma migrate deploy'), defaultDeps).blocked).toBe(true)
+      })
+    })
+    it('Ein localhost hinter dem echten Host blockt', () => {
+      withDbUrl(undefined, () => {
+        expect(evaluate(bash('DATABASE_URL=postgres://prod-host/x@localhost/db prisma migrate deploy'), defaultDeps).blocked).toBe(true)
+      })
+    })
+    it('Eine Server-URL auf localhost lässt die Migration durch', () => {
+      withDbUrl(undefined, () => {
+        expect(evaluate(bash('DATABASE_URL="postgresql://vtt:vtt@localhost:5432/vtt_test?schema=public" prisma migrate deploy'), defaultDeps).blocked).toBe(false)
+      })
+    })
+    it('Ein Umgebungswert mit einem Wegwerf-Muster als Teilstück blockt ebenso', () => {
+      withDbUrl(PROD_MIT_TEILSTUECK, () => {
+        expect(evaluate(bash('prisma migrate deploy'), defaultDeps).blocked).toBe(true)
+      })
+    })
+  })
+})

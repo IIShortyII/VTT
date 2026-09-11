@@ -40,9 +40,27 @@
 
 - [x] 4.1 `pnpm test:harness`, `pnpm typecheck`, `pnpm lint` grün; `openspec validate
       guard-inline-db-url --strict` valide
-- [ ] 4.2 Reviewer-Subagent (read-only) gegen den Diff; Befunde einarbeiten
-- [ ] 4.3 Menschliche Freigabe (`constitution.md` §3.4 — kein App-Test, kein Anwendungscode;
+- [x] 4.2 Reviewer-Subagent (read-only) gegen den Diff, Runde 1: **nacharbeit**. Block-Finding:
+      `EPHEMERAL_DB` ist ein Teilstring-Match, gegen den agentengeschriebenen Kommandotext ein
+      Fail-open (`postgres://user@prod-host/db?options=test.db`, `$(…)?schema=test.db`). Zwei
+      Hinweise: `\s` trennt auch Unicode-Leerraum, die Shell nicht; D2/D3-Zusagen ohne Test.
+
+- [x] 4.3 Nacharbeit Runde 1 (design.md D8) — Spec: Requirement „Der Wegwerf-Charakter wird am ganzen Wert geprüft" mit vier
+      Szenarien; drei Szenarien für die D2/D3-Zusagen (Zusatzzuweisung, export mit `;`/`\n`,
+      Pipe als Trenner); ASCII-Leerraum im Requirement „unbekannte Form"
+- [x] 4.4 Tests je Szenario, rot bestätigt: die beiden Teilstück-Szenarien (inline, Umgebung)
+      scheitern an der Zusicherung. Die übrigen fünf neuen sind Negativ- bzw.
+      Durchlass-Zusicherungen, die der alte Stand trivial erfüllt; Mutationsproben: „Teilstring-Match
+      statt Wert als Ganzes" → beide Teilstück-Szenarien rot; „Zeichenvorrat des Werts
+      freigegeben" → „Kommandosubstitution im Wert" rot; „Userinfo darf `/` enthalten" →
+      „localhost hinter dem echten Host" rot
+- [x] 4.5 `guard.ts`: `EPHEMERAL_DB` durch `isEphemeralDbUrl(value)` ersetzen (Wert als
+      Ganzes, drei Formen); `DB_URL_VALUE` auf URL-Zeichenvorrat; `\s` → `[ \t]` in den
+      Inline-Mustern
+- [ ] 4.6 Gate erneut grün, Reviewer erneut (§3.3: jede Nacharbeit-Runde durchläuft Gate und
+      Review)
+- [ ] 4.7 Menschliche Freigabe (`constitution.md` §3.4 — kein App-Test, kein Anwendungscode;
       geprüft wird das Guard-Urteil)
-- [ ] 4.4 `openspec archive guard-inline-db-url --yes`, Purpose der neuen Capability
+- [ ] 4.8 `openspec archive guard-inline-db-url --yes`, Purpose der neuen Capability
       ausfüllen, PR als Teil 2 von 3 zu #44 (kein `Closes`, Admin-Bypass wie bei #53);
       menschlicher Merge

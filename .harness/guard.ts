@@ -30,30 +30,44 @@ const SRC_DIRS = ['src', 'prisma']
 // Bewusst inklusive der lokalen Entwicklungs-Varianten (migrate dev/reset) - auch sie
 // schreiben gegen das, was in DATABASE_URL steht.
 const MIGRATION_COMMANDS = /prisma\s+(migrate\s+(deploy|dev|reset)|db\s+push)/
-// Muster, die eine ephemere Wegwerf-DB kennzeichnen. Alles andere gilt als produktiv und
-// wird geblockt (fail-closed: ein leeres DATABASE_URL matcht nichts).
+// Formen, die eine ephemere Wegwerf-DB kennzeichnen - am GANZEN Wert geprueft, nicht als
+// Teilstueck (guard-inline-db-url/design.md D8): seit der Wert auch aus dem agentengeschriebenen
+// Kommandotext stammen kann, waere ein Teilstring-Match fail-open
+// (postgres://user@prod-host/db?options=test.db enthaelt "test.db", verbindet aber zu prod-host).
+// Alles, was keine der Formen trifft, gilt als produktiv und wird geblockt (fail-closed: ein
+// leeres DATABASE_URL trifft nichts).
 // SQLite adressiert ueber Dateipfade statt Hostnamen - die Wegwerf-DB der Integrationstests
 // heisst daher per Konvention "test.db" (bzw. laeuft in-memory). Die lokale Entwicklungs-DB
-// (dev.db) matcht bewusst NICHT: Migrationen sind Menschensache (constitution.md 5.1), der
-// Agent schreibt das Schema, fuehrt es aber nicht aus. localhost bleibt fuer einen spaeteren
-// Umzug auf eine Server-DB enthalten.
-const EPHEMERAL_DB = /:memory:|test\.db|localhost|127\.0\.0\.1/
+// (dev.db) trifft bewusst NICHT: Migrationen sind Menschensache (constitution.md 5.1), der
+// Agent schreibt das Schema, fuehrt es aber nicht aus. localhost/127.0.0.1 als Host einer
+// Server-URL bleibt fuer einen spaeteren Umzug auf eine Server-DB enthalten - die Userinfo
+// davor darf keinen "/" tragen, sonst liesse sich "localhost" dort verstecken und der echte
+// Host dahinter.
+const EPHEMERAL_FORMS: RegExp[] = [
+  /^["']?file:(?:[^?"']*\/)?test\.db(?:\?[^"']*)?["']?$/,
+  /^["']?(?:file|sqlite)::memory:(?:\?[^"']*)?["']?$/,
+  /^["']?[a-z][a-z0-9+.-]*:\/\/(?:[^@/"']*@)?(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/[^"']*)?["']?$/i,
+]
+export function isEphemeralDbUrl(value: string): boolean { return EPHEMERAL_FORMS.some(f => f.test(value)) }
 // Welche Quelle fuer DATABASE_URL das Migrationskommando tatsaechlich sieht
 // (guard-inline-db-url/design.md D1-D5). process.env ist die Umgebung des HOOK-Prozesses, nicht
 // die des Kommandos: eine Inline-Zuweisung im Text ersetzt sie (D1). Rein - kein
 // process.env-Zugriff hier, den macht decide() (D7).
 const DB_URL_MENTION = /\bDATABASE_URL\b/g
-// Der Wert endet am ersten Leerzeichen oder Trenner; Anfuehrungszeichen bleiben Teil des Werts
-// (EPHEMERAL_DB ist ein Teilstring-Match). `DATABASE_URL=x;` liefert damit KEINEN Wert - das
-// Semikolon klebt am Wert, und die Form faellt in "unbekannt" (D5).
-const DB_URL_VALUE = '([^\\s;&|]+)'
+// Der Wert ist auf den Zeichenvorrat einer URL beschraenkt, Anfuehrungszeichen aussen inklusive
+// (D8): $, Backtick, Klammern, Backslash und alles ausserhalb von ASCII sind kein Teil eines
+// Werts, sondern der Beginn einer unbekannten Form - was die Shell daraus macht, sieht der Guard
+// nicht. `DATABASE_URL=x;` liefert damit KEINEN Wert: das Semikolon klebt am Wert, die Form
+// faellt in "unbekannt" (D5). Leerraum ist ASCII-Leerraum wie bei der Shell - \\s naehme auch ein
+// geschuetztes Leerzeichen als Grenze, das die Shell als Teil des Werts durchreicht.
+const DB_URL_VALUE = '([A-Za-z0-9_./:@%?=+\\-"\']+)'
 // Praefix und env: die Zuweisung wirkt auf genau das Kommando, das direkt folgt (D2). Weitere
 // VAR=wert-Zuweisungen davor sind erlaubt. Nach dem Wert muss ein Kommandowort folgen, kein
 // Trenner; der Rest wird auf Trenner geprueft (D3).
-const PREFIX_FORM = new RegExp(`^\\s*(?:env\\s+)?(?:[A-Za-z_]\\w*=\\S*\\s+)*DATABASE_URL=${DB_URL_VALUE}\\s+(?![;&|])(\\S[\\s\\S]*)$`)
+const PREFIX_FORM = new RegExp(`^[ \\t]*(?:env[ \\t]+)?(?:[A-Za-z_]\\w*=[^ \\t]*[ \\t]+)*DATABASE_URL=${DB_URL_VALUE}[ \\t]+(?![;&|])([^ \\t][\\s\\S]*)$`)
 // export wirkt auf alles danach (D2) - ein Trenner zwischen Zuweisung und Kommando ist hier gerade
 // die erwartete Form.
-const EXPORT_FORM = new RegExp(`^\\s*export\\s+DATABASE_URL=${DB_URL_VALUE}\\s*(?:&&|;|\\n)\\s*\\S`)
+const EXPORT_FORM = new RegExp(`^[ \\t]*export[ \\t]+DATABASE_URL=${DB_URL_VALUE}[ \\t]*(?:&&|;|\\r?\\n)[ \\t]*[^ \\t\\r\\n]`)
 // Hinter diesen Trennern gilt ein Praefix nicht mehr (D3) - auch die Pipe: bei
 // `DATABASE_URL=x true | prisma migrate` sieht nur die linke Seite den Wert.
 const COMMAND_SEPARATOR = /;|&&|\|\||\||\n|\$\(|`/
@@ -405,8 +419,8 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
     const dbUrl = databaseUrlForCommand(cmd, process.env.DATABASE_URL)
     if (dbUrl === undefined)
       return { blocked: true, message: 'Blockiert: Migration — nicht sicher bestimmbar, welches DATABASE_URL das Kommando sieht (mehrere Nennungen oder unbekannte Form). Erkannt werden `DATABASE_URL=… <cmd>`, `env DATABASE_URL=… <cmd>` und `export DATABASE_URL=… && <cmd>`.' }
-    if (!EPHEMERAL_DB.test(dbUrl))
-      return { blocked: true, message: 'Blockiert: Migration nur gegen die ephemere Test-DB, nie gegen eine produktive Zielumgebung.' }
+    if (!isEphemeralDbUrl(dbUrl))
+      return { blocked: true, message: 'Blockiert: Migration nur gegen die ephemere Test-DB (file:…/test.db, :memory:, Server-URL auf localhost), nie gegen eine produktive Zielumgebung.' }
   }
 
   return { blocked: false }

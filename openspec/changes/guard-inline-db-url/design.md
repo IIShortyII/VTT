@@ -31,7 +31,9 @@ Motivation: `proposal.md` — Why, Issue #44 Punkt 3. Verhalten:
 
 **Non-Goals:**
 - Kein Shell-Parser. Die erkannten Formen sind drei feste Muster am Kommandoanfang.
-- Keine Änderung an `MIGRATION_COMMANDS` oder `EPHEMERAL_DB`; Erwähnungen bleiben geblockt.
+- Keine Änderung an `MIGRATION_COMMANDS`; Erwähnungen bleiben geblockt. (`EPHEMERAL_DB` wird
+  nach dem Review-Befund in D8 doch angefasst: vom Teilstring-Match zur Prüfung am ganzen
+  Wert.)
 
 ## Decisions
 
@@ -60,9 +62,10 @@ export DATABASE_URL=<wert> && <kommando…>    export, auch mit ; oder Zeilenumb
 ```
 
 Weitere Zuweisungen vor `DATABASE_URL=` (`env FOO=1 DATABASE_URL=… cmd`) sind erlaubt — sie
-ändern nichts daran, was das Kommando sieht. Der Wert ist alles bis zum nächsten Leerzeichen,
-Anführungszeichen inklusive; `EPHEMERAL_DB` ist ein Teilstring-Match, dem die Quotes nicht im
-Weg stehen.
+ändern nichts daran, was das Kommando sieht. Der Wert besteht aus dem Zeichenvorrat einer
+URL (Buchstaben, Ziffern, `_ . / : @ % ? = + -`) und optionalen Anführungszeichen (D8);
+Leerraum ist ASCII-Leerraum (Leerzeichen, Tab), so wie die Shell trennt — `\s` würde auch
+ein geschütztes Leerzeichen als Grenze nehmen, das die Shell als Teil des Werts durchreicht.
 
 Warum genau diese drei: es sind die, die der implementer bei #13 tatsächlich versucht hat, und
 sie sind die einzigen, bei denen ohne Parser klar ist, dass die Zuweisung das
@@ -105,6 +108,35 @@ Shell-Parser mit Fehlerfläche, und ein Fehler dort ist fail-open an einer Grenz
 `constitution.md` §5.1 dem Menschen vorbehält. Der Preis ist ein Satz in `AGENTS.md`:
 Texte, die das Kommando nennen, gehen per `--body-file` oder Write-Tool, nicht per Heredoc.
 Entscheidung des Menschen vom 2026-09-10.
+
+### D8 — Der Wegwerf-Charakter wird am ganzen Wert geprüft (Review-Befund Runde 1)
+
+Vor diesem Change war `EPHEMERAL_DB` ein Teilstring-Match gegen `process.env.DATABASE_URL`
+— einen Wert, den der Mensch gesetzt hat. Mit der Inline-Zuweisung prüft derselbe Match einen
+Text, den der Agent frei schreibt, und wird damit zum Fail-open: `postgres://user@prod-host/db?options=test.db`
+enthält `test.db`, verbindet aber zu `prod-host`. Ebenso `$(cat prod-url)?schema=test.db`:
+der Literaltext trägt das Muster, die Shell setzt etwas anderes ein.
+
+Deshalb zwei Verschärfungen, beide für Inline- **und** Umgebungswert (eine Regel, nicht zwei —
+der Umgebungswert ist zwar menschengesetzt, aber nichts spricht dafür, ihn lockerer zu prüfen):
+
+1. **Der Wert wird als Ganzes geprüft**, mit optionalen Anführungszeichen außen:
+   - SQLite-Datei: `file:` + Pfad, der auf `test.db` endet, optional Query
+   - In-Memory: `file::memory:` oder `sqlite::memory:`, optional Query
+   - Server-URL: Schema `://`, optionale Userinfo (`…@`, ohne `/` darin), dann **genau**
+     `localhost` oder `127.0.0.1` als Host, optional Port, Pfad, Query
+
+   Userinfo darf keinen `/` enthalten, sonst ließe sich `localhost` in die Userinfo schreiben
+   und der echte Host dahinter verstecken; ein `@` im Pfad ist dagegen unschädlich, weil der
+   Host schon vorher feststeht.
+2. **Der Inline-Wert ist auf den URL-Zeichenvorrat beschränkt.** `$`, Backtick, `(`, `)`,
+   `{`, `}`, `\`, `<`, `>`, `*`, `~`, `&`, `;`, `|` und alles außerhalb von ASCII sind kein
+   Teil eines Werts, sondern der Beginn einer unbekannten Form. Eine legitime Wegwerf-URL
+   braucht keins davon (`&` in einer Query bräuchte Quotes, die der Guard nicht auswertet — also
+   blockt, fail-closed).
+
+Der Preis: `EPHEMERAL_DB` als Teilstring-Match entfällt; wer eine exotische Wegwerf-Adresse
+braucht, erweitert die Liste der Formen im Code, nicht den Match.
 
 ### D7 — `databaseUrlForCommand` ist exportiert und rein
 

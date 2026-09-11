@@ -20,16 +20,18 @@ import type { MapCanvasHandle } from './canvas.js'
 //
 // session-token (#14, design.md D6): `onTokenMove` wird nur beim Erzeugen uebergeben (wie
 // `imageUrl`/`grid` beim ersten Mount) - eine Aenderung des Rueckrufs nach dem Mount muss
-// nicht wirken, weil sich die Rolle im Raum nicht aendert.
+// nicht wirken, weil sich die Rolle im Raum nicht aendert. add-token-assignment (#15,
+// design.md D5): `canMoveToken` ebenso - nur beim Erzeugen gelesen.
 
 export interface MapCanvasProps {
   imageUrl: string | null
   grid: Grid
   tokens: Token[]
   onTokenMove?: (tokenId: string, cell: Cell) => void
+  canMoveToken?: (token: Token) => boolean
 }
 
-export function MapCanvas({ imageUrl, grid, tokens, onTokenMove }: MapCanvasProps) {
+export function MapCanvas({ imageUrl, grid, tokens, onTokenMove, canMoveToken }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const handleRef = useRef<MapCanvasHandle | null>(null)
   // App-Test Runde 2 (#14): `createMapCanvas` laeuft asynchron (`app.init`) - trifft waehrend
@@ -56,7 +58,13 @@ export function MapCanvas({ imageUrl, grid, tokens, onTokenMove }: MapCanvasProp
     const initialTokens = tokens
     import('./canvas.js')
       .then(({ createMapCanvas }) =>
-        createMapCanvas(container, { imageUrl: initialImageUrl, grid: initialGrid, tokens: initialTokens, onTokenMove }),
+        createMapCanvas(container, {
+          imageUrl: initialImageUrl,
+          grid: initialGrid,
+          tokens: initialTokens,
+          onTokenMove,
+          canMoveToken,
+        }),
       )
       .then((handle) => {
         if (cancelled) {

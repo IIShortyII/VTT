@@ -1,24 +1,33 @@
 import { useState, type FormEvent } from 'react'
 
+import { displayName, type Participant } from '../../shared/session.js'
 import { TOKEN_ICONS, type CreateTokenInput, type Token } from '../../shared/token.js'
 
 // Token-Verwaltung des Spielleiters im Raum (design.md D7, spec.md Requirement
 // "Tokenansicht im Raum"). Kein eigener Ladepfad - der Bestand kommt vom Raum
 // (`SessionRoom`, D5); nur der Spielleiter rendert diese Komponente.
+//
+// add-token-assignment (#15, design.md D7): je Token ein Auswahlfeld zur Zuweisung
+// (`aria-label` genau "<Name> zuweisen", spec.md "Schnittstelle"). Die Meldung abgelehnter
+// Aktionen ist von hier in die Raumansicht gewandert (D6) - diese Komponente rendert keine
+// mehr.
 
 export interface TokenPanelProps {
   sessionId: string
   tokens: Token[]
+  participants: Participant[]
   onCreate: (input: Omit<CreateTokenInput, 'sessionId'>) => void
   onRemove: (tokenId: string) => void
-  error: string | null
+  onAssign: (tokenId: string, ownerId: string | null) => void
 }
 
 const DEFAULT_COLOR = '#3366ff'
 const DEFAULT_SIZE = '1'
 const DEFAULT_CELL = '0'
+const NO_OWNER_VALUE = ''
+const NO_OWNER_LABEL = 'Spielleiter'
 
-export function TokenPanel({ tokens, onCreate, onRemove, error }: TokenPanelProps) {
+export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign }: TokenPanelProps) {
   const [name, setName] = useState('')
   const [color, setColor] = useState(DEFAULT_COLOR)
   const [icon, setIcon] = useState('')
@@ -39,10 +48,14 @@ export function TokenPanel({ tokens, onCreate, onRemove, error }: TokenPanelProp
     setName('')
   }
 
+  // add-token-assignment (#15, design.md D7): nur Mitglieder mit Rolle `spieler` sind
+  // waehlbar - der Spielleiter selbst erscheint nicht als Eintrag (er waere serverseitig
+  // ohnehin "Spieler nicht gefunden.").
+  const players = participants.filter((participant) => participant.role === 'spieler')
+
   return (
     <div>
       <h2>Tokens</h2>
-      {error !== null && <p role="alert">{error}</p>}
 
       <form onSubmit={handleSubmit}>
         <label htmlFor="token-panel-name">Name</label>
@@ -91,6 +104,20 @@ export function TokenPanel({ tokens, onCreate, onRemove, error }: TokenPanelProp
             <button type="button" aria-label={`${token.name} entfernen`} onClick={() => onRemove(token.id)}>
               Entfernen
             </button>
+
+            <select
+              name="owner"
+              aria-label={`${token.name} zuweisen`}
+              value={token.ownerId ?? NO_OWNER_VALUE}
+              onChange={(event) => onAssign(token.id, event.target.value === NO_OWNER_VALUE ? null : event.target.value)}
+            >
+              <option value={NO_OWNER_VALUE}>{NO_OWNER_LABEL}</option>
+              {players.map((player) => (
+                <option key={player.userId} value={player.userId}>
+                  {displayName(player)}
+                </option>
+              ))}
+            </select>
           </li>
         ))}
       </ul>

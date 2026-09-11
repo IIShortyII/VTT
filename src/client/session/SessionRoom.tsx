@@ -12,7 +12,7 @@ import {
   type TransitionAction,
 } from '../../shared/session.js'
 import type { ActiveMap } from '../../shared/session-map.js'
-import type { CreateTokenInput, Token } from '../../shared/token.js'
+import { canMoveToken, type CreateTokenInput, type Token } from '../../shared/token.js'
 import { mapImageUrl } from '../map/api.js'
 import { MapCanvas } from '../map/MapCanvas.js'
 import { MapPanel } from './MapPanel.js'
@@ -20,8 +20,9 @@ import { createSessionSocket, type SessionSocketFacade } from './socket.js'
 import { TokenPanel } from './TokenPanel.js'
 
 // Raumansicht (design.md D10, Requirement "Sitzungsoberflaeche"; session-map #50, Requirement
-// "Kartenansicht im Raum"; session-token #14, Requirement "Tokenansicht im Raum"). Zustand
-// und Teilnehmer kommen ausschliesslich aus dem Acknowledgement von `enter` und den
+// "Kartenansicht im Raum"; session-token #14, Requirement "Tokenansicht im Raum";
+// add-token-assignment #15, Requirement "Tokenansicht im Raum"/"Token bewegen"). Zustand und
+// Teilnehmer kommen ausschliesslich aus dem Acknowledgement von `enter` und den
 // nachfolgenden Server-Ereignissen - der angezeigte Zustand folgt dem Server, nie dem zuletzt
 // geklickten Uebergang oder der zuletzt aktivierten Karte (constitution.md §9.1).
 //
@@ -85,6 +86,9 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
   const [activateError, setActivateError] = useState<string | null>(null)
   // session-token (#14, design.md D5): gemeinsame Fehlermeldung fuer das Ziehen auf dem
   // Canvas und die Token-Verwaltung - beides sind Absichten desselben Spielleiters.
+  // add-token-assignment (#15, design.md D6): wird jetzt in der Raumansicht selbst gerendert
+  // (fuer jede Rolle), nicht mehr in `TokenPanel` - sonst stuende dieselbe Meldung zweimal im
+  // DOM, sobald auch ein Spieler eine abgelehnte Bewegung sieht.
   const [tokenError, setTokenError] = useState<string | null>(null)
 
   // Registriert die Server-Ereignisse und das erneute Betreten bei Wiederverbindung auf einer
@@ -244,7 +248,9 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
 
   // session-token (#14, Requirement "Tokenansicht im Raum"): die Absicht wird gesendet, das
   // Token springt erst mit dem `session:tokens`, das der Server nach dem Schreiben verteilt
-  // (constitution.md §9.1) - kein optimistisches Verschieben.
+  // (constitution.md §9.1) - kein optimistisches Verschieben. add-token-assignment (#15): fuer
+  // JEDE Rolle verdrahtet - die Greifbarkeitsregel entscheidet, ob der Rueckruf ueberhaupt
+  // ausgeloest wird, aber der Server ist die letzte Instanz (constitution.md §9.3).
   const handleTokenMove = (tokenId: string, cell: Cell) => {
     const socket = socketRef.current
     if (!socket) {
@@ -282,6 +288,23 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
     }
     socket
       .removeToken(sessionId, tokenId)
+      .then((ack) => {
+        setTokenError(ack.ok ? null : ack.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
+  // add-token-assignment (#15, design.md D6): keine lokale Aenderung des Bestands - der
+  // Server verteilt den neuen Bestand per `session:tokens` (constitution.md §9.1).
+  const handleTokenAssign = (tokenId: string, ownerId: string | null) => {
+    const socket = socketRef.current
+    if (!socket) {
+      return
+    }
+    socket
+      .assignToken(sessionId, tokenId, ownerId)
       .then((ack) => {
         setTokenError(ack.ok ? null : ack.message)
       })
@@ -379,10 +402,15 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
             imageUrl={state.map.hasImage ? mapImageUrl(state.map.mapId) : null}
             grid={state.map.grid}
             tokens={state.tokens}
-            onTokenMove={state.role === 'spielleiter' ? handleTokenMove : undefined}
+            onTokenMove={handleTokenMove}
+            canMoveToken={(token) => canMoveToken(token, { role: state.role, userId: currentUserId })}
           />
         </div>
       )}
+
+      {/* add-token-assignment (#15, design.md D6): fuer jede Rolle, damit auch ein Spieler
+          eine abgelehnte eigene Bewegung sieht. */}
+      {tokenError !== null && <p role="alert">{tokenError}</p>}
 
       {state.role === 'spielleiter' && (
         <MapPanel
@@ -397,9 +425,10 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
         <TokenPanel
           sessionId={sessionId}
           tokens={state.tokens}
+          participants={state.participants}
           onCreate={handleTokenCreate}
           onRemove={handleTokenRemove}
-          error={tokenError}
+          onAssign={handleTokenAssign}
         />
       )}
 

@@ -14,12 +14,17 @@ import { panBy, zoomAt, type View } from './viewport.js'
 export interface MapCanvasOptions {
   imageUrl: string | null
   grid: Grid
-  // session-token (#14, design.md D6): der Anfangsbestand und - nur fuer den Spielleiter -
-  // der Rueckruf beim Loslassen eines gezogenen Tokens. `onTokenMove` wird nur beim Erzeugen
-  // gelesen (kein Ziehen fuer Spieler); eine spaetere Aenderung wirkt nicht, weil sich die
-  // Rolle im Raum nicht aendert.
+  // session-token (#14, design.md D6): der Anfangsbestand und der Rueckruf beim Loslassen
+  // eines gezogenen Tokens. add-token-assignment (#15, design.md D5): fuer JEDE Rolle
+  // uebergeben, greifbar ist ein Token nur, wenn zusaetzlich `canMoveToken` fehlt oder
+  // `true` liefert - dieselbe Regel, die der Server anwendet (`shared/token.ts`,
+  // `canMoveToken`). Beide werden nur beim Erzeugen gelesen (Rolle und eigene `userId`
+  // aendern sich im Raum nicht); eine spaetere Aenderung wirkt nicht direkt, sondern erst
+  // mit dem naechsten `setTokens` (der Bestand vom Server), weil `drawTokens` alle
+  // Container ohnehin neu baut.
   tokens: Token[]
   onTokenMove?: (tokenId: string, cell: Cell) => void
+  canMoveToken?: (token: Token) => boolean
 }
 
 export interface MapCanvasHandle {
@@ -59,6 +64,13 @@ const TOKEN_NAME_COLOR = 0xffffff
 const TOKEN_NAME_FONT_SIZE = 12
 const TOKEN_NAME_GAP = 4
 
+// add-token-assignment (#15, design.md D5): Kennzeichnung greifbarer Tokens - ein zweiter
+// Kreisrand ausserhalb des weissen Rands in einer festen Akzentfarbe. Aussehen nimmt der
+// App-Test ab, kein Test haengt daran.
+const TOKEN_MOVABLE_RING_COLOR = 0x33ff99
+const TOKEN_MOVABLE_RING_WIDTH = 2
+const TOKEN_MOVABLE_RING_GAP = 3
+
 /** Parst einen Hex-Farbwert (`#rrggbb`, aus `shared/token.ts` bereits validiert) in die von
  * PixiJS erwartete Zahl. */
 function parseColor(hex: string): number {
@@ -97,6 +109,7 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     let currentTokens: Token[] = options.tokens
     let tokenContainers: Container[] = []
     const onTokenMove = options.onTokenMove
+    const canMoveTokenOption = options.canMoveToken
     let loadedUrl: string | null = null
     let imageCounter = 0
     let loadToken = 0
@@ -211,7 +224,7 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       return { x: center.x + offset, y: center.y + offset }
     }
 
-    // Ziehen (nur mit `onTokenMove`, design.md D6): `pointerdown` auf einem Token-Container
+    // Ziehen (nur bei Greifbarkeit, design.md D6/D5): `pointerdown` auf einem Token-Container
     // merkt sich die gezogene `id` und stoppt die Propagation, damit die Buehne nicht
     // schwenkt; `pointermove`/`pointerup` der Buehne verschieben nur den Container
     // (Vorschau) bzw. rechnen die Zielzelle aus und setzen den Container danach zurueck - die
@@ -247,7 +260,18 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       nameText.position.set(0, radius + TOKEN_NAME_GAP)
       tokenContainer.addChild(nameText)
 
-      if (onTokenMove) {
+      // add-token-assignment (#15, design.md D5): greifbar ist ein Token genau dann, wenn
+      // `onTokenMove` gesetzt ist UND `canMoveToken` fehlt oder fuer dieses Token `true`
+      // liefert - dieselbe Regel wie am Server (`shared/token.ts`, `canMoveToken`). Nur dann
+      // Zieh-Interaktion und Kennzeichnung.
+      const movable = Boolean(onTokenMove) && (canMoveTokenOption ? canMoveTokenOption(token) : true)
+
+      if (movable) {
+        const ring = new Graphics()
+        ring.circle(0, 0, radius + TOKEN_MOVABLE_RING_GAP)
+        ring.stroke({ width: TOKEN_MOVABLE_RING_WIDTH, color: TOKEN_MOVABLE_RING_COLOR })
+        tokenContainer.addChild(ring)
+
         tokenContainer.eventMode = 'static'
         tokenContainer.cursor = 'grab'
         tokenContainer.on('pointerdown', (event: FederatedPointerEvent) => {

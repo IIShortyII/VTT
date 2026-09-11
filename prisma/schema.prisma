@@ -32,6 +32,9 @@ model User {
   memberships Membership[]
   // map-library (#49): Gegenrelation zu den eigenen Karten - siehe design.md D1.
   maps        GameMap[]
+  // add-token-assignment (#15): Gegenrelation zu den Tokens, deren Besitzer dieser Nutzer
+  // ist - siehe design.md D1.
+  tokens      Token[]
 }
 
 model Account {
@@ -159,6 +162,9 @@ model MapInstance {
 // nimmt sie mit (`onDelete: Cascade`). `icon` speichert den Katalogeintrag selbst (das
 // Emoji), geprueft durch `TokenIconSchema` an der Grenze (`shared/token.ts`); `col`/`row`
 // sind die Ankerzelle, kein Pixel - Einrasten ist damit eine Eigenschaft des Modells.
+// add-token-assignment (#15): `ownerId` ist ein nullabler Verweis auf `User` - `null` heisst
+// "gehoert dem Spielleiter" (design.md D1). `onDelete: SetNull`, weil ein geloeschter Nutzer
+// ein besitzerloses Token hinterlassen soll, kein geloeschtes.
 model Token {
   id         String      @id @default(cuid())
   instanceId String
@@ -168,8 +174,11 @@ model Token {
   size       Int
   col        Int
   row        Int
+  ownerId    String?
   createdAt  DateTime    @default(now())
   instance   MapInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  owner      User?       @relation(fields: [ownerId], references: [id], onDelete: SetNull)
 
   @@index([instanceId])
+  @@index([ownerId])
 }

@@ -98,6 +98,10 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
           setState({ status: 'fehler', message: ack.message })
           return
         }
+        // session-token (#14, Gate-Nacharbeit Runde 1): `ack.tokens ?? []` faengt bestehende
+        // Tests aus #49/#50 ab, deren gemockte Acknowledgements das neue Feld nicht fuehren -
+        // "Keine bestehende Assertion bricht" (design.md Goals) gilt auch fuer Mocks, die
+        // diese Aenderung nicht kennen.
         setState({
           status: 'bereit',
           name: ack.session.name,
@@ -106,7 +110,7 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
           code: ack.session.code,
           participants: ack.participants,
           map: ack.map ?? null,
-          tokens: ack.tokens,
+          tokens: ack.tokens ?? [],
         })
         const self = ack.participants.find((participant) => participant.userId === currentUserId)
         setAliasInput(self?.alias ?? '')

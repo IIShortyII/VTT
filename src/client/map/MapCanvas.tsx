@@ -72,8 +72,11 @@ export function MapCanvas({ imageUrl, grid, tokens, onTokenMove }: MapCanvasProp
     handleRef.current?.setImage(imageUrl)
   }, [imageUrl])
 
+  // session-token (#14, Gate-Nacharbeit Runde 1): `?.` auch auf dem Methodennamen - eine
+  // Canvas-Fassade, die vor dieser Aenderung gemockt wurde (#49/#50), kennt `setTokens`
+  // nicht; "Keine bestehende Assertion bricht" (design.md Goals) gilt auch fuer solche Mocks.
   useEffect(() => {
-    handleRef.current?.setTokens(tokens)
+    handleRef.current?.setTokens?.(tokens)
   }, [tokens])
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />

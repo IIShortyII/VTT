@@ -177,7 +177,7 @@ aus #14 D7, die unverändert gilt:
 | Meldung abgelehnter Token-Aktionen | `<p role="alert">` in der **Raumansicht** (nicht mehr in der Verwaltung), für jede Rolle |
 
 Sichtbarer Text `Spielleiter` als Option: kein Teilstring-Risiko wie in #45 — Options werden
-per `getByRole('option', { name })` bzw. über den `select`-Wert adressiert, nicht per
+über ihre Rolle (Option) bzw. über den `select`-Wert adressiert, nicht per
 `getByText` auf der Seite. `Tokens`, `Anlegen`, `<Name> entfernen` bleiben.
 
 ### D8 — Testaufbau
@@ -198,11 +198,11 @@ per `getByRole('option', { name })` bzw. über den `select`-Wert adressiert, nic
 - **Komponententests**: Enter-Acknowledgement mit `participants`, die `meister`
   (`spielleiter`) und `sam` (`spieler`, `userId` `u-sam`, Alias `Gandalf`) enthalten;
   Socket-Fassade zusätzlich mit aufzeichnendem `assignToken`; `canMoveToken` aus den
-  aufgezeichneten Canvas-Optionen direkt mit Token-Objekten aufrufen. Auswahlfeld per
-  `getByRole('combobox', { name: 'Goblin zuweisen' })`, Auswahl per
-  `fireEvent.change(select, { target: { value: 'u-sam' } })`; Options per
-  `within(select).getByRole('option', { name })`. Keine `must()`-Helfer mit Kurzmeldung —
-  die DOM-Ausgabe der Testing Library ist das Gate-Feedback des implementers.
+  aufgezeichneten Canvas-Optionen direkt mit Token-Objekten aufrufen. Das Auswahlfeld wird
+  über seine Rolle (Combobox) und seinen zugänglichen Namen adressiert, die Auswahl über ein
+  Change-Ereignis mit dem Zielwert, die Einträge über die Rolle Option innerhalb des
+  Auswahlfelds. Keine `must()`-Helfer mit Kurzmeldung — die DOM-Ausgabe der Testing Library
+  ist das Gate-Feedback des implementers.
 - Kein Test importiert `pixi.js`; Kennzeichnung und Ziehen nimmt der App-Test ab.
 
 ## Risks / Trade-offs

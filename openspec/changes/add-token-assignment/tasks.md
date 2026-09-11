@@ -32,8 +32,8 @@
       Enter-Acknowledgement mit `participants` (`meister`/`spielleiter`, `sam`/`spieler`/
       `u-sam`/Alias `Gandalf`), Socket-Fassaden-Mock um aufzeichnendes `assignToken`;
       Elemente nach der Schnittstellentabelle in design.md D7 über Testing-Library-Abfragen
-      (`getByRole('combobox', { name })`, `within(select).getByRole('option', { name })`),
-      keine `must()`-Helfer (design.md D8); verifizieren, dass sie rot sind, weil
+      (Rolle und zugänglicher Name, Option innerhalb des Auswahlfelds), keine
+      `must()`-Helfer (design.md D8); verifizieren, dass sie rot sind, weil
       `canMoveToken`/`onTokenMove` für Spieler, das Auswahlfeld und `assignToken` fehlen
       bzw. die Meldung des Spielers nirgends erscheint
 

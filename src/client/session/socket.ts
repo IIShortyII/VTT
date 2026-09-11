@@ -20,6 +20,9 @@ import {
   type CreateTokenInput,
   type MoveTokenAck,
   type RemoveTokenAck,
+  type TokenConditionsAck,
+  type TokenStatsAck,
+  type TokenStatsPatch,
   type TokensEvent,
 } from '../../shared/token.js'
 
@@ -44,6 +47,10 @@ export interface SessionSocketFacade {
   moveToken(sessionId: string, tokenId: string, cell: Cell): Promise<MoveTokenAck>
   removeToken(sessionId: string, tokenId: string): Promise<RemoveTokenAck>
   assignToken(sessionId: string, tokenId: string, ownerId: string | null): Promise<AssignTokenAck>
+  // add-token-stats (#61, design.md D5): `patch` traegt nur die im Aufruf gesetzten
+  // Schluessel - der Schaden-/Heilungspfad schickt genau `{ hp }`.
+  setTokenStats(sessionId: string, tokenId: string, patch: TokenStatsPatch): Promise<TokenStatsAck>
+  setTokenConditions(sessionId: string, tokenId: string, conditions: string[]): Promise<TokenConditionsAck>
   on(event: 'participants', handler: (payload: ParticipantsEvent) => void): void
   on(event: 'status', handler: (payload: StatusEvent) => void): void
   on(event: 'replaced', handler: (payload: ReplacedEvent) => void): void
@@ -131,6 +138,14 @@ export function createSessionSocket(): SessionSocketFacade {
     assignToken: (sessionId: string, tokenId: string, ownerId: string | null) =>
       new Promise<AssignTokenAck>((resolve) => {
         socket.emit(SESSION_TOKEN_EVENTS.assign, { sessionId, tokenId, ownerId }, (ack: AssignTokenAck) => resolve(ack))
+      }),
+    setTokenStats: (sessionId: string, tokenId: string, patch: TokenStatsPatch) =>
+      new Promise<TokenStatsAck>((resolve) => {
+        socket.emit(SESSION_TOKEN_EVENTS.stats, { sessionId, tokenId, ...patch }, (ack: TokenStatsAck) => resolve(ack))
+      }),
+    setTokenConditions: (sessionId: string, tokenId: string, conditions: string[]) =>
+      new Promise<TokenConditionsAck>((resolve) => {
+        socket.emit(SESSION_TOKEN_EVENTS.conditions, { sessionId, tokenId, conditions }, (ack: TokenConditionsAck) => resolve(ack))
       }),
     on: (event: string, handler: (payload: unknown) => void) => {
       if (event === 'reconnect') {

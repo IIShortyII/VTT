@@ -12,19 +12,21 @@ import {
   type TransitionAction,
 } from '../../shared/session.js'
 import type { ActiveMap } from '../../shared/session-map.js'
-import { canMoveToken, type CreateTokenInput, type Token } from '../../shared/token.js'
+import { canMoveToken, type CreateTokenInput, type Token, type TokenStatsPatch } from '../../shared/token.js'
 import { mapImageUrl } from '../map/api.js'
 import { MapCanvas } from '../map/MapCanvas.js'
 import { MapPanel } from './MapPanel.js'
 import { createSessionSocket, type SessionSocketFacade } from './socket.js'
+import { PlayerTokenList } from './TokenStats.js'
 import { TokenPanel } from './TokenPanel.js'
 
 // Raumansicht (design.md D10, Requirement "Sitzungsoberflaeche"; session-map #50, Requirement
 // "Kartenansicht im Raum"; session-token #14, Requirement "Tokenansicht im Raum";
-// add-token-assignment #15, Requirement "Tokenansicht im Raum"/"Token bewegen"). Zustand und
-// Teilnehmer kommen ausschliesslich aus dem Acknowledgement von `enter` und den
-// nachfolgenden Server-Ereignissen - der angezeigte Zustand folgt dem Server, nie dem zuletzt
-// geklickten Uebergang oder der zuletzt aktivierten Karte (constitution.md §9.1).
+// add-token-assignment #15, Requirement "Tokenansicht im Raum"/"Token bewegen"; add-token-stats
+// #61, Requirement "Tokenansicht im Raum"). Zustand und Teilnehmer kommen ausschliesslich aus
+// dem Acknowledgement von `enter` und den nachfolgenden Server-Ereignissen - der angezeigte
+// Zustand folgt dem Server, nie dem zuletzt geklickten Uebergang oder der zuletzt aktivierten
+// Karte (constitution.md §9.1).
 //
 // reenter-room-after-reconnect (#46, design.md D3): eine von der Fassade gemeldete
 // Wiederverbindung betritt denselben Raum ueber dieselbe Fassade erneut - ausser die
@@ -313,6 +315,39 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
       })
   }
 
+  // add-token-stats (#61, design.md D10): dieselbe Fehlermeldung wie die uebrigen
+  // Token-Handler - keine lokale Aenderung des Bestands, der Server verteilt ihn per
+  // `session:tokens` (constitution.md §9.1).
+  const handleTokenStats = (tokenId: string, patch: TokenStatsPatch) => {
+    const socket = socketRef.current
+    if (!socket) {
+      return
+    }
+    socket
+      .setTokenStats(sessionId, tokenId, patch)
+      .then((ack) => {
+        setTokenError(ack.ok ? null : ack.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
+  const handleTokenConditions = (tokenId: string, conditions: string[]) => {
+    const socket = socketRef.current
+    if (!socket) {
+      return
+    }
+    socket
+      .setTokenConditions(sessionId, tokenId, conditions)
+      .then((ack) => {
+        setTokenError(ack.ok ? null : ack.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
   // "Hier weiterspielen" (Requirement "Sitzungsoberflaeche"): eine bewusste Handlung des
   // Nutzers, keine Automatik - die Sperren werden zurueckgesetzt, die neue Fassade beginnt
   // ohne Vorgeschichte (design.md D3). Die bisherige Fassade wird zusaetzlich explizit
@@ -429,8 +464,14 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
           onCreate={handleTokenCreate}
           onRemove={handleTokenRemove}
           onAssign={handleTokenAssign}
+          onSetStats={handleTokenStats}
+          onSetConditions={handleTokenConditions}
         />
       )}
+
+      {/* add-token-stats (#61, design.md D10, Requirement "Tokenansicht im Raum"): ein
+          Spieler sieht statt der Verwaltung die eigene Werteliste. */}
+      {state.role === 'spieler' && <PlayerTokenList tokens={state.tokens} />}
 
       <button type="button" onClick={onLeave}>
         Zurück zur Liste

@@ -8,7 +8,7 @@
 
 ## 1. Tests (test-author)
 
-- [ ] 1.1 Socket-Integrationstests in der bestehenden Token-Socket-Suite: die 13 Szenarien
+- [x] 1.1 Socket-Integrationstests in der bestehenden Token-Socket-Suite: die 13 Szenarien
       „Zielgruppe eines Tokenwerts setzen" und die 3 neuen Szenarien „Sichtbarkeit der
       Tokenwerte" („Geteilte Werte erreichen den Empfänger beim Betreten", „Freigaben sehen
       nur Spielleiter und Besitzer", „Änderung eines geteilten Werts erreicht die Zielgruppe
@@ -19,7 +19,7 @@
       die Tests rot sind, weil `session:token-share` unbekannt ist, die Tabelle fehlt bzw.
       geteilte Werte beim Empfänger noch `null` sind (Prisma-Typfehler beim Rot-Bestätigen
       unterscheiden)
-- [ ] 1.2 Komponententests in der bestehenden Token-UI-Suite: die 9 neuen Szenarien der
+- [x] 1.2 Komponententests in der bestehenden Token-UI-Suite: die 9 neuen Szenarien der
       „Tokenansicht im Raum" („Spielleiter teilt einen Wert mit allen über die Liste",
       „Spielleiter teilt einen Wert mit einem Spieler über die Liste", „Weiterer Empfänger
       wird an die Liste angehängt", „Abwahl des letzten Empfängers sendet keine", „Abwahl
@@ -33,7 +33,7 @@
 
 ## 2. Schema (implementer)
 
-- [ ] 2.1 `prisma/schema.prisma`: Modell `TokenShare` (`tokenId`, `stat`, `userId` nullable,
+- [x] 2.1 `prisma/schema.prisma`: Modell `TokenShare` (`tokenId`, `stat`, `userId` nullable,
       `@@unique([tokenId, stat, userId])`, `@@index([tokenId])`, `@@index([userId])`,
       `onDelete: Cascade` an Token und User) und Gegenrelationen `Token.shares`,
       `User.tokenShares` (design.md D1); Migrationsdatei
@@ -45,7 +45,7 @@
 
 ## 3. Gemeinsamer Vertrag (implementer)
 
-- [ ] 3.1 `src/shared/token.ts`: `TOKEN_STATS`, `TokenStatSchema`, `TokenStat`;
+- [x] 3.1 `src/shared/token.ts`: `TOKEN_STATS`, `TokenStatSchema`, `TokenStat`;
       `TokenAudienceSchema` (`'keine'` | `'alle'` | nicht-leere Liste eindeutiger Strings),
       `TokenAudience`; `TokenSharesSchema`, `TokenShares`, `NO_SHARES`; `TokenSchema.shares`
       nullable; `ShareTokenInputSchema`, `ShareTokenInput`, `ShareTokenAck`;
@@ -54,7 +54,7 @@
 
 ## 4. Server (implementer)
 
-- [ ] 4.1 `src/server/session/tokens.ts`: `TOKEN_INCLUDE` um `shares` (aufsteigend nach
+- [x] 4.1 `src/server/session/tokens.ts`: `TOKEN_INCLUDE` um `shares` (aufsteigend nach
       `userId`); `toToken` baut `shares` (`alle`-Zeile gewinnt, sonst Liste, sonst `keine`);
       `isStatVisible(token, stat, viewer)`; `redactToken` filtert je Stat (`hp`/`hpMax`
       gemeinsam, `conditions` als Liste) und setzt `shares` auf `null` für jeden, der weder
@@ -68,29 +68,29 @@
 
 ## 5. Client (implementer)
 
-- [ ] 5.1 `src/client/session/socket.ts`: `shareToken(sessionId, tokenId, stat, audience)`
+- [x] 5.1 `src/client/session/socket.ts`: `shareToken(sessionId, tokenId, stat, audience)`
       mit Acknowledgement (design.md D4); verifizieren mit `pnpm typecheck:src`
-- [ ] 5.2 `src/client/session/TokenShare.tsx` (neu): `TOKEN_STAT_LABELS` und
+- [x] 5.2 `src/client/session/TokenShare.tsx` (neu): `TOKEN_STAT_LABELS` und
       `TokenShareControls({ token, participants, onShare })` — `null` bei `shares` `null`,
       sonst `<fieldset>` `<Name> Freigaben` mit je Stat einem Kästchen `für alle` und je
       Spieler-Mitglied außer dem Besitzer einem Kästchen `für <Anzeigename>`; Zustand aus
       `token.shares`, kein lokaler Zustand; Sendelogik nach design.md D5; Beschriftungen und
       `name`-Attribute genau nach der Schnittstellentabelle in design.md D8; verifiziert
       durch die Freigabe-Szenarien im Gate
-- [ ] 5.3 `src/client/session/TokenPanel.tsx`: Prop `onShare`, `TokenShareControls` je
+- [x] 5.3 `src/client/session/TokenPanel.tsx`: Prop `onShare`, `TokenShareControls` je
       `TokenRow`; `src/client/session/TokenStats.tsx`: `PlayerTokenList` mit `participants`
       und `onShare`, `TokenShareControls` je Token (design.md D6); `Anlegen` schickt
       weiterhin nur das Anlegeformular ab; bestehende Szenarien bleiben grün
-- [ ] 5.4 `src/client/session/SessionRoom.tsx`: `handleTokenShare` über die Fassade mit
+- [x] 5.4 `src/client/session/SessionRoom.tsx`: `handleTokenShare` über die Fassade mit
       derselben `tokenError`-Meldung; `onShare` an `TokenPanel`, `participants` und `onShare`
       an `PlayerTokenList` (design.md D6); bestehende Szenarien der Sitzungsoberfläche, der
       Kartenansicht und der Tokenansicht bleiben grün; verifiziert im Gate
 
 ## 6. Abschluss
 
-- [ ] 6.1 Gate grün (Typecheck, Lint, komplette Jest-Suite inkl. der bestehenden Tests),
+- [x] 6.1 Gate grün (Typecheck, Lint, komplette Jest-Suite inkl. der bestehenden Tests),
       Review „ok"
-- [ ] 6.2 App-Test durch den Menschen (drei Browser oder Profile: Spielleiter, Spieler
+- [x] 6.2 App-Test durch den Menschen (drei Browser oder Profile: Spielleiter, Spieler
       `sam`, Spieler `tom`): Karte aktivieren, Token `Goblin` (an `sam` zugewiesen, HP
       23/40, RK 16) und `Ork` (ohne Besitzer, HP 30/30, Markierung `Liegend`) anlegen →
       `tom` sieht bei beiden nichts, `sam` nur `Goblin`; Spielleiter kreuzt bei `Ork` „HP
@@ -104,7 +104,7 @@
       Freigabe „HP für alle" von `Ork` bleibt; Server neu starten und Raum betreten →
       Freigaben erhalten; neuer Spieler tritt bei → sieht `Ork` HP sofort (Zielgruppe
       `alle`)
-- [ ] 6.3 Change nach `openspec/changes/archive/YYYY-MM-DD-add-token-sharing/` verschieben
+- [x] 6.3 Change nach `openspec/changes/archive/YYYY-MM-DD-add-token-sharing/` verschieben
       (Delta in `openspec/specs/session-token/` einsynchronisieren; danach prüfen, ob die
       Abschnitte „Begriffe"/„Drahtformat" der Hauptspec Stat, Zielgruppe, Freigaben,
       `shares` und `session:token-share` nennen — das Delta trägt sie nur im Vorspann,

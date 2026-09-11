@@ -30,14 +30,72 @@ const SRC_DIRS = ['src', 'prisma']
 // Bewusst inklusive der lokalen Entwicklungs-Varianten (migrate dev/reset) - auch sie
 // schreiben gegen das, was in DATABASE_URL steht.
 const MIGRATION_COMMANDS = /prisma\s+(migrate\s+(deploy|dev|reset)|db\s+push)/
-// Muster, die eine ephemere Wegwerf-DB kennzeichnen. Alles andere gilt als produktiv und
-// wird geblockt (fail-closed: ein leeres DATABASE_URL matcht nichts).
+// Formen, die eine ephemere Wegwerf-DB kennzeichnen - am GANZEN Wert geprueft, nicht als
+// Teilstueck (guard-inline-db-url/design.md D8): seit der Wert auch aus dem agentengeschriebenen
+// Kommandotext stammen kann, waere ein Teilstring-Match fail-open
+// (postgres://user@prod-host/db?options=test.db enthaelt "test.db", verbindet aber zu prod-host).
+// Alles, was keine der Formen trifft, gilt als produktiv und wird geblockt (fail-closed: ein
+// leeres DATABASE_URL trifft nichts).
 // SQLite adressiert ueber Dateipfade statt Hostnamen - die Wegwerf-DB der Integrationstests
 // heisst daher per Konvention "test.db" (bzw. laeuft in-memory). Die lokale Entwicklungs-DB
-// (dev.db) matcht bewusst NICHT: Migrationen sind Menschensache (constitution.md 5.1), der
-// Agent schreibt das Schema, fuehrt es aber nicht aus. localhost bleibt fuer einen spaeteren
-// Umzug auf eine Server-DB enthalten.
-const EPHEMERAL_DB = /:memory:|test\.db|localhost|127\.0\.0\.1/
+// (dev.db) trifft bewusst NICHT: Migrationen sind Menschensache (constitution.md 5.1), der
+// Agent schreibt das Schema, fuehrt es aber nicht aus. localhost/127.0.0.1 als Host einer
+// Server-URL bleibt fuer einen spaeteren Umzug auf eine Server-DB enthalten - die Userinfo
+// davor darf keinen "/" tragen, sonst liesse sich "localhost" dort verstecken und der echte
+// Host dahinter.
+// Die beiden SQLite-Formen lassen einen beliebigen Query-Teil zu - anders als die Server-URL
+// unten: SQLite ist rein lokal, kein Query-Parameter adressiert einen anderen Host. Kommt je ein
+// dateibasierter Treiber mit host-artigen Parametern hinzu, gehoert die Whitelist auch hierher.
+const SQLITE_TEST_FILE = /^file:(?:[^?"']*\/)?test\.db(?:\?[^"']*)?$/
+const SQLITE_MEMORY = /^(?:file|sqlite)::memory:(?:\?[^"']*)?$/
+const LOCAL_SERVER_URL = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/"']*@)?(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/[^?"']*)?(?:\?([^"']*))?$/i
+// libpq und Prisma lesen den Zielhost auch aus dem Query-Teil (?host=/cloudsql/..., ?socket=) -
+// "localhost" in der Authority verbindet dann nirgends hin (design.md D8, Punkt 3, Review-Befund
+// Runde 2). Deshalb eine Whitelist harmloser Schluessel statt einer Sperrliste, die beim
+// naechsten Treiber unvollstaendig waere: jeder andere Schluessel macht den Wert zur unbekannten Form.
+const HARMLESS_QUERY_KEYS = new Set(['schema', 'sslmode', 'connection_limit', 'pool_timeout', 'connect_timeout', 'pgbouncer', 'sslaccept'])
+export function isEphemeralDbUrl(raw: string): boolean {
+  const value = raw.replace(/^["']/, '').replace(/["']$/, '') // Anfuehrungszeichen aussen, wie die Shell sie entfernt
+  if (SQLITE_TEST_FILE.test(value) || SQLITE_MEMORY.test(value)) return true
+  const server = LOCAL_SERVER_URL.exec(value)
+  if (!server) return false
+  const query = server[1] ?? ''
+  return query === '' || query.split('&').every(p => HARMLESS_QUERY_KEYS.has(p.split('=')[0].toLowerCase()))
+}
+// Welche Quelle fuer DATABASE_URL das Migrationskommando tatsaechlich sieht
+// (guard-inline-db-url/design.md D1-D5). process.env ist die Umgebung des HOOK-Prozesses, nicht
+// die des Kommandos: eine Inline-Zuweisung im Text ersetzt sie (D1). Rein - kein
+// process.env-Zugriff hier, den macht decide() (D7).
+const DB_URL_MENTION = /\bDATABASE_URL\b/g
+// Der Wert ist auf den Zeichenvorrat einer URL beschraenkt, Anfuehrungszeichen aussen inklusive
+// (D8): $, Backtick, Klammern, Backslash und alles ausserhalb von ASCII sind kein Teil eines
+// Werts, sondern der Beginn einer unbekannten Form - was die Shell daraus macht, sieht der Guard
+// nicht. `DATABASE_URL=x;` liefert damit KEINEN Wert: das Semikolon klebt am Wert, die Form
+// faellt in "unbekannt" (D5). Leerraum ist ASCII-Leerraum wie bei der Shell - \\s naehme auch ein
+// geschuetztes Leerzeichen als Grenze, das die Shell als Teil des Werts durchreicht.
+const DB_URL_VALUE = '([A-Za-z0-9_./:@%?=+\\-"\']+)'
+// Praefix und env: die Zuweisung wirkt auf genau das Kommando, das direkt folgt (D2). Weitere
+// VAR=wert-Zuweisungen davor sind erlaubt. Nach dem Wert muss ein Kommandowort folgen, kein
+// Trenner; der Rest wird auf Trenner geprueft (D3).
+const PREFIX_FORM = new RegExp(`^[ \\t]*(?:env[ \\t]+)?(?:[A-Za-z_]\\w*=[^ \\t]*[ \\t]+)*DATABASE_URL=${DB_URL_VALUE}[ \\t]+(?![;&|])([^ \\t][\\s\\S]*)$`)
+// export wirkt auf alles danach (D2) - ein Trenner zwischen Zuweisung und Kommando ist hier gerade
+// die erwartete Form.
+const EXPORT_FORM = new RegExp(`^[ \\t]*export[ \\t]+DATABASE_URL=${DB_URL_VALUE}[ \\t]*(?:&&|;|\\r?\\n)[ \\t]*[^ \\t\\r\\n]`)
+// Hinter diesen Trennern gilt ein Praefix nicht mehr (D3) - auch die Pipe: bei
+// `DATABASE_URL=x true | prisma migrate` sieht nur die linke Seite den Wert.
+const COMMAND_SEPARATOR = /;|&&|\|\||\||\n|\$\(|`/
+export function databaseUrlForCommand(cmd: string, env: string | undefined): string | undefined {
+  const mentions = (cmd.match(DB_URL_MENTION) ?? []).length
+  if (mentions === 0) return env ?? ''
+  // Jede zweite Nennung - Zuweisung, unset, $DATABASE_URL - ist ein Weg, den geprueften Wert vor
+  // der Migration umzubiegen (D4). Fail-closed.
+  if (mentions > 1) return undefined
+  const prefix = PREFIX_FORM.exec(cmd)
+  if (prefix) return COMMAND_SEPARATOR.test(prefix[2]) ? undefined : prefix[1]
+  const exported = EXPORT_FORM.exec(cmd)
+  if (exported) return exported[1]
+  return undefined
+}
 // Kommandos, die die Testsuite ausfuehren. Fuer den implementer tabu: Jest & Co. geben bei
 // Matcher-Fehlern Codeframes aus den Testdateien aus und umgehen damit die Pfadsperre aus
 // (1) vollstaendig (constitution.md 2.2). Das Gate ruft die Suite als Subprozess des
@@ -366,10 +424,16 @@ function decide(input: Record<string, unknown>, deps: Deps): GuardResult {
     }
   }
 
+  // Teilstring-Match bleibt (guard-inline-db-url/design.md D6): auch eine blosse Erwaehnung des
+  // Migrationskommandos (Heredoc, echo, Commit-Nachricht) blockt. Die Unterscheidung
+  // "Kommandoposition oder Zitat" hiesse Shell-Syntax parsen - ein Fehler dort waere fail-open an
+  // einer Grenze, die constitution.md 5.1 dem Menschen vorbehaelt. Ausweg: --body-file / Write-Tool.
   if (MIGRATION_COMMANDS.test(cmd)) {
-    const dbUrl = process.env.DATABASE_URL ?? ''
-    if (!EPHEMERAL_DB.test(dbUrl))
-      return { blocked: true, message: 'Blockiert: Migration nur gegen die ephemere Test-DB, nie gegen eine produktive Zielumgebung.' }
+    const dbUrl = databaseUrlForCommand(cmd, process.env.DATABASE_URL)
+    if (dbUrl === undefined)
+      return { blocked: true, message: 'Blockiert: Migration — nicht sicher bestimmbar, welches DATABASE_URL das Kommando sieht (mehrere Nennungen oder unbekannte Form). Erkannt werden `DATABASE_URL=… <cmd>`, `env DATABASE_URL=… <cmd>` und `export DATABASE_URL=… && <cmd>`.' }
+    if (!isEphemeralDbUrl(dbUrl))
+      return { blocked: true, message: 'Blockiert: Migration nur gegen die ephemere Test-DB (file:…/test.db, :memory:, Server-URL auf localhost), nie gegen eine produktive Zielumgebung.' }
   }
 
   return { blocked: false }

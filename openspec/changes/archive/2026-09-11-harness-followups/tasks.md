@@ -57,6 +57,6 @@
       Zwei Hinweise als Kommentar festgehalten: der POSIX-Zweig meldet einen Port ohne
       lesbaren `pid=`-Teil still nicht (fremder Nutzer, altes iproute2); ein git-Fehler bei der
       Tracked-Abfrage bedeutet jetzt „behalten" statt „löschen" — sicherer, bewusst.
-- [ ] 6.3 Menschliche Freigabe (`constitution.md` §3.4 — kein App-Test, kein Anwendungscode)
-- [ ] 6.4 `openspec archive harness-followups --yes`, Purpose der neuen Capability ausfüllen,
+- [x] 6.3 Menschliche Freigabe (`constitution.md` §3.4 — kein App-Test, kein Anwendungscode)
+- [x] 6.4 `openspec archive harness-followups --yes`, Purpose der neuen Capability ausfüllen,
       PR als Teil 3 von 3 mit `Closes #44`; menschlicher Merge

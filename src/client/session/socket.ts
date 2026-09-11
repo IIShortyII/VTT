@@ -15,6 +15,7 @@ import {
 import { SESSION_MAP_EVENTS, type ActivateMapAck, type MapEvent } from '../../shared/session-map.js'
 import {
   SESSION_TOKEN_EVENTS,
+  type AssignTokenAck,
   type CreateTokenAck,
   type CreateTokenInput,
   type MoveTokenAck,
@@ -42,6 +43,7 @@ export interface SessionSocketFacade {
   createToken(sessionId: string, input: CreateTokenFormInput): Promise<CreateTokenAck>
   moveToken(sessionId: string, tokenId: string, cell: Cell): Promise<MoveTokenAck>
   removeToken(sessionId: string, tokenId: string): Promise<RemoveTokenAck>
+  assignToken(sessionId: string, tokenId: string, ownerId: string | null): Promise<AssignTokenAck>
   on(event: 'participants', handler: (payload: ParticipantsEvent) => void): void
   on(event: 'status', handler: (payload: StatusEvent) => void): void
   on(event: 'replaced', handler: (payload: ReplacedEvent) => void): void
@@ -125,6 +127,10 @@ export function createSessionSocket(): SessionSocketFacade {
     removeToken: (sessionId: string, tokenId: string) =>
       new Promise<RemoveTokenAck>((resolve) => {
         socket.emit(SESSION_TOKEN_EVENTS.remove, { sessionId, tokenId }, (ack: RemoveTokenAck) => resolve(ack))
+      }),
+    assignToken: (sessionId: string, tokenId: string, ownerId: string | null) =>
+      new Promise<AssignTokenAck>((resolve) => {
+        socket.emit(SESSION_TOKEN_EVENTS.assign, { sessionId, tokenId, ownerId }, (ack: AssignTokenAck) => resolve(ack))
       }),
     on: (event: string, handler: (payload: unknown) => void) => {
       if (event === 'reconnect') {

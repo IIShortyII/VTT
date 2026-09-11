@@ -1,28 +1,34 @@
-// Integrationstests zu openspec/changes/add-session-tokens/specs/session-token/spec.md — die
-// 15 Socket-/REST-Szenarien der Requirements "Token anlegen" (4), "Token bewegen" (3),
-// "Token entfernen" (2) und "Tokenbestand beim Betreten und Kartenwechsel" (6) (tasks.md 1.1).
+// Integrationstests zu openspec/changes/add-token-assignment/specs/session-token/spec.md — das
+// Delta zu #15: die neue Requirement "Token zuweisen" (7 Szenarien), die geaenderte Requirement
+// "Token bewegen" (3 neue Szenarien plus zwei bestehende, die ihren Namen behalten). Die
+// uebrigen Szenarien aus #14 ("Token anlegen", "Token entfernen", "Tokenbestand beim Betreten
+// und Kartenwechsel", "Unbekanntes … nicht unterscheidbar") bleiben unveraendert (tasks.md 1.1).
 // Ein Test je GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname.
 //
 // Aufbau wie in session-map-socket.integration.test.ts (design.md D8): die App lauscht auf
 // Port 0, ein `socket.io-client` verbindet mit dem Sitzungscookie in `extraHeaders`,
 // `reconnection: false`. Ereignisse werden ueber `once`-Promises mit Timeout eingesammelt;
 // Listener werden vor der ausloesenden Aktion registriert. "erhält kein session:tokens" ist
-// eine kurze Wartezeit ohne Ereignis (wie "kein session:map" dort). GIVEN-Zustaende (Sitzung,
-// Mitgliedschaft, Karte, Instanz, Token) werden direkt in der DB geschrieben; das REST-Szenario
-// "Aushängen löscht die Tokens der Instanz" laeuft per `app.inject()`; "Tokens überstehen einen
-// Serverneustart" mit einer zweiten App gegen denselben Prisma-Client nach `close()` der ersten.
-// Gegen die Suite-eigene Wegwerf-DB (`session-token-socket.test.db`, constitution.md §4.3).
+// eine kurze Wartezeit ohne Ereignis. GIVEN-Zustaende (Sitzung, Mitgliedschaft, Karte, Instanz,
+// Token samt Besitzer) werden direkt in der DB geschrieben; das Szenario "Entzogene Zuweisung
+// wirkt mit der nächsten Bewegung" nutzt **eine** Spieler-Verbindung fuer beide Bewegungen
+// (§9.3). Gegen die Suite-eigene Wegwerf-DB (`session-token-socket.test.db`, constitution.md
+// §4.3).
 //
-// Ereignisnamen und Payloads woertlich aus spec.md "Drahtformat" / design.md D4 — das Modul
-// src/shared/token.ts existiert noch nicht, deshalb Zeichenketten direkt (die Suite laedt).
+// Ereignisnamen und Payloads woertlich aus spec.md "Drahtformat" / design.md: das neue Ereignis
+// `session:token-assign` mit `{ sessionId, tokenId, ownerId }` (`ownerId` als userId oder
+// `null`) → `{ ok: true, token }` | `{ ok: false, message }`; die Tokendarstellung traegt
+// zusaetzlich `ownerId`.
 //
-// Rote Phase (tasks.md 1.1, constitution.md §3.1): die Ereignisse `session:token-create`,
-// `session:token-move`, `session:token-remove` sind unbekannt (kein Acknowledgement -> Timeout),
-// `session:tokens` wird nach Aktivieren/Zuruecksetzen nicht gesendet (Timeout der Wartepromise),
-// und `tokens` fehlt im Enter-Acknowledgement. Zusaetzlich fehlt bis zur Migration aus 2.1 das
-// Modell `Token`; Tests, die es im GIVEN oder in der Aussage lesen, scheitern dann am
-// Prisma-Laufzeitzugriff (`prisma.token` ist `undefined`). Beides ist der erwartete rote Grund,
-// kein Setup-/Tippfehler.
+// Rote Phase (tasks.md 1.1, constitution.md §3.1): das Ereignis `session:token-assign` ist
+// unbekannt (kein Acknowledgement -> Timeout); `session:token-move` verlangt bis zur Umsetzung
+// weiterhin die Rolle `spielleiter`, weshalb ein Spieler eine falsche/allgemeine statt der
+// festen Meldung `Dieses Token darfst du nicht bewegen.` erhaelt bzw. sein eigenes Token nicht
+// bewegen darf; `ownerId` fehlt in der Tokendarstellung (Wert `undefined` statt der userId bzw.
+// `null`). Zusaetzlich kennt Prisma bis zur Migration aus 2.1 die Spalte `ownerId` nicht:
+// Tests, die ein Token mit `ownerId` in der DB anlegen (`createTokenDirect({ ownerId })`) oder
+// `ownerId` aus der DB lesen, scheitern dann am Datenbankzugriff (Prisma "Unknown argument
+// ownerId"). Beides ist der erwartete rote Grund, kein Setup-/Tippfehler.
 
 import { PrismaClient } from '@prisma/client'
 import { io, type Socket } from 'socket.io-client'
@@ -46,9 +52,10 @@ const openSockets: Socket[] = []
 let removeDbFiles: () => void = () => {}
 
 // --- Zugriff auf die (teils neuen) Tabellen -------------------------------------------------
-// `MapInstance`/`GameSession.activeInstanceId` (aus #50) und `Token` (neu mit 2.1). Der Zugriff
-// ist lose getippt gegen selbst geschriebene Interfaces, damit die Suite kompilierbar bleibt
-// und erst zur Laufzeit am fehlenden Modell scheitert (der erwartete rote Grund).
+// `MapInstance`/`GameSession.activeInstanceId` (aus #50) und `Token` (aus #14, mit #15 um
+// `ownerId` erweitert). Der Zugriff ist lose getippt gegen selbst geschriebene Interfaces,
+// damit die Suite kompilierbar bleibt und erst zur Laufzeit am fehlenden Spalten scheitert
+// (der erwartete rote Grund).
 interface GameSessionRow {
   id: string
   name: string
@@ -77,6 +84,7 @@ interface TokenRow {
   size: number
   col: number
   row: number
+  ownerId?: string | null
   createdAt?: Date
 }
 interface GameDb {
@@ -103,7 +111,7 @@ interface GameDb {
   }
   token: {
     create(args: {
-      data: { instanceId: string; name: string; color: string; icon: string | null; size: number; col: number; row: number }
+      data: { instanceId: string; name: string; color: string; icon: string | null; size: number; col: number; row: number; ownerId?: string | null }
     }): Promise<TokenRow>
     findUnique(args: { where: { id: string } }): Promise<TokenRow | null>
     findMany(args?: unknown): Promise<TokenRow[]>
@@ -208,6 +216,9 @@ function tokenMove(socket: Socket, payload: unknown): Promise<Record<string, unk
 function tokenRemove(socket: Socket, payload: unknown): Promise<Record<string, unknown>> {
   return emitAck(socket, 'session:token-remove', payload)
 }
+function tokenAssign(socket: Socket, payload: unknown): Promise<Record<string, unknown>> {
+  return emitAck(socket, 'session:token-assign', payload)
+}
 function activateMap(socket: Socket, payload: unknown): Promise<Record<string, unknown>> {
   return emitAck(socket, 'session:activate-map', payload)
 }
@@ -252,10 +263,11 @@ async function setActive(sessionId: string, instanceId: string | null): Promise<
 }
 
 /** GIVEN-Token direkt auf einer (auch nicht aktiven) Instanz — der einzige Weg, ein Token auf
- * einer nicht aktiven Instanz oder in einer fremden Sitzung anzulegen (design.md D8). */
+ * einer nicht aktiven Instanz oder in einer fremden Sitzung anzulegen (design.md D8). Ein
+ * optionales `ownerId` legt den Besitzer direkt fest (design.md D8, GIVEN "Besitzer ist sam"). */
 async function createTokenDirect(
   instanceId: string,
-  fields: { name?: string; color?: string; icon?: string | null; size?: number; col?: number; row?: number } = {},
+  fields: { name?: string; color?: string; icon?: string | null; size?: number; col?: number; row?: number; ownerId?: string | null } = {},
 ): Promise<TokenRow> {
   return db().token.create({
     data: {
@@ -266,6 +278,7 @@ async function createTokenDirect(
       size: fields.size ?? 1,
       col: fields.col ?? 0,
       row: fields.row ?? 0,
+      ...(fields.ownerId !== undefined ? { ownerId: fields.ownerId } : {}),
     },
   })
 }
@@ -433,6 +446,29 @@ test('Ungültige Felder werden abgelehnt', async () => {
   expect(await db().token.count()).toBe(0)
 })
 
+test('Neu angelegtes Token gehört dem Spielleiter', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+
+  const slSocket = client(sl.sid)
+  await connect(slSocket)
+  await enter(slSocket, gs.id)
+
+  const ack = await tokenCreate(slSocket, { sessionId: gs.id, name: 'Goblin', color: '#3366ff', icon: null, size: 1, col: 0, row: 0 })
+
+  expect(ack.ok).toBe(true)
+  const token = rec(ack.token, 'token im Acknowledgement')
+  expect(token.ownerId).toBeNull()
+
+  const inDb = must(await tokenRowById(String(token.id)), 'die Token-Zeile')
+  expect(inDb.ownerId).toBeNull()
+})
+
 // --- Token bewegen --------------------------------------------------------------------------
 
 test('Spielleiter bewegt ein Token', async () => {
@@ -481,6 +517,53 @@ test('Spielleiter bewegt ein Token', async () => {
   }
 })
 
+test('Spieler bewegt sein eigenes Token', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sp = await registerUser(app, 'sp@example.com', 'sam')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sp.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const goblin = await createTokenDirect(instanz.id, { name: 'Goblin', col: 3, row: 4, ownerId: sp.userId })
+
+  const slSocket = client(sl.sid)
+  const spSocket = client(sp.sid)
+  await connect(slSocket)
+  await connect(spSocket)
+  await enter(slSocket, gs.id)
+  await enter(spSocket, gs.id)
+
+  const beimSl = once(slSocket, 'session:tokens')
+  const beimSpieler = once(spSocket, 'session:tokens')
+  const ack = await tokenMove(spSocket, { sessionId: gs.id, tokenId: goblin.id, col: 7, row: 1 })
+
+  expect(ack.ok).toBe(true)
+  const token = rec(ack.token, 'token im Acknowledgement')
+  expect(token.col).toBe(7)
+  expect(token.row).toBe(1)
+  expect(token.ownerId).toBe(sp.userId)
+
+  const inDb = must(await tokenRowById(goblin.id), 'die Token-Zeile')
+  expect(inDb.col).toBe(7)
+  expect(inDb.row).toBe(1)
+
+  for (const [event, wer] of [
+    [await beimSl, 'Spielleiter'],
+    [await beimSpieler, 'Spieler'],
+  ] as const) {
+    const tokens = tokensOf(event, `session:tokens beim ${wer}`)
+    const goblinEvent = must(
+      tokens.find((t) => t.name === 'Goblin'),
+      `Goblin in session:tokens beim ${wer}`,
+    )
+    expect(goblinEvent.col).toBe(7)
+    expect(goblinEvent.row).toBe(1)
+  }
+})
+
 test('Spieler darf kein Token bewegen', async () => {
   const app = await startApp()
   const sl = await registerUser(app, 'sl@example.com', 'meister')
@@ -497,13 +580,81 @@ test('Spieler darf kein Token bewegen', async () => {
   await connect(spSocket)
   await enter(spSocket, gs.id)
 
+  let spTokens = false
+  spSocket.on('session:tokens', () => {
+    spTokens = true
+  })
   const ack = await tokenMove(spSocket, { sessionId: gs.id, tokenId: goblin.id, col: 7, row: 1 })
 
   expect(ack.ok).toBe(false)
-  expect(typeof ack.message).toBe('string')
+  expect(ack.message).toBe('Dieses Token darfst du nicht bewegen.')
   const inDb = must(await tokenRowById(goblin.id), 'die Token-Zeile')
   expect(inDb.col).toBe(3)
   expect(inDb.row).toBe(4)
+  await new Promise((resolve) => setTimeout(resolve, QUIET_MS))
+  expect(spTokens).toBe(false)
+})
+
+test('Spieler darf ein fremdes Token nicht bewegen', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const tom = await registerUser(app, 'tom@example.com', 'tom')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  await addMembership(gs.id, tom.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const ork = await createTokenDirect(instanz.id, { name: 'Ork', col: 5, row: 5, ownerId: tom.userId })
+
+  const samSocket = client(sam.sid)
+  await connect(samSocket)
+  await enter(samSocket, gs.id)
+
+  const ack = await tokenMove(samSocket, { sessionId: gs.id, tokenId: ork.id, col: 7, row: 1 })
+
+  expect(ack.ok).toBe(false)
+  expect(ack.message).toBe('Dieses Token darfst du nicht bewegen.')
+  const inDb = must(await tokenRowById(ork.id), 'die Token-Zeile Ork')
+  expect(inDb.col).toBe(5)
+  expect(inDb.row).toBe(5)
+})
+
+test('Entzogene Zuweisung wirkt mit der nächsten Bewegung', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sp = await registerUser(app, 'sp@example.com', 'sam')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sp.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const goblin = await createTokenDirect(instanz.id, { name: 'Goblin', col: 3, row: 4, ownerId: sp.userId })
+
+  const slSocket = client(sl.sid)
+  const spSocket = client(sp.sid)
+  await connect(slSocket)
+  await connect(spSocket)
+  await enter(slSocket, gs.id)
+  await enter(spSocket, gs.id)
+
+  // GIVEN: sam bewegt Goblin ueber diese Verbindung bereits erfolgreich nach (7, 1).
+  const ersteAck = await tokenMove(spSocket, { sessionId: gs.id, tokenId: goblin.id, col: 7, row: 1 })
+  expect(ersteAck.ok).toBe(true)
+
+  // WHEN: der Spielleiter nimmt die Zuweisung zurueck, dann bewegt sam ueber dieselbe Verbindung erneut.
+  const assignAck = await tokenAssign(slSocket, { sessionId: gs.id, tokenId: goblin.id, ownerId: null })
+  expect(assignAck.ok).toBe(true)
+  const zweiteAck = await tokenMove(spSocket, { sessionId: gs.id, tokenId: goblin.id, col: 8, row: 2 })
+
+  expect(zweiteAck.ok).toBe(false)
+  expect(zweiteAck.message).toBe('Dieses Token darfst du nicht bewegen.')
+  const inDb = must(await tokenRowById(goblin.id), 'die Token-Zeile')
+  expect(inDb.col).toBe(7)
+  expect(inDb.row).toBe(1)
 })
 
 test('Unbekanntes, fremdes und nicht aktives Token sind nicht unterscheidbar', async () => {
@@ -547,6 +698,203 @@ test('Unbekanntes, fremdes und nicht aktives Token sind nicht unterscheidbar', a
   const verborgenInDb = must(await tokenRowById(verborgen.id), 'Verborgen')
   expect(verborgenInDb.col).toBe(0)
   expect(verborgenInDb.row).toBe(0)
+})
+
+// --- Token zuweisen -------------------------------------------------------------------------
+
+test('Spielleiter weist ein Token zu', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sp = await registerUser(app, 'sp@example.com', 'sam')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sp.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const goblin = await createTokenDirect(instanz.id, { name: 'Goblin', col: 3, row: 4 })
+
+  const slSocket = client(sl.sid)
+  const spSocket = client(sp.sid)
+  await connect(slSocket)
+  await connect(spSocket)
+  await enter(slSocket, gs.id)
+  await enter(spSocket, gs.id)
+
+  const beimSl = once(slSocket, 'session:tokens')
+  const beimSpieler = once(spSocket, 'session:tokens')
+  const ack = await tokenAssign(slSocket, { sessionId: gs.id, tokenId: goblin.id, ownerId: sp.userId })
+
+  expect(ack.ok).toBe(true)
+  const token = rec(ack.token, 'token im Acknowledgement')
+  expect(token.ownerId).toBe(sp.userId)
+
+  const inDb = must(await tokenRowById(goblin.id), 'die Token-Zeile')
+  expect(inDb.ownerId).toBe(sp.userId)
+
+  for (const [event, wer] of [
+    [await beimSl, 'Spielleiter'],
+    [await beimSpieler, 'Spieler'],
+  ] as const) {
+    const tokens = tokensOf(event, `session:tokens beim ${wer}`)
+    const goblinEvent = must(
+      tokens.find((t) => t.name === 'Goblin'),
+      `Goblin in session:tokens beim ${wer}`,
+    )
+    expect(goblinEvent.ownerId).toBe(sp.userId)
+  }
+})
+
+test('Spielleiter nimmt eine Zuweisung zurück', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sp = await registerUser(app, 'sp@example.com', 'sam')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sp.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const goblin = await createTokenDirect(instanz.id, { name: 'Goblin', col: 3, row: 4, ownerId: sp.userId })
+
+  const slSocket = client(sl.sid)
+  const spSocket = client(sp.sid)
+  await connect(slSocket)
+  await connect(spSocket)
+  await enter(slSocket, gs.id)
+  await enter(spSocket, gs.id)
+
+  const beimSpieler = once(spSocket, 'session:tokens')
+  const ack = await tokenAssign(slSocket, { sessionId: gs.id, tokenId: goblin.id, ownerId: null })
+
+  expect(ack.ok).toBe(true)
+  const token = rec(ack.token, 'token im Acknowledgement')
+  expect(token.ownerId).toBeNull()
+
+  const inDb = must(await tokenRowById(goblin.id), 'die Token-Zeile')
+  expect(inDb.ownerId).toBeNull()
+
+  const tokens = tokensOf(await beimSpieler, 'session:tokens beim Spieler')
+  const goblinEvent = must(tokens.find((t) => t.name === 'Goblin'), 'Goblin beim Spieler')
+  expect(goblinEvent.ownerId).toBeNull()
+})
+
+test('Spielleiter übergibt ein Token an einen anderen Spieler', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const tom = await registerUser(app, 'tom@example.com', 'tom')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  await addMembership(gs.id, tom.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const goblin = await createTokenDirect(instanz.id, { name: 'Goblin', col: 3, row: 4, ownerId: sam.userId })
+
+  const slSocket = client(sl.sid)
+  await connect(slSocket)
+  await enter(slSocket, gs.id)
+
+  const ack = await tokenAssign(slSocket, { sessionId: gs.id, tokenId: goblin.id, ownerId: tom.userId })
+
+  expect(ack.ok).toBe(true)
+  const token = rec(ack.token, 'token im Acknowledgement')
+  expect(token.ownerId).toBe(tom.userId)
+
+  const inDb = must(await tokenRowById(goblin.id), 'die Token-Zeile')
+  expect(inDb.ownerId).toBe(tom.userId)
+})
+
+test('Nur Spieler-Mitglieder kommen als Besitzer in Frage', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const fremd = await registerUser(app, 'fremd@example.com', 'fremd')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const goblin = await createTokenDirect(instanz.id, { name: 'Goblin', col: 3, row: 4 })
+
+  const slSocket = client(sl.sid)
+  await connect(slSocket)
+  await enter(slSocket, gs.id)
+
+  let slTokens = false
+  slSocket.on('session:tokens', () => {
+    slTokens = true
+  })
+  const fremdAck = await tokenAssign(slSocket, { sessionId: gs.id, tokenId: goblin.id, ownerId: fremd.userId })
+  const selbstAck = await tokenAssign(slSocket, { sessionId: gs.id, tokenId: goblin.id, ownerId: sl.userId })
+
+  expect(fremdAck.ok).toBe(false)
+  expect(fremdAck.message).toBe('Spieler nicht gefunden.')
+  expect(selbstAck.ok).toBe(false)
+  expect(selbstAck.message).toBe('Spieler nicht gefunden.')
+
+  const inDb = must(await tokenRowById(goblin.id), 'die Token-Zeile')
+  expect(inDb.ownerId).toBeNull()
+  await new Promise((resolve) => setTimeout(resolve, QUIET_MS))
+  expect(slTokens).toBe(false)
+})
+
+test('Spieler darf nicht zuweisen', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sp = await registerUser(app, 'sp@example.com', 'sam')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sp.userId, 'spieler')
+  const karte = await makeMap(sl.userId, 'Taverne', { image: true })
+  const instanz = await mountDirect(gs.id, karte.id)
+  await setActive(gs.id, instanz.id)
+  const goblin = await createTokenDirect(instanz.id, { name: 'Goblin', col: 3, row: 4 })
+
+  const spSocket = client(sp.sid)
+  await connect(spSocket)
+  await enter(spSocket, gs.id)
+
+  const ack = await tokenAssign(spSocket, { sessionId: gs.id, tokenId: goblin.id, ownerId: sp.userId })
+
+  expect(ack.ok).toBe(false)
+  expect(typeof ack.message).toBe('string')
+  const inDb = must(await tokenRowById(goblin.id), 'die Token-Zeile')
+  expect(inDb.ownerId).toBeNull()
+})
+
+test('Unbekanntes und nicht aktives Token sind beim Zuweisen nicht unterscheidbar', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sp = await registerUser(app, 'sp@example.com', 'sam')
+  const gs = await createGameSession({ status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sp.userId, 'spieler')
+  const karte1 = await makeMap(sl.userId, 'Erste', { image: true })
+  const karte2 = await makeMap(sl.userId, 'Zweite', { image: true })
+  const aktiv = await mountDirect(gs.id, karte1.id)
+  const nichtAktiv = await mountDirect(gs.id, karte2.id)
+  await setActive(gs.id, aktiv.id)
+  const verborgen = await createTokenDirect(nichtAktiv.id, { name: 'Verborgen', col: 0, row: 0 })
+
+  const slSocket = client(sl.sid)
+  const spSocket = client(sp.sid)
+  await connect(slSocket)
+  await connect(spSocket)
+  await enter(slSocket, gs.id)
+  await enter(spSocket, gs.id)
+
+  const unbekanntAck = await tokenAssign(slSocket, { sessionId: gs.id, tokenId: 'unbekannt', ownerId: sp.userId })
+  const verborgenAck = await tokenAssign(slSocket, { sessionId: gs.id, tokenId: verborgen.id, ownerId: sp.userId })
+
+  expect(unbekanntAck.ok).toBe(false)
+  expect(verborgenAck.ok).toBe(false)
+  expect(typeof unbekanntAck.message).toBe('string')
+  expect(verborgenAck.message).toBe(unbekanntAck.message)
+
+  const inDb = must(await tokenRowById(verborgen.id), 'Verborgen')
+  expect(inDb.ownerId).toBeNull()
 })
 
 // --- Token entfernen ------------------------------------------------------------------------

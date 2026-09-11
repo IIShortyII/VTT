@@ -334,6 +334,8 @@ export function removeUntrackedSourceDocs(src: string, run: Sh = sh) {
   // Entschieden wird an der AUSGABE, nicht am Exit-Code (harness-followups/design.md D4): mit
   // --error-unmatch waere "untracked" ein Fehler samt "error: pathspec ..." auf stderr, obwohl es
   // der Regelfall ist - jeder Lauf begann mit einer Fehlermeldung, die keine war (#44, Punkt 8).
+  // Ein git-Fehler (kein Repo, git fehlt) liefert ueber sh eine nichtleere Fehlerausgabe und
+  // faellt damit in "behalten" - Unsicherheit heisst hier nicht loeschen (Review-Hinweis).
   const tracked = run(`git ls-files -- "${fwd(src)}"`)
   if (tracked.out.trim() !== '') return
   rmSync(src, { recursive: true, force: true })
@@ -985,6 +987,9 @@ export function busyPorts(run: Sh = sh, platform: NodeJS.Platform = process.plat
   if (!r.ok) return { belegt, hinweis: firstErrorLine(r.out) }
   for (const line of r.out.split(/\r?\n/)) {
     // 'LISTEN 0 511 *:5173 *:* users:(("node",pid=4242,fd=20))'
+    // Bekannte Grenze (Review-Hinweis): fehlt der pid=-Teil - ss zeigt fremde Prozesse ohne
+    // Privileg nicht -, bleibt der Port still ungemeldet. Der Regelfall (Dev-Server desselben
+    // Nutzers) ist davon nicht betroffen; nur ein Scheitern des Werkzeugs selbst ergibt den Hinweis.
     const m = /:(\d+)\s.*pid=(\d+)/.exec(line)
     if (!m) continue
     const port = Number(m[1])

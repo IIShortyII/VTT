@@ -53,7 +53,10 @@
 - [x] 6.1 `pnpm test:harness` (179), `pnpm typecheck`, `pnpm lint` grün; `openspec validate
       harness-followups --strict` valide; Portprüfung real gefahren: fand den laufenden Server
       auf 3001 (`node --env-file=.env --import tsx src/server/index.ts`) mit PID
-- [ ] 6.2 Reviewer-Subagent (read-only) gegen den Diff; Befunde einarbeiten
+- [x] 6.2 Reviewer-Subagent (read-only) gegen den Diff: **ok**, kein blockierendes Finding.
+      Zwei Hinweise als Kommentar festgehalten: der POSIX-Zweig meldet einen Port ohne
+      lesbaren `pid=`-Teil still nicht (fremder Nutzer, altes iproute2); ein git-Fehler bei der
+      Tracked-Abfrage bedeutet jetzt „behalten" statt „löschen" — sicherer, bewusst.
 - [ ] 6.3 Menschliche Freigabe (`constitution.md` §3.4 — kein App-Test, kein Anwendungscode)
 - [ ] 6.4 `openspec archive harness-followups --yes`, Purpose der neuen Capability ausfüllen,
       PR als Teil 3 von 3 mit `Closes #44`; menschlicher Merge

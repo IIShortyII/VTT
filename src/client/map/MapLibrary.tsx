@@ -7,11 +7,11 @@ import { MapCanvas } from './MapCanvas.js'
 // Kartenbibliothek der angemeldeten Ansicht (design.md D9, spec.md Requirement
 // "Bibliotheksoberflaeche"). Zustand `liste` (eigene Karten, Formular "Neue Karte") und
 // `detail` (Kartenansicht mit Canvas, Rasterformular, Bild ersetzen, Loeschen nach
-// Bestaetigung, Zurueck) - kein Router (Muster wie `SessionList`/`SessionRoom`).
-
-export interface MapLibraryProps {
-  onBack: () => void
-}
+// Bestaetigung, Zurueck zur Liste) - kein Router (Muster wie `SessionList`/`SessionRoom`).
+// ui-shell (#84, design.md D4): die Rueckkehr zur Sitzungsliste liegt ausschliesslich in der
+// Top-Bar der App-Shell - keine Prop `onBack`, keine eigene Schaltflaeche dafuer. Die innere
+// Schaltflaeche der Kartenansicht (zurueck zur Kartenliste) heisst `Zur Bibliothek`, damit es
+// im Dokument nie zwei Schaltflaechen mit dem Namen "Zurueck" gibt.
 
 type LibraryView = { view: 'liste' } | { view: 'detail'; mapId: string }
 
@@ -27,7 +27,7 @@ function gridsEqual(a: Grid, b: Grid): boolean {
   return a.type === b.type && a.size === b.size && a.offsetX === b.offsetX && a.offsetY === b.offsetY
 }
 
-export function MapLibrary({ onBack }: MapLibraryProps) {
+export function MapLibrary() {
   const [view, setView] = useState<LibraryView>({ view: 'liste' })
   const [maps, setMaps] = useState<MapSummary[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -206,7 +206,7 @@ export function MapLibrary({ onBack }: MapLibraryProps) {
     return (
       <div>
         <button type="button" onClick={backToList}>
-          Zurück
+          Zur Bibliothek
         </button>
         <h1>{current.name}</h1>
         {detailError !== null && <p role="alert">{detailError}</p>}
@@ -288,9 +288,6 @@ export function MapLibrary({ onBack }: MapLibraryProps) {
 
   return (
     <div>
-      <button type="button" onClick={onBack}>
-        Zurück zur Sitzungsliste
-      </button>
       <h1>Kartenbibliothek</h1>
       {loadError !== null && <p role="alert">{loadError}</p>}
 

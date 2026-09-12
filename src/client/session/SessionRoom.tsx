@@ -59,11 +59,14 @@ import { TokenPanel } from './TokenPanel.js'
 // Verbindung wurde zuvor durch `session:replaced` ersetzt. Die Verdrahtung der Server-
 // Ereignisse plus des erneuten Betretens geschieht an einer einzigen Stelle (`wireSocket`),
 // die sowohl das Mounten als auch "Hier weiterspielen" aufrufen.
+//
+// ui-shell (#84, design.md D4): die Rueckkehr zur Sitzungsliste liegt ausschliesslich in der
+// Top-Bar der App-Shell - diese Ansicht hat weder eine eigene Schaltflaeche "Zurück zur Liste"
+// noch die Prop `onLeave`. Der Fehlerzustand zeigt nur noch die Meldung.
 
 export interface SessionRoomProps {
   sessionId: string
   currentUserId: string
-  onLeave: () => void
   onEnded: (message: string) => void
 }
 
@@ -115,7 +118,7 @@ function readStoredUnit(): DistanceUnit {
   }
 }
 
-export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: SessionRoomProps) {
+export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomProps) {
   const socketRef = useRef<SessionSocketFacade | null>(null)
   const [state, setState] = useState<RoomState>({ status: 'lädt' })
   const [replaced, setReplaced] = useState(false)
@@ -655,9 +658,6 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
     return (
       <div>
         <p role="alert">{state.message}</p>
-        <button type="button" onClick={onLeave}>
-          Zurück zur Liste
-        </button>
       </div>
     )
   }
@@ -809,10 +809,6 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
       {state.role === 'spieler' && (
         <PlayerTokenList tokens={state.tokens} participants={state.participants} onShare={handleTokenShare} />
       )}
-
-      <button type="button" onClick={onLeave}>
-        Zurück zur Liste
-      </button>
     </div>
   )
 }

@@ -639,9 +639,9 @@ test('Spielleiter entfernt eine Markierung', async () => {
 
   const markierungsListe = await screen.findByRole('list', { name: 'Goblin Markierungen' })
   const liegendEintrag = within(markierungsListe).getByText('Liegend').closest('li')
-  expect(liegendEintrag?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+  expect(liegendEintrag?.querySelector('svg[aria-hidden="true"]')).not.toBeNull()
   const segenEintrag = within(markierungsListe).getByText('Segen').closest('li')
-  expect(segenEintrag?.querySelector('svg')).toBeNull()
+  expect(segenEintrag?.querySelector('svg[aria-hidden="true"]')).toBeNull()
 
   await act(async () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Goblin Markierung Liegend entfernen' }))

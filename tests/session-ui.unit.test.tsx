@@ -20,6 +20,14 @@
 // Beschriftung (`Spielleiter`/`Geschlossen`) statt Rohwerten; Erstellen- und Beitreten-Formular
 // erscheinen erst auf Anforderung (`Sitzung leiten` / `Beitreten`). Zwei Szenarien sind darauf
 // umgestellt; die Rueckkehr zur Liste wird am Anker `Sitzung leiten` erkannt.
+//
+// add-ui-text-keys (#87, MODIFIED game-session): Die Raumansicht zeigt den Zustand als
+// Zustandspille (`Geöffnet`/`Läuft` … mit `closest('.status-pill')`) statt als Rohwert
+// `Zustand: geoeffnet`, und die Uebergangs-Schaltflaechen tragen die Verben `Starten`/`Beenden`
+// statt der Aktionsnamen `starten`/`beenden`. Die Raumansicht wird an der Ueberschrift der Ebene
+// 1 (Sitzungsname) erkannt; kein Textknoten traegt mehr den Rohwert (design.md D8). Vier
+// Szenarien sind darauf umgestellt (Testnamen bleiben); die Suite importiert das i18n-Modul
+// nicht — die Szenarien laufen in der Standardsprache Deutsch.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
@@ -212,19 +220,30 @@ test('Raumansicht des Spielleiters', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
-  await screen.findByText(/ABC234/)
-  expect(screen.getAllByText(/geoeffnet|geöffnet/i).length).toBeGreaterThan(0)
+  // Anker: die Raumansicht ist gerendert (Name als Ueberschrift der Ebene 1).
+  await screen.findByRole('heading', { level: 1, name: 'Freitagsrunde' })
+
+  // Zustandspille `Geöffnet` (Klasse `status-pill`) statt des Rohwerts.
+  const pille = screen.getByText('Geöffnet').closest('.status-pill')
+  expect(pille).not.toBeNull()
+  // Sitzungscode fuer den Spielleiter.
+  expect(screen.getByText(/ABC234/)).toBeTruthy()
   // Beide Teilnehmer werden mit ihrem Nutzernamen benannt (keiner traegt einen Alias).
   expect(screen.getByText(/alrik/)).toBeTruthy()
   expect(screen.getByText(/borgil/)).toBeTruthy()
   // Anwesenheit muss unterscheidbar sein (Text, title oder aria-label — daher innerHTML).
   expect(container.innerHTML).toMatch(/online|anwesend/i)
   expect(container.innerHTML).toMatch(/offline|abwesend/i)
-  // Erlaubte Uebergaenge in "geoeffnet": starten, beenden — nicht oeffnen/pausieren.
-  expect(screen.getByRole('button', { name: /starten/i })).toBeTruthy()
-  expect(screen.getByRole('button', { name: /beenden/i })).toBeTruthy()
-  expect(screen.queryByRole('button', { name: /öffnen|oeffnen/i })).toBeNull()
-  expect(screen.queryByRole('button', { name: /pausieren/i })).toBeNull()
+  // Uebergangs-Schaltflaechen tragen die Verben; in "geoeffnet": Starten, Beenden — nicht
+  // Öffnen/Pausieren.
+  expect(screen.getByRole('button', { name: 'Starten' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Beenden' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Öffnen' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Pausieren' })).toBeNull()
+  // Kein Textknoten traegt den Rohwert des Zustands oder den Aktionsnamen des Vertrags.
+  expect(screen.queryByText('geoeffnet')).toBeNull()
+  expect(screen.queryByText('starten')).toBeNull()
+  expect(screen.queryByText('beenden')).toBeNull()
 })
 
 test('Raumansicht des Spielers', async () => {
@@ -248,14 +267,20 @@ test('Raumansicht des Spielers', async () => {
   await screen.findByText(/Abendrunde/)
   await betreten()
 
-  await waitFor(() => expect(screen.getAllByText(/gestartet/i).length).toBeGreaterThan(0))
+  // Name als Ueberschrift der Ebene 1; Zustandspille `Läuft` mit `status-pill--active`.
+  await screen.findByRole('heading', { level: 1, name: 'Abendrunde' })
+  const pille = screen.getByText('Läuft').closest('.status-pill')
+  expect(pille).not.toBeNull()
+  expect(pille?.classList.contains('status-pill--active')).toBe(true)
   // Teilnehmer stehen in der Liste im Inhaltsbereich (main), nicht in der Top-Bar (banner).
   const main = screen.getByRole('main')
   expect(within(main).getByText(/\bleiter\b/)).toBeTruthy()
   expect(within(main).getByText(/\bich\b/)).toBeTruthy()
-  // Kein Sitzungscode und keine Schaltflaeche fuer einen Zustandsuebergang.
+  // Kein Sitzungscode und keine Uebergangs-Schaltflaeche.
   expect(screen.queryByText(/code/i)).toBeNull()
-  expect(screen.queryByRole('button', { name: /starten|beenden|öffnen|oeffnen|pausieren/i })).toBeNull()
+  expect(screen.queryByRole('button', { name: /starten|beenden|öffnen|pausieren/i })).toBeNull()
+  // Kein Textknoten traegt den Rohwert des Zustands.
+  expect(screen.queryByText('gestartet')).toBeNull()
 })
 
 test('Zustand folgt dem Server', async () => {
@@ -272,17 +297,23 @@ test('Zustand folgt dem Server', async () => {
     participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
   })
 
-  const { container } = render(<App />)
+  render(<App />)
   await screen.findByText(/Abendrunde/)
   await betreten()
-  await waitFor(() => expect(container.innerHTML).toMatch(/geoeffnet|geöffnet/i))
+  // GIVEN: die Raumansicht eines Spielers zeigt die Zustandspille `Geöffnet`.
+  await screen.findByRole('heading', { level: 1, name: 'Abendrunde' })
+  expect(screen.getByText('Geöffnet').closest('.status-pill')).not.toBeNull()
 
   await act(async () => {
     socketMock.__emit('status', { sessionId: 's1', status: 'gestartet' })
   })
 
-  await waitFor(() => expect(container.innerHTML).toMatch(/gestartet/i))
-  expect(container.innerHTML).not.toMatch(/geoeffnet|geöffnet/i)
+  // THEN: die Pille `Läuft` mit `status-pill--active`; kein Rohwert als Textknoten.
+  const pille = (await screen.findByText('Läuft')).closest('.status-pill')
+  expect(pille).not.toBeNull()
+  expect(pille?.classList.contains('status-pill--active')).toBe(true)
+  expect(screen.queryByText('gestartet')).toBeNull()
+  expect(screen.queryByText('geoeffnet')).toBeNull()
 })
 
 test('Wiederverbindung betritt den Raum erneut', async () => {
@@ -317,7 +348,9 @@ test('Wiederverbindung betritt den Raum erneut', async () => {
   render(<App />)
   await screen.findByText(/Abendrunde/)
   await betreten()
-  await screen.findByText(/Zustand: geoeffnet|Zustand: geöffnet/i)
+  // Anker: die Raumansicht ist gerendert, Zustandspille `Geöffnet`.
+  await screen.findByRole('heading', { level: 1, name: 'Abendrunde' })
+  expect(screen.getByText('Geöffnet').closest('.status-pill')).not.toBeNull()
 
   // Die Socket-Fassade meldet eine Wiederverbindung (Ereignis `reconnect`, Handler ohne
   // Argument) ueber denselben Mechanismus wie die uebrigen Server-Ereignisse (design.md D2).
@@ -334,8 +367,8 @@ test('Wiederverbindung betritt den Raum erneut', async () => {
   expect(socketMock.createSessionSocket).toHaveBeenCalledTimes(1)
   expect(socketMock.__facade.connect).toHaveBeenCalledTimes(1)
 
-  // Zustand und Anwesenheit folgen dem frischen Acknowledgement: `gestartet`, `meister` abwesend.
-  await screen.findByText(/Zustand: gestartet/i)
+  // Zustand und Anwesenheit folgen dem frischen Acknowledgement: Pille `Läuft`, `meister` abwesend.
+  await screen.findByText('Läuft')
   expect(screen.getByText(/\bmeister\b/)).toBeTruthy()
   expect(screen.getByText(/abwesend/i)).toBeTruthy()
 })

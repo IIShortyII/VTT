@@ -6,6 +6,8 @@ import type {
 } from '@prisma/client'
 import type { Server, Socket } from 'socket.io'
 
+import { cellKey } from '../../shared/fog.js'
+import type { GridType } from '../../shared/map.js'
 import { MemberRoleSchema, type MemberRole } from '../../shared/session.js'
 import {
   AssignTokenInputSchema,
@@ -20,6 +22,7 @@ import {
   TokenStatsInputSchema,
   canMoveToken,
   canShareToken,
+  isTokenVisible,
   type AssignTokenAck,
   type CreateTokenAck,
   type MoveTokenAck,
@@ -33,6 +36,7 @@ import {
   type TokenStatsAck,
 } from '../../shared/token.js'
 import type { Clock } from '../core/clock.js'
+import { toMapSummary, type GameMapLike } from '../map/rules.js'
 import { authorizeAction } from './authorize.js'
 import type { Presence } from './presence.js'
 
@@ -41,7 +45,10 @@ import type { Presence } from './presence.js'
 // add-token-sharing #62). Reihenfolge in jedem Handler: zod-Parse -> authorizeAction (Rolle
 // je nach Aktion, siehe unten) -> aktive Instanz aus der Spielsitzung lesen (nicht aus der
 // Payload) -> Token laden mit `id` UND `instanceId` der aktiven Instanz -> Schreiben ->
-// `broadcastTokens` -> Acknowledgement (design.md D2).
+// `broadcastTokens` -> Acknowledgement (design.md D2). add-token-fog-visibility (#17,
+// design.md D2/D3): zwischen Laden und Schreiben steht bei `session:token-move` und
+// `session:token-share` zusaetzlich die Sichtbarkeitspruefung (`isTokenVisible`) fuer einen
+// Spieler und ein besitzerloses Token.
 
 export interface TokenSocketDeps {
   prisma: PrismaClient
@@ -178,7 +185,7 @@ export function redactToken(token: Token, viewer: TokenViewer): Token {
 
 /** Laedt den Tokenbestand der aktiven Instanz einer Spielsitzung - die leere Liste ohne
  * aktive Karte (design.md D3, spec.md "Tokenbestand"). Ungefiltert - fuer den
- * Handler-Ack-Pfad eines Spielleiters und als Ausgangsbasis der Verteilung. */
+ * Handler-Ack-Pfad eines Spielleiters. */
 export async function loadTokens(prisma: PrismaClient, sessionId: string): Promise<Token[]> {
   const gameSession = await prisma.gameSession.findUnique({ where: { id: sessionId } })
   if (!gameSession?.activeInstanceId) {
@@ -192,28 +199,99 @@ export async function loadTokens(prisma: PrismaClient, sessionId: string): Promi
   return rows.map(toToken)
 }
 
-/** `loadTokens` gefolgt von `redactToken` je Token, fuer einen bestimmten Empfaenger
- * (add-token-stats #61, design.md D3) - benutzt von `handleEnter` fuer den Betretenden. */
+/** Sichtbarkeitskontext einer aktiven Instanz (add-token-fog-visibility #17, design.md D2):
+ * die aufgedeckten Zellen als Schluesselmenge (`cellKey`) und der Rastertyp der Karte - beides
+ * braucht `isTokenVisible`. Eine Stelle, benutzt vom Tokenbestand (`loadTokenInventory`) und
+ * von der Ladepruefung in `session:token-move`/`session:token-share` (D3). Frisch aus der
+ * Datenbank bei jedem Aufruf - nichts wird an der Verbindung oder im Prozess gecacht
+ * (constitution.md §9.3). */
+export interface VisibilityContext {
+  revealedKeys: Set<string>
+  gridType: GridType
+}
+
+export async function loadVisibilityContext(
+  prisma: PrismaClient,
+  instance: { id: string; map: GameMapLike },
+): Promise<VisibilityContext> {
+  const cells = await prisma.fogCell.findMany({
+    where: { instanceId: instance.id },
+    select: { col: true, row: true },
+  })
+  const revealedKeys = new Set(cells.map((cell) => cellKey(cell)))
+  const gridType = toMapSummary(instance.map).grid.type
+  return { revealedKeys, gridType }
+}
+
+/** Tokenbestand einer Spielsitzung samt Sichtbarkeitskontext (add-token-fog-visibility #17,
+ * design.md D2) - Grundlage sowohl fuer `loadTokensFor` als auch fuer `broadcastTokens`, damit
+ * beide dieselbe (einmal geladene) Momentaufnahme filtern. */
+export interface TokenInventory {
+  tokens: Token[]
+  revealedKeys: Set<string>
+  gridType: GridType
+}
+
+/** Laedt den Tokenbestand der aktiven Instanz zusammen mit dem Sichtbarkeitskontext - `null`
+ * ohne aktive Instanz (design.md D2, spec.md "Tokenbestand"). Ungefiltert nach Existenz und
+ * Werten - das uebernehmen `tokensFor`/`redactToken`. */
+export async function loadTokenInventory(prisma: PrismaClient, sessionId: string): Promise<TokenInventory | null> {
+  const gameSession = await prisma.gameSession.findUnique({
+    where: { id: sessionId },
+    include: { activeInstance: { include: { map: true } } },
+  })
+  if (!gameSession?.activeInstance) {
+    return null
+  }
+  const instance = gameSession.activeInstance
+  const [rows, visibility] = await Promise.all([
+    prisma.token.findMany({
+      where: { instanceId: instance.id },
+      orderBy: { createdAt: 'asc' },
+      include: TOKEN_INCLUDE,
+    }),
+    loadVisibilityContext(prisma, instance),
+  ])
+  return { tokens: rows.map(toToken), revealedKeys: visibility.revealedKeys, gridType: visibility.gridType }
+}
+
+/** Fuer einen Empfaenger sichtbarer, gefilterter Tokenbestand (add-token-fog-visibility #17,
+ * design.md D2, spec.md Requirement "Sichtbarkeit von Tokens im Fog"): reine Funktion, keine
+ * DB. Ohne Inventar (keine aktive Instanz) die leere Liste. Erst der Existenzfilter
+ * (`isTokenVisible`), dann - in Anlegereihenfolge - der Wertefilter (`redactToken`). */
+export function tokensFor(inventory: TokenInventory | null, viewer: TokenViewer): Token[] {
+  if (!inventory) {
+    return []
+  }
+  return inventory.tokens
+    .filter((token) => isTokenVisible(token, viewer, inventory.revealedKeys, inventory.gridType))
+    .map((token) => redactToken(token, viewer))
+}
+
+/** `loadTokenInventory` gefolgt von `tokensFor`, fuer einen bestimmten Empfaenger
+ * (add-token-stats #61, add-token-fog-visibility #17, design.md D2) - benutzt von
+ * `handleEnter` fuer den Betretenden. */
 export async function loadTokensFor(prisma: PrismaClient, sessionId: string, viewer: TokenViewer): Promise<Token[]> {
-  const tokens = await loadTokens(prisma, sessionId)
-  return tokens.map((token) => redactToken(token, viewer))
+  const inventory = await loadTokenInventory(prisma, sessionId)
+  return tokensFor(inventory, viewer)
 }
 
 /**
- * Laedt den aktuellen Tokenbestand und sendet ihn JE VERBINDUNG im Raum, mit dem fuer den
- * jeweiligen Empfaenger gefilterten Bestand (add-token-stats #61, design.md D3,
- * constitution.md §9.2/§9.3). Aufrufer: die Token-Handler, `handleActivateMap` (nach
- * `emitActiveMap`) und das Aushaengen der aktiven Instanz (nach `emitActiveMap(io, id,
- * null)`). Identitaet aus `Presence` (dort seit #6 gebunden), Rolle und `ownerId` kommen aus
- * der Datenbank JETZT - nichts an der Verbindung gilt als Erlaubnis. Ein Eintrag ohne
- * (mehr gueltige) Mitgliedschaft bekommt nichts.
+ * Laedt den aktuellen Tokenbestand einmal und sendet ihn JE VERBINDUNG im Raum, mit dem fuer
+ * den jeweiligen Empfaenger gefilterten Bestand (add-token-stats #61, add-token-fog-visibility
+ * #17, design.md D2, constitution.md §9.2/§9.3). Aufrufer: die Token-Handler,
+ * `handleActivateMap` (nach `emitActiveMap`), das Aushaengen der aktiven Instanz (nach
+ * `emitActiveMap(io, id, null)`) und `handleSetFog` (nach `broadcastFog`, design.md D4).
+ * Identitaet aus `Presence` (dort seit #6 gebunden), Rolle und `ownerId` kommen aus der
+ * Datenbank JETZT - nichts an der Verbindung gilt als Erlaubnis. Ein Eintrag ohne (mehr
+ * gueltige) Mitgliedschaft bekommt nichts.
  */
 export async function broadcastTokens(io: Server, prisma: PrismaClient, presence: Presence, sessionId: string): Promise<void> {
-  const tokens = await loadTokens(prisma, sessionId)
   const entries = presence.entriesIn(sessionId)
   if (entries.length === 0) {
     return
   }
+  const inventory = await loadTokenInventory(prisma, sessionId)
   const memberships = await prisma.membership.findMany({ where: { sessionId } })
   const roleByUserId = new Map(memberships.map((membership) => [membership.userId, membership.role]))
 
@@ -223,7 +301,7 @@ export async function broadcastTokens(io: Server, prisma: PrismaClient, presence
       continue
     }
     const viewer: TokenViewer = { role: MemberRoleSchema.parse(role), userId }
-    const filtered = tokens.map((token) => redactToken(token, viewer))
+    const filtered = tokensFor(inventory, viewer)
     io.to(socketId).emit(SESSION_TOKEN_EVENTS.tokens, { sessionId, tokens: filtered })
   }
 }
@@ -330,7 +408,10 @@ export function registerTokenHandlers(io: Server, socket: Socket, deps: TokenSoc
    * Token wird zuerst geladen (ein unbekanntes Token, ein Token einer anderen Spielsitzung
    * und ein Token einer eingehaengten, nicht aktiven Instanz sind identisch "nicht gefunden",
    * constitution.md §9.2 - unabhaengig von der Berechtigung, sonst verriete die Meldung
-   * einem Spieler, ob eine `id` existiert). Danach entscheidet `canMoveToken` gegen die
+   * einem Spieler, ob eine `id` existiert). add-token-fog-visibility (#17, design.md D3):
+   * fuer einen Spieler und ein Token ohne Besitzer wird direkt danach - noch vor
+   * `canMoveToken` - die Sichtbarkeit geprueft; ein fuer den Absender verborgenes Token
+   * erhaelt dieselbe Meldung wie ein unbekanntes. Danach entscheidet `canMoveToken` gegen die
    * JETZT geladene Zuweisung und die JETZT geladene Mitgliedschaft - nichts an der
    * Verbindung und keine fruehere Bewegung gilt als Erlaubnis (constitution.md §9.3).
    * add-token-stats (#61, design.md D3, Risks): das Ack wird zusaetzlich mit `redactToken`
@@ -359,6 +440,16 @@ export function registerTokenHandlers(io: Server, socket: Socket, deps: TokenSoc
     }
 
     const mover = { role: MemberRoleSchema.parse(authResult.membership.role), userId: authResult.user.id }
+
+    if (mover.role === 'spieler' && existing.ownerId === null) {
+      const instance = await prisma.mapInstance.findFirst({ where: { id: existing.instanceId }, include: { map: true } })
+      const visibility = instance ? await loadVisibilityContext(prisma, instance) : { revealedKeys: new Set<string>(), gridType: 'quadrat' as GridType }
+      if (!isTokenVisible(existing, mover, visibility.revealedKeys, visibility.gridType)) {
+        callback({ ok: false, message: TOKEN_NOT_FOUND_MESSAGE })
+        return
+      }
+    }
+
     if (!canMoveToken(existing, mover)) {
       callback({ ok: false, message: NOT_TOKEN_OWNER_MESSAGE })
       return
@@ -539,8 +630,11 @@ export function registerTokenHandlers(io: Server, socket: Socket, deps: TokenSoc
    * Tokenwerts setzen"): jede Mitgliedschaft darf senden - keine Rollenanforderung an
    * `authorizeAction`. Das Token wird zuerst geladen, VOR jeder Berechtigungspruefung (wie
    * beim Bewegen, constitution.md §9.2 - sonst verriete die Meldung einem Spieler, ob eine
-   * `id` existiert). Danach entscheidet `canShareToken` gegen die JETZT geladene Zuweisung
-   * und die JETZT geladene Mitgliedschaft (constitution.md §9.3). Ist `audience` eine Liste,
+   * `id` existiert). add-token-fog-visibility (#17, design.md D3): fuer einen Spieler und
+   * ein Token ohne Besitzer wird direkt danach - noch vor `canShareToken` - die Sichtbarkeit
+   * geprueft; ein fuer den Absender verborgenes Token erhaelt dieselbe Meldung wie ein
+   * unbekanntes. Danach entscheidet `canShareToken` gegen die JETZT geladene Zuweisung und
+   * die JETZT geladene Mitgliedschaft (constitution.md §9.3). Ist `audience` eine Liste,
    * muss jede `userId` darin ein Mitglied dieser Spielsitzung mit Rolle `spieler` sein - eine
    * `findMany` mit `in` genuegt, die Trefferzahl muss der Listenlaenge entsprechen (deckt
    * Nichtmitglied, den Spielleiter selbst und eine einzelne ungueltige `userId` in einer
@@ -568,6 +662,16 @@ export function registerTokenHandlers(io: Server, socket: Socket, deps: TokenSoc
     }
 
     const actor = { role: MemberRoleSchema.parse(authResult.membership.role), userId: authResult.user.id }
+
+    if (actor.role === 'spieler' && existing.ownerId === null) {
+      const instance = await prisma.mapInstance.findFirst({ where: { id: existing.instanceId }, include: { map: true } })
+      const visibility = instance ? await loadVisibilityContext(prisma, instance) : { revealedKeys: new Set<string>(), gridType: 'quadrat' as GridType }
+      if (!isTokenVisible(existing, actor, visibility.revealedKeys, visibility.gridType)) {
+        callback({ ok: false, message: TOKEN_NOT_FOUND_MESSAGE })
+        return
+      }
+    }
+
     if (!canShareToken(existing, actor)) {
       callback({ ok: false, message: NOT_TOKEN_SHARER_MESSAGE })
       return

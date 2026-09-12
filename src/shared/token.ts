@@ -1,17 +1,22 @@
 import { z } from 'zod'
 
+import { cellKey } from './fog.js'
+import type { Cell } from './grid.js'
+import type { GridType } from './map.js'
 import type { MemberRole } from './session.js'
 
 // Gemeinsamer Vertrag zwischen Client und Server (AGENTS.md: "Jedes eingehende Event wird
 // an der Grenze mit zod validiert"). Diese Datei importiert nichts Serverseitiges - kein
 // `@prisma/client`, kein `node:*` (design.md D1, Folgeregel zu Verzeichnisschnitt D1). Sie
-// importiert nur `zod` und - als Typ, add-token-assignment #15, design.md D2 - `MemberRole`
+// importiert `zod`, `cellKey` (Wert) sowie die Typen `Cell` (`grid.ts`) und `GridType`
+// (`map.ts`) - beide importieren selbst nichts Serverseitiges (add-token-fog-visibility #17,
+// design.md D1) - und als Typ, add-token-assignment #15, design.md D2 - `MemberRole`
 // aus `session.ts`; `session.ts` importiert bereits `Token` von hier, ein `import type` in
 // Gegenrichtung erzeugt keinen Laufzeitzyklus.
 //
 // Begriffe siehe specs/session-token/spec.md: "Token", "Name", "Farbe", "Symbol", "Größe",
-// "Zelle", "Aktive Instanz", "Tokendarstellung", "Tokenbestand", "Besitzer", "Stat",
-// "Zielgruppe", "Freigaben".
+// "Zelle", "Zellen eines Tokens", "Sichtbares Token", "Aktive Instanz", "Tokendarstellung",
+// "Tokenbestand", "Besitzer", "Stat", "Zielgruppe", "Freigaben".
 
 /** Fester Symbolkatalog (spec.md "Begriffe") - gespeichert wird der Katalogeintrag selbst
  * (das Emoji), nicht ein Schluesselwort (design.md D1). */
@@ -291,4 +296,49 @@ export function canMoveToken(token: Pick<Token, 'ownerId'>, mover: TokenMover): 
  */
 export function canShareToken(token: Pick<Token, 'ownerId'>, actor: TokenMover): boolean {
   return actor.role === 'spielleiter' || token.ownerId === actor.userId
+}
+
+/**
+ * Zellen eines Tokens (spec.md "Begriffe": "Zellen eines Tokens", add-token-fog-visibility
+ * #17, design.md D1): bei Raster `quadrat` alle `size x size` Zellen ab der Ankerzelle (`col`
+ * bis `col + size - 1`, `row` bis `row + size - 1`) - dieselbe Geometrie, mit der die
+ * Kartenansicht das Token zeichnet; bei `hex-spitz` und `hex-flach` ausschliesslich die
+ * Ankerzelle. `size` `1` liefert in beiden Faellen die Ankerzelle. Reine Funktion, keine DB.
+ */
+export function tokenCells(token: Pick<Token, 'col' | 'row' | 'size'>, gridType: GridType): Cell[] {
+  if (gridType !== 'quadrat') {
+    return [{ col: token.col, row: token.row }]
+  }
+  const cells: Cell[] = []
+  for (let row = token.row; row < token.row + token.size; row++) {
+    for (let col = token.col; col < token.col + token.size; col++) {
+      cells.push({ col, row })
+    }
+  }
+  return cells
+}
+
+/**
+ * Sichtbarkeitsregel fuer Tokens im Fog (spec.md "Begriffe": "Sichtbares Token",
+ * add-token-fog-visibility #17, design.md D1, constitution.md §9.2): ein Empfaenger mit
+ * Rolle `spielleiter` sieht jedes Token; sonst ist ein Token sichtbar, wenn es einen Besitzer
+ * hat (das eigene wie das eines Mitspielers) oder wenn mindestens eine seiner Zellen
+ * (`tokenCells`) zu `revealedKeys` gehoert - einer Menge von `cellKey`-Schluesseln der
+ * aufgedeckten Zellen der aktiven Instanz, vom Aufrufer einmal je Sendevorgang gebaut (nicht
+ * je Token). `viewer` ist strukturell derselbe Schnitt wie `TokenMover`/`TokenViewer` (`role`,
+ * `userId`). Reine Funktion, keine DB.
+ */
+export function isTokenVisible(
+  token: Pick<Token, 'ownerId' | 'col' | 'row' | 'size'>,
+  viewer: TokenMover,
+  revealedKeys: Set<string>,
+  gridType: GridType,
+): boolean {
+  if (viewer.role === 'spielleiter') {
+    return true
+  }
+  if (token.ownerId !== null) {
+    return true
+  }
+  return tokenCells(token, gridType).some((cell) => revealedKeys.has(cellKey(cell)))
 }

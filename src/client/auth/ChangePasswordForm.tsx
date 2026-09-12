@@ -6,6 +6,9 @@ import { changePassword } from './api.js'
 // Formular zur Passwortaenderung in der angemeldeten Ansicht (account-security #13,
 // design.md D5). Kein Zustandswechsel in App - die Sitzung bleibt, der Server sagt nichts
 // anderes (constitution.md §9.1); eine Ablehnung zeigt nur eine Meldung, meldet niemanden ab.
+// add-start-view (#86, design.md D5): liegt jetzt in einem `<details>` mit der Summary
+// "Passwort ändern" (SessionList.tsx) - die Summary ist die Ueberschrift, eine eigene `<h2>`
+// stuende sonst zweimal untereinander.
 
 const GENERIC_ERROR_MESSAGE = 'Die Passwortänderung ist fehlgeschlagen. Bitte versuche es erneut.'
 const SUCCESS_MESSAGE = 'Passwort geändert.'
@@ -42,8 +45,9 @@ export function ChangePasswordForm() {
 
   return (
     <form onSubmit={(event) => void handleSubmit(event)}>
-      <h2>Passwort ändern</h2>
-      <label htmlFor="change-password-current">Bisheriges Passwort</label>
+      <label className="field-label" htmlFor="change-password-current">
+        Bisheriges Passwort
+      </label>
       <input
         id="change-password-current"
         name="currentPassword"
@@ -53,7 +57,9 @@ export function ChangePasswordForm() {
         onChange={(event) => setCurrentPassword(event.target.value)}
         required
       />
-      <label htmlFor="change-password-new">Neues Passwort</label>
+      <label className="field-label" htmlFor="change-password-new">
+        Neues Passwort
+      </label>
       <input
         id="change-password-new"
         name="newPassword"

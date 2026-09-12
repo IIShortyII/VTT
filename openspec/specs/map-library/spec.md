@@ -33,8 +33,11 @@ aufbauen, und die Regel, dass ein Kartenbild den Server nur über eine geprüfte
   erscheint auf dem Canvas bei `p · scale + (x, y)`. Die Sicht ist lokal je Betrachter.
 
 Drahtformat: REST unter `/api/maps`. Eine Karte wird nach außen als
-`{ id, name, hasImage, grid }` dargestellt. Fehlerantworten tragen `{ statusCode, error,
-message, field? }` wie die übrigen Routen. Numerische Aussagen der Geometrie gelten auf zwei
+`{ id, name, hasImage, grid }` dargestellt. `GET /api/maps/:id/image` liefert das Bild
+ausschließlich dem Besitzer; Mitglieder einer Spielsitzung erhalten das Bild der aktiven
+Karte über `GET /api/sessions/:id/map-image` (`session-fog`, Requirement „Kartenbild der
+Spielsitzung") — der Spielleiter das Original, ein Spieler das maskierte Bild.
+Fehlerantworten tragen `{ statusCode, error, message, field? }` wie die übrigen Routen. Numerische Aussagen der Geometrie gelten auf zwei
 Nachkommastellen gerundet.
 
 ## Requirements
@@ -192,17 +195,17 @@ dass eine Datei entsteht.
 
 ### Requirement: Kartenbild abrufen
 
-Das System SHALL über `GET /api/maps/:id/image` das Bild einer Karte liefern — dem Besitzer
-sowie jedem Mitglied (jeder Rolle) einer Spielsitzung, deren aktive Karte eine Instanz dieser
-Karte ist (`session-map`, „Aktive Karte"): `200`, `Content-Type` gleich dem beim Upload
-angegebenen Typ, Body gleich der abgelegten Datei, und `Cache-Control: private, no-store`.
-Eine Karte ohne Bild SHALL mit `404` beantwortet werden. Für jeden anderen Anfragenden —
-auch ein Mitglied einer Spielsitzung, in der die Karte eingehängt, aber nicht aktiv ist —
-SHALL die Karte wie eine unbekannte Karte mit `404` und derselben Meldung beantwortet werden
-(`constitution.md` §9.2) — die Route MUST NOT verraten, ob eine Karte existiert. Die
-Berechtigung SHALL pro Anfrage geprüft werden; ein zuvor erlaubter Abruf ist keine Erlaubnis
-für den nächsten (§9.3). Das Bild MUST NOT über einen anderen Pfad (statisches Verzeichnis)
-erreichbar sein.
+Das System SHALL über `GET /api/maps/:id/image` das Bild einer Karte ausschließlich ihrem
+Besitzer liefern: `200`, `Content-Type` gleich dem beim Upload angegebenen Typ, Body gleich
+der abgelegten Datei, und `Cache-Control: private, no-store`. Eine Karte ohne Bild SHALL
+mit `404` beantwortet werden. Für jeden anderen Anfragenden — auch ein Mitglied einer
+Spielsitzung, in der die Karte eingehängt oder aktiv ist — SHALL die Karte wie eine
+unbekannte Karte mit `404` und derselben Meldung beantwortet werden (`constitution.md`
+§9.2: das vollständige Bild einer aktiven Karte erreicht Mitglieder nur über
+`GET /api/sessions/:id/map-image`, und dort nur den Spielleiter — `session-fog`) — die Route
+MUST NOT verraten, ob eine Karte existiert. Die Berechtigung SHALL pro Anfrage geprüft
+werden; ein zuvor erlaubter Abruf ist keine Erlaubnis für den nächsten (§9.3). Das Bild MUST
+NOT über einen anderen Pfad (statisches Verzeichnis) erreichbar sein.
 
 #### Scenario: Besitzer erhält das Bild
 
@@ -229,11 +232,15 @@ erreichbar sein.
 #### Scenario: Mitglied erhält das Bild der aktiven Karte
 
 - **GIVEN** ein Spielleiter besitzt die Karte „Taverne" mit einem hochgeladenen PNG, sie ist
-  in seiner Spielsitzung eingehängt und aktiv, und `sam` ist Spieler-Mitglied dieser
-  Spielsitzung
-- **WHEN** `GET /api/maps/:id/image` mit dem Cookie von `sam` auf „Taverne" eingeht
-- **THEN** antwortet der Server mit `200`, `Content-Type: image/png` und einem Body, der
-  byteweise dem hochgeladenen Bild gleicht
+  in seiner Spielsitzung eingehängt und aktiv, `sam` ist Spieler-Mitglied dieser
+  Spielsitzung, und es gibt keine Karte mit der `id` `unbekannt`
+- **WHEN** je ein `GET /api/maps/:id/image` mit dem Cookie von `sam` auf „Taverne" und auf
+  `unbekannt` eingeht, und danach `GET /api/sessions/:id/map-image` mit dem Cookie von `sam`
+  auf die Spielsitzung
+- **THEN** antworten die beiden Abrufe der Bibliotheksroute mit `404`, Statuscode und
+  `message` beider Antworten sind identisch, und der Abruf über die Spielsitzung antwortet
+  mit `200` und `Content-Type: image/webp` (`session-fog`, Requirement „Kartenbild der
+  Spielsitzung")
 
 #### Scenario: Eingehängte, nicht aktive Karte bleibt für Mitglieder unsichtbar
 

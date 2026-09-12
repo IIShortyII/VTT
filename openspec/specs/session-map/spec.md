@@ -33,7 +33,11 @@ Drahtformat: REST unter `/api/sessions/:id/maps` (Liste, Einhängen) und
 Acknowledgement `{ ok: true, map }` mit der Aktive-Karte-Darstellung oder
 `{ ok: false, message }`) und `session:map` `{ sessionId, map }` (Server → Client, `map` ist
 die Aktive-Karte-Darstellung oder `null`). Das Acknowledgement von `session:enter`
-(`game-session`) trägt zusätzlich `map` mit der Aktive-Karte-Darstellung oder `null`.
+(`game-session`) trägt zusätzlich `map` mit der Aktive-Karte-Darstellung oder `null` sowie
+`fog` mit der Fog-Darstellung (`session-fog`) oder `null`. Die Kartenansicht im Raum bezieht
+das Bild der aktiven Karte nicht über `/api/maps/<mapId>/image`, sondern über
+`/api/sessions/<sessionId>/map-image` (`session-fog`, Requirement „Kartenbild der
+Spielsitzung") — für Spieler mit dem Abfrageparameter `fog=<version>`.
 Fehlerantworten der REST-Routen tragen `{ statusCode, error, message, field? }` wie die
 übrigen Routen.
 
@@ -287,7 +291,9 @@ Karte eingehängt, aber nicht aktiv ist, und Räume ohne diese Karte MUST NOT ei
 ### Requirement: Kartenansicht im Raum
 
 Die Raumansicht SHALL die aktive Karte auf der Kartenansicht aus `map-library` zeigen —
-Bild-URL `/api/maps/<mapId>/image` (bzw. keine, wenn `hasImage` falsch ist) und Raster aus
+Bild-URL `/api/sessions/<sessionId>/map-image` für den Spielleiter bzw.
+`/api/sessions/<sessionId>/map-image?fog=<version>` für einen Spieler (`session-fog`,
+Requirement „Fog-Ansicht im Raum"; keine URL, wenn `hasImage` falsch ist) und Raster aus
 der Aktive-Karte-Darstellung — und ihren Namen nennen. Ohne aktive Karte SHALL sie einen
 Hinweis zeigen, dass keine Karte aktiv ist, und keine Kartenansicht erzeugen. Die angezeigte
 Karte SHALL ausschließlich dem zuletzt vom Server Gemeldeten folgen (`session:enter`-
@@ -306,12 +312,13 @@ Kartenverwaltung zeigen und MUST NOT für ihn Instanzliste oder Kartenliste abfr
 
 #### Scenario: Raum mit aktiver Karte zeigt die Kartenansicht
 
-- **GIVEN** die Anwendung hat den Raum betreten, und das Acknowledgement nennt `role:
-  "spieler"` und `map` mit `name: "Taverne"`, `mapId: "m1"`, `hasImage: true` und dem Raster
-  `quadrat`, 70, 0, 0
+- **GIVEN** die Anwendung hat den Raum `s1` betreten, und das Acknowledgement nennt `role:
+  "spieler"`, `map` mit `name: "Taverne"`, `mapId: "m1"`, `hasImage: true` und dem Raster
+  `quadrat`, 70, 0, 0 sowie `fog` mit `version: 0` und `revealed` als leerer Liste
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** erzeugt die Anwendung die Kartenansicht mit der Bild-URL `/api/maps/m1/image` und
-  diesem Raster und zeigt den Namen „Taverne" als aktive Karte
+- **THEN** erzeugt die Anwendung die Kartenansicht mit der Bild-URL
+  `/api/sessions/s1/map-image?fog=0` und diesem Raster und zeigt den Namen „Taverne" als
+  aktive Karte
 
 #### Scenario: Raum ohne aktive Karte zeigt einen Hinweis
 
@@ -322,12 +329,14 @@ Kartenverwaltung zeigen und MUST NOT für ihn Instanzliste oder Kartenliste abfr
 
 #### Scenario: Kartenwechsel folgt dem Server
 
-- **GIVEN** die Raumansicht eines Spielers zeigt die aktive Karte „Taverne" (`mapId: "m1"`,
-  Raster `quadrat`, 70, 0, 0)
+- **GIVEN** die Raumansicht eines Spielers im Raum `s1` zeigt die aktive Karte „Taverne"
+  (`mapId: "m1"`, Raster `quadrat`, 70, 0, 0) mit Fog der Version 0
 - **WHEN** die Anwendung `session:map` mit `map` gleich „Krypta" (`mapId: "m2"`,
-  `hasImage: true`, Raster `hex-spitz`, 60, 0, 0) erhält
-- **THEN** stellt sie die bestehende Kartenansicht auf die Bild-URL `/api/maps/m2/image` und
-  das Raster `hex-spitz`, 60, 0, 0 um und zeigt „Krypta" als aktive Karte
+  `hasImage: true`, Raster `hex-spitz`, 60, 0, 0) und danach `session:fog` mit `version: 0`
+  für die Instanz von „Krypta" erhält
+- **THEN** stellt sie die bestehende Kartenansicht auf die Bild-URL
+  `/api/sessions/s1/map-image?fog=0` und das Raster `hex-spitz`, 60, 0, 0 um und zeigt
+  „Krypta" als aktive Karte
 
 #### Scenario: Zurücksetzen entfernt die Kartenansicht
 

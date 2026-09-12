@@ -9,6 +9,7 @@ import { SessionList } from '../session/SessionList.js'
 import { SessionRoom } from '../session/SessionRoom.js'
 import { AppShell } from './AppShell.js'
 import { FALLBACK_BUILD, type BuildInfo } from './build-info.js'
+import { Hero } from './Hero.js'
 
 // Kein Router: der Auth-Zustand entscheidet, welche Ansicht erscheint (design.md D7/D10).
 // "unbekannt" ist kein Detail, sondern verhindert, dass beim Reload fuer einen Moment das
@@ -122,7 +123,6 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
     } else {
       content = (
         <SessionList
-          user={state.user}
           onEnter={(sessionId) => {
             setHinweis(null)
             setSessionView({ view: 'raum', sessionId })
@@ -132,13 +132,22 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
       )
     }
   } else {
+    // Anonyme Startansicht (add-start-view #86, design.md D2): der Hero traegt hier die
+    // einzige Ueberschrift der Ebene 1 - Anmelde- und Registrierungsformular bekommen nur
+    // noch eine `<h2>` (LoginForm.tsx, RegisterForm.tsx).
     content = (
       <>
-        {view === 'login' ? (
-          <LoginForm onSuccess={handleAuthenticated} onSwitchToRegister={() => setView('register')} />
-        ) : (
-          <RegisterForm onSuccess={handleAuthenticated} onSwitchToLogin={() => setView('login')} />
-        )}
+        <Hero
+          title="Karten, Tokens, Nebel"
+          subline="Leite deine Runde am virtuellen Tisch oder tritt einer bei."
+        />
+        <div className="panel auth-panel">
+          {view === 'login' ? (
+            <LoginForm onSuccess={handleAuthenticated} onSwitchToRegister={() => setView('register')} />
+          ) : (
+            <RegisterForm onSuccess={handleAuthenticated} onSwitchToLogin={() => setView('login')} />
+          )}
+        </div>
       </>
     )
   }

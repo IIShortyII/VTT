@@ -39,8 +39,12 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
 
   return (
     <form onSubmit={(event) => void handleSubmit(event)}>
-      <h1>Registrierung</h1>
-      <label htmlFor="register-username">Nutzername</label>
+      {/* Die Ebene-1-Ueberschrift der Startansicht traegt der Hero (add-start-view #86,
+          design.md D1/D2) - dieses Formular bekommt nur noch eine `<h2>`. */}
+      <h2>Registrierung</h2>
+      <label className="field-label" htmlFor="register-username">
+        Nutzername
+      </label>
       <input
         id="register-username"
         name="username"
@@ -52,7 +56,9 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
         onChange={(event) => setUsername(event.target.value)}
         required
       />
-      <label htmlFor="register-email">E-Mail</label>
+      <label className="field-label" htmlFor="register-email">
+        E-Mail
+      </label>
       <input
         id="register-email"
         name="email"
@@ -62,7 +68,9 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
         onChange={(event) => setEmail(event.target.value)}
         required
       />
-      <label htmlFor="register-password">Passwort</label>
+      <label className="field-label" htmlFor="register-password">
+        Passwort
+      </label>
       <input
         id="register-password"
         name="password"
@@ -74,11 +82,15 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
         onChange={(event) => setPassword(event.target.value)}
         required
       />
-      {error !== null && <p role="alert">{error}</p>}
-      <button type="submit" disabled={submitting}>
+      {error !== null && (
+        <p role="alert" className="field-error">
+          {error}
+        </p>
+      )}
+      <button type="submit" className="primary" disabled={submitting}>
         Registrieren
       </button>
-      <button type="button" onClick={onSwitchToLogin}>
+      <button type="button" className="link" onClick={onSwitchToLogin}>
         Ich habe schon ein Konto
       </button>
     </form>

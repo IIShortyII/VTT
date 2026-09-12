@@ -38,8 +38,12 @@ export function LoginForm({ onSuccess, onSwitchToRegister }: LoginFormProps) {
 
   return (
     <form onSubmit={(event) => void handleSubmit(event)}>
-      <h1>Anmelden</h1>
-      <label htmlFor="login-email">E-Mail</label>
+      {/* Die Ebene-1-Ueberschrift der Startansicht traegt der Hero (add-start-view #86,
+          design.md D1/D2) - dieses Formular bekommt nur noch eine `<h2>`. */}
+      <h2>Anmelden</h2>
+      <label className="field-label" htmlFor="login-email">
+        E-Mail
+      </label>
       <input
         id="login-email"
         name="email"
@@ -49,7 +53,9 @@ export function LoginForm({ onSuccess, onSwitchToRegister }: LoginFormProps) {
         onChange={(event) => setEmail(event.target.value)}
         required
       />
-      <label htmlFor="login-password">Passwort</label>
+      <label className="field-label" htmlFor="login-password">
+        Passwort
+      </label>
       <input
         id="login-password"
         name="password"
@@ -59,11 +65,15 @@ export function LoginForm({ onSuccess, onSwitchToRegister }: LoginFormProps) {
         onChange={(event) => setPassword(event.target.value)}
         required
       />
-      {error !== null && <p role="alert">{error}</p>}
-      <button type="submit" disabled={submitting}>
+      {error !== null && (
+        <p role="alert" className="field-error">
+          {error}
+        </p>
+      )}
+      <button type="submit" className="primary" disabled={submitting}>
         Anmelden
       </button>
-      <button type="button" onClick={onSwitchToRegister}>
+      <button type="button" className="link" onClick={onSwitchToRegister}>
         Noch kein Konto? Registrieren
       </button>
     </form>

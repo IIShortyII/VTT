@@ -15,6 +15,11 @@
 // (Alias, sonst Nutzername). Ab #46 meldet die Fassade eine Wiederverbindung als eigenes
 // Ereignis `reconnect` (Handler ohne Argument) ueber denselben Handler-Mechanismus wie
 // `participants` oder `replaced` (design.md D2).
+//
+// add-start-view (#86, tasks.md 1.2): Die Startansicht zeigt die Spielsitzungen als Karten mit
+// Beschriftung (`Spielleiter`/`Geschlossen`) statt Rohwerten; Erstellen- und Beitreten-Formular
+// erscheinen erst auf Anforderung (`Sitzung leiten` / `Beitreten`). Zwei Szenarien sind darauf
+// umgestellt; die Rueckkehr zur Liste wird am Anker `Sitzung leiten` erkannt.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
@@ -156,10 +161,30 @@ test('Sitzungsliste mit Erstellen und Beitreten', async () => {
   const { container } = render(<App />)
 
   await screen.findByText(/Freitagsrunde/)
-  expect(screen.getAllByText(/spielleiter/i).length).toBeGreaterThan(0)
-  expect(screen.getAllByText(/geschlossen/i).length).toBeGreaterThan(0)
+  // Die Karte zeigt Rolle und Zustand als Beschriftung (`ui-start`, „Sitzungskarten"), nicht als
+  // Rohwert des Servers.
+  expect(screen.getByText('Spielleiter')).toBeTruthy()
+  expect(screen.getByText('Geschlossen')).toBeTruthy()
+
+  // Die Aktionen `Sitzung leiten` und `Beitreten` sind vorhanden; die Formulare erscheinen erst
+  // auf Anforderung (`ui-start`, „Erstellen und Beitreten auf Anforderung").
+  const sitzungLeiten = screen.getByRole('button', { name: 'Sitzung leiten' })
+  expect(screen.getByRole('button', { name: 'Beitreten' })).toBeTruthy()
+
+  // Das Namensfeld erscheint erst nach Auslösen von `Sitzung leiten`.
+  expect(nameFeld(container)).toBeNull()
+  await act(async () => {
+    fireEvent.click(sitzungLeiten)
+  })
   expect(nameFeld(container)).not.toBeNull()
+
+  // Das Codefeld erscheint erst nach Auslösen von `Beitreten`.
+  expect(codeFeld(container)).toBeNull()
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Beitreten' }))
+  })
   expect(codeFeld(container)).not.toBeNull()
+
   // Abmeldung in der Top-Bar (ui-shell), nicht mehr in der Liste; Startansicht ohne Zurueck.
   const header = screen.getByRole('banner')
   expect(within(header).getByRole('button', { name: /abmelden/i })).toBeTruthy()
@@ -366,7 +391,7 @@ test('Beendete Spielsitzung führt zur Liste zurück', async () => {
     participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
   })
 
-  const { container } = render(<App />)
+  render(<App />)
   await screen.findByText(/Abendrunde/)
   await betreten()
   await waitFor(() => expect(socketMock.__facade.enter).toHaveBeenCalled())
@@ -375,10 +400,9 @@ test('Beendete Spielsitzung führt zur Liste zurück', async () => {
     socketMock.__emit('ended', { sessionId: 's1' })
   })
 
-  // Zurueck zur Sitzungsliste (Formularfelder erscheinen wieder) samt Hinweis.
+  // Zurueck zur Sitzungsliste (Anker `Sitzung leiten`, `ui-start`) samt Hinweis.
   await waitFor(() => expect(screen.getByText(/beendet/i)).toBeTruthy())
-  expect(nameFeld(container)).not.toBeNull()
-  expect(codeFeld(container)).not.toBeNull()
+  expect(screen.getByRole('button', { name: 'Sitzung leiten' })).toBeTruthy()
 })
 
 // --- Alias in der Raumansicht (#45) ---------------------------------------------------------

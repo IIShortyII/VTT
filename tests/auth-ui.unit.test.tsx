@@ -12,6 +12,11 @@
 // Nutzer-Fixtures tragen ab #45 zusaetzlich `username` (die Antwort von `/api/auth/me` nennt
 // ihn). Die beiden Szenarien der Registrierungsoberfläche sind rot, weil das
 // Registrierungsformular das Nutzernamensfeld noch nicht rendert.
+//
+// add-start-view (#86, tasks.md 1.2): Die Passwortänderung liegt nun am Ende der Startansicht
+// in einem zugeklappten Aufklappbereich (`<details class="start-account">` ohne `open`, Summary
+// `Passwort ändern`); das Szenario „Angemeldete Ansicht bietet die Passwortänderung an" ist
+// darauf umgestellt.
 
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { App } from '../src/client/app/App.js'
@@ -227,9 +232,9 @@ test('Vergebener Nutzername wird angezeigt', async () => {
 
 // --- Passwortänderung in der Oberfläche -----------------------------------------------------
 // Requirement "Passwortänderung in der Oberfläche" aus
-// openspec/changes/add-account-security/specs/user-auth/spec.md. Das Formular (design.md D5)
-// entsteht erst mit der Implementierung; bis dahin fehlen Felder/Meldungen — die Tests sind rot,
-// weil die erwartete Oberfläche noch nicht gerendert wird.
+// openspec/changes/add-account-security/specs/user-auth/spec.md, MODIFIED in
+// openspec/changes/add-start-view/specs/user-auth/spec.md (#86). Das Formular liegt in einem
+// zugeklappten `<details class="start-account">` (design.md D4/D5).
 
 const ANGEMELDETER_NUTZER = { id: 'nutzer-1', email: 'spieler@example.com', username: 'Gandalf' }
 
@@ -249,11 +254,19 @@ test('Angemeldete Ansicht bietet die Passwortänderung an', async () => {
   const { container } = render(<App />)
   await screen.findByRole('button', { name: /ändern/i })
 
-  // Die Passwortänderung liegt in der Sitzungsliste (die Abmeldung liegt in der Top-Bar,
-  // ui-shell): Eingabefelder für das bisherige und das neue Passwort und eine Schaltfläche zum Ändern.
-  expect(bisherigesPasswortFeld(container)).not.toBeNull()
-  expect(neuesPasswortFeld(container)).not.toBeNull()
-  expect(screen.getByRole('button', { name: /ändern/i })).toBeTruthy()
+  // Die Passwortänderung liegt am Ende der Startansicht in einem zugeklappten Aufklappbereich
+  // (`<details class="start-account">` ohne `open`), dessen Summary `Passwort ändern` traegt.
+  const details = container.querySelector('details.start-account') as HTMLDetailsElement | null
+  expect(details).not.toBeNull()
+  expect((details as HTMLDetailsElement).hasAttribute('open')).toBe(false)
+  const bereich = details as HTMLElement
+  const summary = must(bereich.querySelector('summary'), 'eine <summary> des Aufklappbereichs')
+  expect(summary.textContent).toContain('Passwort ändern')
+
+  // Die Felder und die Schaltflaeche liegen darin (auch solange zugeklappt).
+  expect(bisherigesPasswortFeld(bereich)).not.toBeNull()
+  expect(neuesPasswortFeld(bereich)).not.toBeNull()
+  expect(within(bereich).getByRole('button', { name: /ändern/i })).toBeTruthy()
 })
 
 test('Abgelehnte Passwortänderung wird angezeigt', async () => {

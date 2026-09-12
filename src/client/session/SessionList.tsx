@@ -1,30 +1,37 @@
 import { useEffect, useState, type FormEvent } from 'react'
 
-import type { UserOutput } from '../../shared/auth.js'
 import type { SessionSummary } from '../../shared/session.js'
 import { ChangePasswordForm } from '../auth/ChangePasswordForm.js'
+import { Hero } from '../app/Hero.js'
+import { Icon } from '../ui/Icon.js'
 import { createSession, joinSession, listSessions } from './api.js'
+import { ROLE_LABELS, SESSION_STATUS_PRESENTATION } from './session-status.js'
 
-// Sitzungsliste der angemeldeten Ansicht (design.md D10, Requirement "Sitzungsoberflaeche").
-// ChangePasswordForm bleibt hier, damit die Szenarien der user-auth-Anmeldeoberflaeche weiter
-// gelten. Abmeldung und der globale Hinweis liegen in der App-Shell (ui-shell #84, design.md
-// D4) - diese Ansicht kennt beides nicht mehr. `onOpenLibrary` fuehrt zur Kartenbibliothek
-// (map-library #49, spec.md Requirement "Bibliotheksoberflaeche") - die Requirements dieser
-// Ansicht selbst aendern sich dadurch nicht.
+// Sitzungsliste der angemeldeten Ansicht (add-start-view #86, design.md D4). Erstellen- und
+// Beitreten-Formular sind Aufklapp-Panels statt dauerhaft offener Formulare (proposal.md
+// "Aufklapp-Panels statt Modal") - `panel` haelt, welches (falls ueberhaupt eines) offen ist.
+// ChangePasswordForm bleibt hier, aber zugeklappt in einem `<details>` (proposal.md,
+// user-auth "Passwortänderung in der Oberfläche"). Abmeldung und der globale Hinweis liegen
+// in der App-Shell (ui-shell #84) - diese Ansicht kennt beides nicht mehr. Prop `user` entfaellt
+// (design.md D4, Nachlese aus #84) - die angemeldete Ansicht braucht ihn nirgends.
 
 export interface SessionListProps {
-  user: UserOutput
   onEnter: (sessionId: string) => void
   onOpenLibrary: () => void
 }
+
+type Panel = 'none' | 'erstellen' | 'beitreten'
 
 const LOAD_FAILURE_MESSAGE = 'Die Spielsitzungen konnten nicht geladen werden.'
 const GENERIC_CREATE_ERROR_MESSAGE = 'Die Spielsitzung konnte nicht erstellt werden. Bitte versuche es erneut.'
 const GENERIC_JOIN_ERROR_MESSAGE = 'Der Beitritt ist fehlgeschlagen. Bitte versuche es erneut.'
 
 export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
-  const [sessions, setSessions] = useState<SessionSummary[]>([])
+  // `null` bis `GET /api/sessions` geantwortet hat (design.md D4, "ausstehend") - erst danach
+  // darf zwischen Leerzustand und Liste entschieden werden (Requirement "Leerzustand").
+  const [sessions, setSessions] = useState<SessionSummary[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [panel, setPanel] = useState<Panel>('none')
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
@@ -51,6 +58,18 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
     })
   }, [])
 
+  const toggle = (target: Panel) => () => {
+    setCreateError(null)
+    setJoinError(null)
+    setPanel((current) => (current === target ? 'none' : target))
+  }
+
+  const close = () => {
+    setCreateError(null)
+    setJoinError(null)
+    setPanel('none')
+  }
+
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setCreating(true)
@@ -59,6 +78,7 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
       const result = await createSession({ name })
       if (result.ok) {
         setName('')
+        setPanel('none')
         await reload()
       } else {
         setCreateError(result.message)
@@ -79,6 +99,7 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
       const result = await joinSession({ code })
       if (result.ok) {
         setCode('')
+        setPanel('none')
         await reload()
       } else {
         setJoinError(result.message)
@@ -92,47 +113,124 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
   }
 
   return (
-    <div>
-      <button type="button" onClick={onOpenLibrary}>
-        Kartenbibliothek
-      </button>
-
-      <h1>Meine Spielsitzungen</h1>
-      {loadError !== null && <p role="alert">{loadError}</p>}
-      <ul>
-        {sessions.map((session) => (
-          <li key={session.id}>
-            <span>{session.name}</span>
-            <span> – {session.role}</span>
-            <span> – {session.status}</span>
-            <button type="button" onClick={() => onEnter(session.id)}>
-              Betreten
+    <>
+      <Hero
+        title="Meine Spielsitzungen"
+        subline="Leite eine Sitzung oder tritt mit einem Code bei."
+        actions={
+          <>
+            <button type="button" className="primary" aria-expanded={panel === 'erstellen'} onClick={toggle('erstellen')}>
+              <Icon name="add" /> Sitzung leiten
             </button>
-          </li>
-        ))}
-      </ul>
+            <button type="button" aria-expanded={panel === 'beitreten'} onClick={toggle('beitreten')}>
+              <Icon name="players" /> Beitreten
+            </button>
+            <button type="button" className="link" onClick={onOpenLibrary}>
+              <Icon name="library" /> Kartenbibliothek
+            </button>
+          </>
+        }
+      />
 
-      <form onSubmit={(event) => void handleCreate(event)}>
-        <h2>Neue Spielsitzung</h2>
-        <label htmlFor="session-name">Name</label>
-        <input id="session-name" name="name" type="text" value={name} onChange={(event) => setName(event.target.value)} required />
-        {createError !== null && <p role="alert">{createError}</p>}
-        <button type="submit" disabled={creating}>
-          Erstellen
-        </button>
-      </form>
+      {panel === 'erstellen' && (
+        <form className="panel" aria-labelledby="create-session-heading" onSubmit={(event) => void handleCreate(event)}>
+          <h2 id="create-session-heading">Neue Spielsitzung</h2>
+          <label className="field-label" htmlFor="session-name">
+            Name
+          </label>
+          <input
+            id="session-name"
+            name="name"
+            type="text"
+            autoFocus
+            required
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+          {createError !== null && (
+            <p role="alert" className="field-error">
+              {createError}
+            </p>
+          )}
+          <div className="panel-actions">
+            <button type="submit" className="primary" disabled={creating}>
+              Erstellen
+            </button>
+            <button type="button" onClick={close}>
+              Abbrechen
+            </button>
+          </div>
+        </form>
+      )}
 
-      <form onSubmit={(event) => void handleJoin(event)}>
-        <h2>Spielsitzung beitreten</h2>
-        <label htmlFor="session-code">Sitzungscode</label>
-        <input id="session-code" name="code" type="text" value={code} onChange={(event) => setCode(event.target.value)} required />
-        {joinError !== null && <p role="alert">{joinError}</p>}
-        <button type="submit" disabled={joining}>
-          Beitreten
-        </button>
-      </form>
+      {panel === 'beitreten' && (
+        <form className="panel" aria-labelledby="join-session-heading" onSubmit={(event) => void handleJoin(event)}>
+          <h2 id="join-session-heading">Spielsitzung beitreten</h2>
+          <label className="field-label" htmlFor="session-code">
+            Sitzungscode
+          </label>
+          <input
+            id="session-code"
+            name="code"
+            type="text"
+            autoFocus
+            required
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+          />
+          {joinError !== null && (
+            <p role="alert" className="field-error">
+              {joinError}
+            </p>
+          )}
+          <div className="panel-actions">
+            <button type="submit" className="primary" disabled={joining}>
+              Beitreten
+            </button>
+            <button type="button" onClick={close}>
+              Abbrechen
+            </button>
+          </div>
+        </form>
+      )}
 
-      <ChangePasswordForm />
-    </div>
+      {loadError !== null && <p role="alert">{loadError}</p>}
+
+      {sessions !== null && sessions.length === 0 && loadError === null && (
+        <p className="empty-state">
+          <strong>Noch keine Sitzungen</strong>
+          <span>Erstelle eine Sitzung oder tritt mit einem Code bei.</span>
+        </p>
+      )}
+
+      {sessions !== null && sessions.length > 0 && (
+        <ul className="session-cards" aria-label="Meine Spielsitzungen">
+          {sessions.map((session) => {
+            const status = SESSION_STATUS_PRESENTATION[session.status]
+            return (
+              <li key={session.id} className="session-card">
+                <h3 className="session-card-name">{session.name}</h3>
+                <div className="session-card-meta">
+                  <span className={status.modifier ? `status-pill ${status.modifier}` : 'status-pill'}>
+                    <Icon name={status.icon} /> {status.label}
+                  </span>
+                  <span>
+                    <Icon name="user" /> {ROLE_LABELS[session.role]}
+                  </span>
+                </div>
+                <button type="button" onClick={() => onEnter(session.id)}>
+                  Betreten
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      <details className="start-account">
+        <summary>Passwort ändern</summary>
+        <ChangePasswordForm />
+      </details>
+    </>
   )
 }

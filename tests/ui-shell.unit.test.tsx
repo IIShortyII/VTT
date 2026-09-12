@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 // Komponententests zum Capability `ui-shell` aus
-// openspec/changes/add-app-shell/specs/ui-shell/spec.md (tasks.md 1.1). Ein Test je
+// openspec/changes/add-app-shell/specs/ui-shell/spec.md (tasks.md 1.1) und dem MODIFIED-Delta
+// openspec/changes/add-start-view/specs/ui-shell/spec.md (#86, tasks.md 1.2). Ein Test je
 // GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname: sechs zur
 // „Top-Bar", zwei zu „Inhaltsbereich und Footer", eins zum „Stylesheet der Shell".
 //
@@ -12,11 +13,10 @@
 // fallen auf `0.0.0-dev`/`dev` zurueck); `fetch` und die Socket-/Canvas-Fassaden sind nach dem
 // Muster der bestehenden Auth-/Sitzungs-/Bibliothekstests gemockt.
 //
-// Rote Phase: `AppShell` existiert noch nicht — es gibt kein `<header>` (banner), kein
-// `<footer>` (contentinfo), kein `<main class="app-shell">` und keine Schaltflaeche `Zurück`
-// in der Top-Bar. Jedes Szenario wird daher an seiner Landmark-/Schaltflaechen-Assertion rot,
-// nicht an einem Lade- oder Typfehler (constitution.md §3.1): der Einstieg (Anmeldeformular,
-// Sitzungsliste, Raum, Bibliothek) rendert wie bisher, erst die Shell-Adresse fehlt.
+// add-start-view (#86, tasks.md 1.2): Die angemeldete Startansicht ist nun an der Schaltflaeche
+// `Sitzung leiten` erkennbar (statt am Formular `Neue Spielsitzung`); das Chevron der
+// Schaltflaeche `Zurück` ist ein dekoratives Icon (`<svg aria-hidden="true">`) statt des
+// Textknotens `‹`.
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -150,8 +150,8 @@ test('Startansicht ohne Zurück', async () => {
   ])
 
   render(<App />)
-  // Anker: die angemeldete Startansicht (Sitzungsliste) ist erschienen.
-  await screen.findByText('Neue Spielsitzung')
+  // Anker: die angemeldete Startansicht ist erschienen (Schaltflaeche `Sitzung leiten`, ui-start).
+  await screen.findByRole('button', { name: 'Sitzung leiten' })
 
   const header = screen.getByRole('banner')
   expect(within(header).getByText('VTT')).toBeTruthy()
@@ -197,6 +197,10 @@ test('Unteransicht zeigt Zurück als erstes fokussierbares Element', async () =>
   expect(screen.getAllByRole('button')[0]).toBe(zurueck)
   // Sie hat beim Erscheinen den Fokus (autoFocus).
   expect(document.activeElement).toBe(zurueck)
+  // Das Chevron ist ein dekoratives Icon (genau ein `<svg aria-hidden="true">`), kein Textknoten
+  // `‹` (ui-start #86, design.md D6).
+  expect(zurueck.querySelectorAll('svg[aria-hidden="true"]')).toHaveLength(1)
+  expect(zurueck.textContent ?? '').not.toContain('‹')
 })
 
 test('Zurück führt aus der Bibliothek zur Sitzungsliste', async () => {
@@ -214,8 +218,8 @@ test('Zurück führt aus der Bibliothek zur Sitzungsliste', async () => {
     fireEvent.click(zurueck)
   })
 
-  // Die Sitzungsliste ist zurueck (Formular `Neue Spielsitzung`), die Bibliothek ist weg …
-  await screen.findByText('Neue Spielsitzung')
+  // Die Sitzungsliste ist zurueck (Schaltflaeche `Sitzung leiten`, ui-start), die Bibliothek ist weg …
+  await screen.findByRole('button', { name: 'Sitzung leiten' })
   expect(screen.queryByText(/neue karte/i)).toBeNull()
   // … und es gibt keine Schaltflaeche `Zurück` mehr.
   expect(screen.queryByRole('button', { name: 'Zurück' })).toBeNull()
@@ -238,8 +242,9 @@ test('Zurück führt aus dem Raum zur Sitzungsliste', async () => {
     fireEvent.click(zurueck)
   })
 
-  // Die Sitzungsliste ist zurueck, die Raumansicht ist nicht mehr gerendert.
-  await screen.findByText('Neue Spielsitzung')
+  // Die Sitzungsliste ist zurueck (Schaltflaeche `Sitzung leiten`), die Raumansicht ist nicht
+  // mehr gerendert.
+  await screen.findByRole('button', { name: 'Sitzung leiten' })
   expect(screen.queryByText(/Zustand:/i)).toBeNull()
 })
 
@@ -251,7 +256,7 @@ test('Abmelden über die Top-Bar', async () => {
   ])
 
   const { container } = render(<App />)
-  await screen.findByText('Neue Spielsitzung')
+  await screen.findByRole('button', { name: 'Sitzung leiten' })
 
   const header = screen.getByRole('banner')
   const abmelden = within(header).getByRole('button', { name: 'Abmelden' })

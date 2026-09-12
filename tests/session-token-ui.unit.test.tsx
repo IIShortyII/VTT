@@ -375,6 +375,7 @@ test('Spieler sieht die abgelehnte Bewegung', async () => {
   expect(await screen.findByText('Dieses Token darfst du nicht bewegen.')).toBeTruthy()
 })
 
+// Timeout auf 15000 ms angehoben: Vollsuite unter Last, Gate #86
 test('Spielleiter legt ein Token über das Formular an', async () => {
   spielleiterFetch()
   enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [] })
@@ -406,7 +407,7 @@ test('Spielleiter legt ein Token über das Formular an', async () => {
   await waitFor(() =>
     expect(socketMock.__facade.createToken).toHaveBeenCalledWith('s1', { name: 'Goblin', color: '#3366ff', icon: 'undead', size: 2, col: 3, row: 4 }),
   )
-})
+}, 15000)
 
 test('Spielleiter entfernt ein Token über die Liste', async () => {
   spielleiterFetch()

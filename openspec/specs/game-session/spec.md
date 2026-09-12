@@ -419,12 +419,17 @@ werden, weil zu diesem Zeitpunkt niemand verbunden ist.
 ### Requirement: Sitzungsoberfläche
 
 Die Anwendung SHALL einem angemeldeten Nutzer seine Spielsitzungen mit Rolle und Zustand
-zeigen sowie Formulare zum Erstellen (Name) und zum Beitreten (Code) anbieten; Abmelden und
-Passwortänderung aus `user-auth` bleiben erreichbar. Nach Auswahl einer Spielsitzung SHALL
-die Raumansicht deren Namen, Zustand und die Teilnehmerliste mit Anwesenheitskennzeichen
-zeigen. Jeder Teilnehmer SHALL mit seinem Alias benannt werden, falls einer gesetzt ist,
-sonst mit seinem Nutzernamen. Die eigene Zeile der Teilnehmerliste SHALL ein Eingabefeld für
-den Alias mit dem aktuell gesetzten Wert anbieten; das Absenden SHALL `session:alias` mit dem
+als Karten zeigen (`ui-start`, „Sitzungskarten") sowie das Erstellen (Name) und das
+Beitreten (Code) als Aktionen anbieten, deren Formulare erst auf Anforderung erscheinen
+(`ui-start`, „Erstellen und Beitreten auf Anforderung"); die Passwortänderung aus
+`user-auth` bleibt in der Startansicht erreichbar, das Abmelden liegt in der Top-Bar der
+App-Shell (`ui-shell`). Die Rückkehr aus Raum und Kartenbibliothek zur Sitzungsliste SHALL
+ausschließlich über die Top-Bar erfolgen; Raum und Bibliothek MUST NOT eine eigene
+Schaltfläche dafür zeigen. Nach Auswahl einer Spielsitzung SHALL die Raumansicht deren
+Namen, Zustand und die Teilnehmerliste mit Anwesenheitskennzeichen zeigen. Jeder Teilnehmer
+SHALL mit seinem Alias benannt werden, falls einer gesetzt ist, sonst mit seinem
+Nutzernamen. Die eigene Zeile der Teilnehmerliste SHALL ein Eingabefeld für den Alias mit
+dem aktuell gesetzten Wert anbieten; das Absenden SHALL `session:alias` mit dem
 eingegebenen Wert senden. Die angezeigte Benennung SHALL der zuletzt vom Server gesendeten
 Teilnehmerliste folgen, nicht der Eingabe (`constitution.md` §9.1); eine Ablehnung des
 Servers SHALL als Meldung sichtbar sein. Dem Spielleiter SHALL sie zusätzlich den
@@ -452,9 +457,12 @@ erneutes Betreten erfolgt nur durch eine bewusste Handlung des Nutzers. Erhält 
 - **GIVEN** der Server meldet einen angemeldeten Nutzer, und `GET /api/sessions` liefert eine
   Spielsitzung `Freitagsrunde` mit `role: "spielleiter"` und `status: "geschlossen"`
 - **WHEN** die Anwendung gerendert wird
-- **THEN** zeigt sie den Eintrag `Freitagsrunde` mit Rolle und Zustand, ein Eingabefeld für
-  den Namen einer neuen Spielsitzung, ein Eingabefeld für einen Sitzungscode sowie weiterhin
-  die Abmeldung
+- **THEN** zeigt sie eine Karte `Freitagsrunde` mit der Rolle `Spielleiter` und dem Zustand
+  `Geschlossen` sowie die Schaltflächen `Sitzung leiten` und `Beitreten`; ein Eingabefeld
+  für den Namen einer neuen Spielsitzung erscheint erst nach Auslösen von `Sitzung leiten`,
+  ein Eingabefeld für einen Sitzungscode erst nach Auslösen von `Beitreten`; die Abmeldung
+  liegt in der Top-Bar (`ui-shell`, „Top-Bar"), und die Sitzungsliste zeigt keine
+  Schaltfläche `Zurück`
 
 #### Scenario: Raumansicht des Spielleiters
 
@@ -505,7 +513,8 @@ erneutes Betreten erfolgt nur durch eine bewusste Handlung des Nutzers. Erhält 
 
 - **GIVEN** die Raumansicht eines Spielers ist geöffnet
 - **WHEN** die Anwendung `session:ended` erhält
-- **THEN** zeigt sie die Sitzungsliste und einen Hinweis, dass die Spielsitzung beendet wurde
+- **THEN** zeigt sie die Sitzungsliste (Schaltfläche `Sitzung leiten`) und einen Hinweis,
+  dass die Spielsitzung beendet wurde
 
 #### Scenario: Teilnehmer werden mit Alias oder Nutzername benannt
 

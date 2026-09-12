@@ -8,13 +8,13 @@
 
 ## 1. Tests (test-author)
 
-- [ ] 1.1 Unit-Tests in einer neuen Geometrie-Suite (`tests/session-annotation-geometry.unit.test.ts`):
+- [x] 1.1 Unit-Tests in einer neuen Geometrie-Suite (`tests/session-annotation-geometry.unit.test.ts`):
       die 11 Szenarien „Messgeometrie" gegen die reinen Funktionen aus design.md D2
       (`cellDistance`, `snapToCellCenter`, `distanceInFields`, `angleDegrees`,
       `annotationLabel`); Bildkoordinaten mit `toBeCloseTo`, Etiketten als exakte
       Zeichenketten; verifizieren, dass sie rot sind, weil das Modul `shared/annotation`
       fehlt
-- [ ] 1.2 Socket-Integrationstests in einer neuen Anmerkungs-Socket-Suite
+- [x] 1.2 Socket-Integrationstests in einer neuen Anmerkungs-Socket-Suite
       (`tests/session-annotation-socket.integration.test.ts`): die 7 Szenarien „Anmerkung
       anlegen", die 7 Szenarien „Anmerkung entfernen" und die Szenarien „Betreten liefert
       den gefilterten Bestand" und „Kartenwechsel verteilt den Bestand der neuen Karte".
@@ -24,9 +24,9 @@
       Ereignisliste je Client; verifizieren, dass die Tests rot sind, weil die Ereignisse
       unbekannt sind, die Tabelle fehlt bzw. `annotations` im Enter-Ack fehlt
       (Prisma-Typfehler beim Rot-Bestätigen unterscheiden)
-- [ ] 1.3 Aushängen-Szenario „Aushängen löscht die Anmerkungen" in derselben Suite (Route
+- [x] 1.3 Aushängen-Szenario „Aushängen löscht die Anmerkungen" in derselben Suite (Route
       `DELETE /api/sessions/:id/maps/:instanceId`, danach `count`)
-- [ ] 1.4 Komponententests in einer neuen Anmerkungs-UI-Suite
+- [x] 1.4 Komponententests in einer neuen Anmerkungs-UI-Suite
       (`tests/session-annotation-ui.unit.test.tsx`): die 19 Szenarien „Anmerkungsansicht im
       Raum"; Mocks nach design.md D7 (Socket-Fassade mit `createAnnotation`/
       `deleteAnnotation` und auslösbarem `annotations`-Handler, Canvas-Fassade mit
@@ -38,7 +38,7 @@
 
 ## 2. Schema (implementer)
 
-- [ ] 2.1 `prisma/schema.prisma`: Modell `Annotation` nach design.md D1 und die
+- [x] 2.1 `prisma/schema.prisma`: Modell `Annotation` nach design.md D1 und die
       Gegenrelationen `annotations Annotation[]` an `MapInstance` und `User`;
       Migrationsdatei `prisma/migrations/<stamp>_add-annotation/migration.sql` (ein
       `CREATE TABLE` mit `ON DELETE CASCADE` zur Instanz und `ON DELETE SET NULL` zum
@@ -49,7 +49,7 @@
 
 ## 3. Gemeinsamer Vertrag (implementer)
 
-- [ ] 3.1 `src/shared/annotation.ts` (neu): Konstanten, Wertemengen mit zod-Enums
+- [x] 3.1 `src/shared/annotation.ts` (neu): Konstanten, Wertemengen mit zod-Enums
       (`ANNOTATION_KINDS`, `ANNOTATION_MODES`, `ANNOTATION_VISIBILITIES`,
       `ANNOTATION_COLORS`, `DISTANCE_UNITS`, `ANNOTATION_TOOLS`, `CANVAS_TOOLS`),
       `ANNOTATION_COLOR_HEX`, `PointSchema`, `PointListSchema`,
@@ -64,14 +64,14 @@
 
 ## 4. Server (implementer)
 
-- [ ] 4.1 `src/server/session/annotations.ts` (neu): `toAnnotation`, `loadAnnotations`,
+- [x] 4.1 `src/server/session/annotations.ts` (neu): `toAnnotation`, `loadAnnotations`,
       `loadAnnotationsFor`, `broadcastAnnotations`, Handler `session:annotation-create`
       (Parse → `authorizeAction` ohne Rolle → aktive Instanz mit Karte → Einrasten bei
       `gerastert` → `create` → `broadcastAnnotations` → Ack) und
       `session:annotation-delete` (Ziele `eine`/`meine`/`geteilte` nach design.md D3, Meldungen
       wortgleich mit der Spec) sowie `registerAnnotationHandlers`; verifizieren mit
       `pnpm typecheck:src`
-- [ ] 4.2 `src/server/session/socket.ts`: `annotations` im Enter-Ack,
+- [x] 4.2 `src/server/session/socket.ts`: `annotations` im Enter-Ack,
       `registerAnnotationHandlers` in der `connection`-Registrierung,
       `broadcastAnnotations` nach `broadcastTokens` in `handleActivateMap`;
       `src/server/session/maps.ts`: dasselbe beim Aushängen der aktiven Instanz (design.md
@@ -79,10 +79,10 @@
 
 ## 5. Client (implementer)
 
-- [ ] 5.1 `src/client/session/socket.ts`: `createAnnotation`, `deleteAnnotation`,
+- [x] 5.1 `src/client/session/socket.ts`: `createAnnotation`, `deleteAnnotation`,
       `on('annotations')`, `wireEventFor` (design.md D5); verifizieren mit
       `pnpm typecheck:src`
-- [ ] 5.2 `src/client/map/canvas.ts`: Werkzeugtyp `CanvasTool`, Optionen `annotations`,
+- [x] 5.2 `src/client/map/canvas.ts`: Werkzeugtyp `CanvasTool`, Optionen `annotations`,
       `annotationOptions`, `onAnnotationDrawn`; Zeichnungsebene zwischen Auswahl- und
       Tokenebene, Messebene und Vorschau-Ebene über den Tokens (alle `eventMode = 'none'`);
       `drawAnnotations` mit Etiketten aus `annotationLabel`; Gesten für Strecke, Kreis,
@@ -92,10 +92,10 @@
       laufende Geste; `Text`-Objekte beim Neuaufbau zerstören (design.md D4).
       `src/client/map/MapCanvas.tsx`: Props durchreichen, tolerante Aufrufe,
       `latestPropsRef` erweitern; verifizieren mit `pnpm typecheck:src`
-- [ ] 5.3 `src/client/session/AnnotationPanel.tsx` (neu): Panel genau nach der
+- [x] 5.3 `src/client/session/AnnotationPanel.tsx` (neu): Panel genau nach der
       Schnittstellentabelle in design.md D6, ohne lokalen Zustand;
       `src/client/session/FogPanel.tsx`: Prop `tool: CanvasTool` (kein Verhaltenswechsel)
-- [ ] 5.4 `src/client/session/SessionRoom.tsx`: ein Werkzeugzustand `tool: CanvasTool` für
+- [x] 5.4 `src/client/session/SessionRoom.tsx`: ein Werkzeugzustand `tool: CanvasTool` für
       beide Panels, Zustand `annotations`/`annotationMode`/`annotationVisibility`/
       `annotationColor`/`distanceUnit` (aus dem Browserspeicher, `try/catch`)/
       `annotationError`, `annotationOptions` per `useMemo`, Handler nach design.md D5
@@ -106,9 +106,9 @@
 
 ## 6. Abschluss
 
-- [ ] 6.1 Gate grün (Typecheck, Lint, komplette Jest-Suite inkl. der bestehenden Tests),
+- [x] 6.1 Gate grün (Typecheck, Lint, komplette Jest-Suite inkl. der bestehenden Tests),
       Review „ok"
-- [ ] 6.2 App-Test durch den Menschen (Dev-DB vorher migrieren; zwei Browser oder Profile:
+- [x] 6.2 App-Test durch den Menschen (Dev-DB vorher migrieren; zwei Browser oder Profile:
       Spielleiter `meister` und Spieler `sam`; Karte mit Quadratraster aktiv, später eine
       Hex-Karte): `sam` wählt `Strecke`, `Gerastert`, `Geteilt`, zieht über drei Felder →
       Linie mit Etikett `3 Felder (4,5 m)` bei beiden; `Frei` → Etikett mit Nachkommastelle;
@@ -123,7 +123,7 @@
       `Bewegen` wieder; Kartenwechsel weg und zurück, Reload, Serverneustart → Anmerkungen
       erhalten; Hex-Karte: gerasterte Strecke rastet auf Hex-Mitten, Etikett zählt
       Hex-Schritte
-- [ ] 6.3 Change nach `openspec/changes/archive/YYYY-MM-DD-add-measure-draw/` verschieben
+- [x] 6.3 Change nach `openspec/changes/archive/YYYY-MM-DD-add-measure-draw/` verschieben
       (Delta in `openspec/specs/session-annotation/` (neu) einsynchronisieren; danach
       prüfen, ob die Abschnitte „Drahtformat" von `session-map` und `game-session`
       `annotations` im Enter-Ack und `session:annotations` nach `session:tokens` nennen —

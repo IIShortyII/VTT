@@ -193,7 +193,7 @@ const GOBLIN = {
   instanceId: 'i-tav',
   name: 'Goblin',
   color: '#3366ff',
-  icon: '💀',
+  icon: 'undead',
   size: 2,
   col: 3,
   row: 4,
@@ -386,7 +386,16 @@ test('Spielleiter legt ein Token über das Formular an', async () => {
 
   fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'Goblin' } })
   fireEvent.change(screen.getByLabelText('Farbe'), { target: { value: '#3366ff' } })
-  fireEvent.change(screen.getByLabelText('Symbol'), { target: { value: '💀' } })
+  const symbolGruppe = screen.getByRole('group', { name: 'Symbol' })
+  const symbolNamen = ['Kein Symbol', 'Kämpfer', 'Wächter', 'Untoter', 'Drache', 'Magier', 'Schütze', 'Adel', 'Bestie', 'Ungeziefer', 'Feuer']
+  for (const optionName of symbolNamen) {
+    expect(within(symbolGruppe).getByRole('radio', { name: optionName })).toBeTruthy()
+  }
+  for (const optionName of symbolNamen.slice(1)) {
+    const optionLabel = within(symbolGruppe).getByRole('radio', { name: optionName }).closest('label')
+    expect(optionLabel?.querySelector('svg')).not.toBeNull()
+  }
+  fireEvent.click(within(symbolGruppe).getByRole('radio', { name: 'Untoter' }))
   fireEvent.change(screen.getByLabelText('Größe'), { target: { value: '2' } })
   fireEvent.change(screen.getByLabelText('Spalte'), { target: { value: '3' } })
   fireEvent.change(screen.getByLabelText('Zeile'), { target: { value: '4' } })
@@ -395,7 +404,7 @@ test('Spielleiter legt ein Token über das Formular an', async () => {
   })
 
   await waitFor(() =>
-    expect(socketMock.__facade.createToken).toHaveBeenCalledWith('s1', { name: 'Goblin', color: '#3366ff', icon: '💀', size: 2, col: 3, row: 4 }),
+    expect(socketMock.__facade.createToken).toHaveBeenCalledWith('s1', { name: 'Goblin', color: '#3366ff', icon: 'undead', size: 2, col: 3, row: 4 }),
   )
 })
 
@@ -627,6 +636,12 @@ test('Spielleiter entfernt eine Markierung', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+
+  const markierungsListe = await screen.findByRole('list', { name: 'Goblin Markierungen' })
+  const liegendEintrag = within(markierungsListe).getByText('Liegend').closest('li')
+  expect(liegendEintrag?.querySelector('svg[aria-hidden="true"]')).not.toBeNull()
+  const segenEintrag = within(markierungsListe).getByText('Segen').closest('li')
+  expect(segenEintrag?.querySelector('svg[aria-hidden="true"]')).toBeNull()
 
   await act(async () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Goblin Markierung Liegend entfernen' }))

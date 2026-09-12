@@ -367,6 +367,32 @@ main.app-shell {
   text-align: center;
 }
 
+/* Icons (ui-icons, #85) */
+.icon {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  vertical-align: -0.125em;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  padding: 0.45rem;
+  font-size: var(--font-size-3);
+}
+
+.chip .icon-button {
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   button,
   .chip {

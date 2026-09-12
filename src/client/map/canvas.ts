@@ -1,4 +1,4 @@
-import { Application, Assets, Container, Graphics, Sprite, Text, type FederatedPointerEvent, type Texture } from 'pixi.js'
+import { Application, Assets, Color, Container, Graphics, Sprite, Text, type FederatedPointerEvent, type Texture } from 'pixi.js'
 
 import {
   ANNOTATION_COLOR_HEX,
@@ -17,7 +17,9 @@ import { cellKey, cellsInRange } from '../../shared/fog.js'
 import { cellAt, cellCenter, cellCorners, cellRange, type Cell, type Point } from '../../shared/grid.js'
 import type { Grid } from '../../shared/map.js'
 import type { Token } from '../../shared/token.js'
-import { conditionSymbol } from '../session/conditions.js'
+import { conditionAbbreviation, conditionIcon } from '../session/conditions.js'
+import { iconSvg } from '../ui/icon-svg.js'
+import type { IconName } from '../ui/icons.js'
 import { panBy, zoomAt, type View } from './viewport.js'
 
 // Die einzige Datei, die `pixi.js` importiert (design.md D8) - die Mock-Grenze der
@@ -164,6 +166,23 @@ const DEFAULT_ANNOTATION_OPTIONS: AnnotationOptions = { mode: 'gerastert', color
  * validiert) in die von PixiJS erwartete Zahl. */
 function parseColor(hex: string): number {
   return Number.parseInt(hex.slice(1), 16)
+}
+
+/** Wandelt eine bestehende Pixi-Farbkonstante (Zahl) in einen Hex-String (`#rrggbb`) fuer
+ * `iconSvg` um (design.md D5). */
+function hex(value: number): string {
+  return new Color(value).toHex()
+}
+
+/** Zeichnet ein Icon der Registry als Vektorgrafik (add-icon-registry #85, design.md D5):
+ * `pivot` auf den Mittelpunkt des `24x24`-Koordinatenraums, `scale` skaliert das Icon auf
+ * `size` Pixel Kantenlaenge - danach ist die Grafik um ihren Mittelpunkt positionierbar,
+ * genau wie die bisherigen `Text`-Objekte mit `anchor.set(0.5)`. */
+function iconGraphics(name: IconName, color: number, size: number): Graphics {
+  const graphics = new Graphics().svg(iconSvg(name, hex(color)))
+  graphics.pivot.set(12, 12)
+  graphics.scale.set(size / 24)
+  return graphics
 }
 
 /** Vereinigung zweier Zelllisten ohne Doppelte (add-fog-of-war #16, design.md D6) - benutzt
@@ -697,6 +716,15 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       }
     }
 
+    // add-icon-registry (#85, design.md D5): je Markierungsplatz entweder ein Icon des
+    // Zustandskatalogs oder ein Textkuerzel (freie Markierung); "+N" bleibt immer Text.
+    type ConditionSlot = { kind: 'icon'; name: IconName } | { kind: 'text'; text: string }
+
+    function conditionSlot(label: string): ConditionSlot {
+      const icon = conditionIcon(label)
+      return icon !== null ? { kind: 'icon', name: icon } : { kind: 'text', text: conditionAbbreviation(label) }
+    }
+
     function buildTokenContainer(token: Token): Container {
       const tokenContainer = new Container()
       const center = tokenCenter(token)
@@ -709,12 +737,19 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       circle.stroke({ width: TOKEN_STROKE_WIDTH, color: TOKEN_STROKE_COLOR })
       tokenContainer.addChild(circle)
 
-      const symbolText = new Text({
-        text: token.icon ?? token.name.charAt(0).toUpperCase(),
-        style: { fill: TOKEN_SYMBOL_COLOR, fontSize: Math.max(radius, TOKEN_NAME_FONT_SIZE) },
-      })
-      symbolText.anchor.set(0.5)
-      tokenContainer.addChild(symbolText)
+      // add-icon-registry (#85, design.md D5): das Token-Symbol ist eine Vektorgrafik der
+      // Registry statt eines Emoji-Zeichens; ohne `icon` bleibt die Initiale als `Text`.
+      if (token.icon !== null) {
+        const symbolIcon = iconGraphics(token.icon, TOKEN_SYMBOL_COLOR, radius * 1.1)
+        tokenContainer.addChild(symbolIcon)
+      } else {
+        const symbolText = new Text({
+          text: token.name.charAt(0).toUpperCase(),
+          style: { fill: TOKEN_SYMBOL_COLOR, fontSize: Math.max(radius, TOKEN_NAME_FONT_SIZE) },
+        })
+        symbolText.anchor.set(0.5)
+        tokenContainer.addChild(symbolText)
+      }
 
       const nameText = new Text({
         text: token.name,
@@ -780,19 +815,27 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       // ab der vierten Markierung ersetzt das dritte Symbol ein "+N".
       if (token.conditions.length > 0) {
         const count = Math.min(token.conditions.length, TOKEN_CONDITION_MAX_SYMBOLS)
-        const symbols =
+        const slots: ConditionSlot[] =
           token.conditions.length <= TOKEN_CONDITION_MAX_SYMBOLS
-            ? token.conditions.slice(0, count).map(conditionSymbol)
-            : [conditionSymbol(token.conditions[0]), conditionSymbol(token.conditions[1]), `+${token.conditions.length - 2}`]
+            ? token.conditions.slice(0, count).map(conditionSlot)
+            : [conditionSlot(token.conditions[0]), conditionSlot(token.conditions[1]), { kind: 'text', text: `+${token.conditions.length - 2}` }]
 
-        symbols.forEach((symbol, index) => {
-          const conditionText = new Text({
-            text: symbol,
-            style: { fill: TOKEN_CONDITION_SYMBOL_COLOR, fontSize: TOKEN_NAME_FONT_SIZE },
-          })
-          conditionText.anchor.set(0.5)
-          conditionText.position.set((index - (count - 1) / 2) * (TOKEN_NAME_FONT_SIZE + 2), -radius - TOKEN_NAME_GAP)
-          tokenContainer.addChild(conditionText)
+        slots.forEach((slot, index) => {
+          const x = (index - (count - 1) / 2) * (TOKEN_NAME_FONT_SIZE + 2)
+          const y = -radius - TOKEN_NAME_GAP
+          if (slot.kind === 'icon') {
+            const conditionIconGraphics = iconGraphics(slot.name, TOKEN_CONDITION_SYMBOL_COLOR, TOKEN_NAME_FONT_SIZE)
+            conditionIconGraphics.position.set(x, y)
+            tokenContainer.addChild(conditionIconGraphics)
+          } else {
+            const conditionText = new Text({
+              text: slot.text,
+              style: { fill: TOKEN_CONDITION_SYMBOL_COLOR, fontSize: TOKEN_NAME_FONT_SIZE },
+            })
+            conditionText.anchor.set(0.5)
+            conditionText.position.set(x, y)
+            tokenContainer.addChild(conditionText)
+          }
         })
       }
 

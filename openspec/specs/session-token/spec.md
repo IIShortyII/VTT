@@ -20,9 +20,11 @@ den Server für ihn in keiner Form.
 - **Name**: getrimmter Text, 1 bis 40 Zeichen, keine Steuerzeichen; frei vergeben durch den
   Spielleiter, nicht eindeutig.
 - **Farbe**: Hex-Farbwert `#rrggbb` (6 Hex-Ziffern, Groß-/Kleinschreibung egal).
-- **Symbol**: ein Eintrag des festen Symbolkatalogs `TOKEN_ICONS` (`⚔️`, `🛡️`, `💀`,
-  `🐉`, `🧙`, `🏹`, `👑`, `🐺`, `🕷️`, `🔥`) oder `null` (kein Symbol — der Client zeigt dann
-  die Initiale des Namens).
+- **Symbol**: ein Eintrag des festen Symbolkatalogs `TOKEN_ICONS` — die zehn Symbolnamen
+  der Icon-Registry (`ui-icons`, „Symbolkatalog": `fighter`, `guardian`, `undead`, `dragon`,
+  `mage`, `archer`, `royal`, `beast`, `vermin`, `fire`) — oder `null` (kein Symbol — der
+  Client zeigt dann die Initiale des Namens). Gespeichert wird der Name; frühere
+  Emoji-Werte wurden per Datenmigration auf die Namen umgeschrieben.
 - **Größe**: ganze Zahl 1 bis 4, Kantenlänge in Zellen (1 = eine Zelle, 4 = 4×4 Zellen).
 - **Zelle**: `{ col, row }` als ganze Zahlen im Raster der Karte (`map-library`,
   „Rastergeometrie"); die Ankerzelle des Tokens. Negative Werte und Zellen außerhalb des

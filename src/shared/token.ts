@@ -18,9 +18,12 @@ import type { MemberRole } from './session.js'
 // "Zelle", "Zellen eines Tokens", "Sichtbares Token", "Aktive Instanz", "Tokendarstellung",
 // "Tokenbestand", "Besitzer", "Stat", "Zielgruppe", "Freigaben".
 
-/** Fester Symbolkatalog (spec.md "Begriffe") - gespeichert wird der Katalogeintrag selbst
- * (das Emoji), nicht ein Schluesselwort (design.md D1). */
-export const TOKEN_ICONS = ['⚔️', '🛡️', '💀', '🐉', '🧙', '🏹', '👑', '🐺', '🕷️', '🔥'] as const
+/** Fester Symbolkatalog (spec.md "Begriffe") - gespeichert wird der Symbolname der
+ * Icon-Registry (`client/ui/icons.ts`, add-icon-registry #85, design.md D3), nicht mehr
+ * das Emoji selbst. `shared/` importiert weiterhin nichts aus `client/` - die Namen stehen
+ * hier als Literale; `client/session/token-icons.ts` prueft per Typ, dass jeder ein
+ * `IconName` ist. */
+export const TOKEN_ICONS = ['fighter', 'guardian', 'undead', 'dragon', 'mage', 'archer', 'royal', 'beast', 'vermin', 'fire'] as const
 export const TokenIconSchema = z.enum(TOKEN_ICONS)
 export type TokenIcon = z.infer<typeof TokenIconSchema>
 

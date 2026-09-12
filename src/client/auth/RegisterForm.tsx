@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, USERNAME_MAX_LENGTH, USERNAME_MIN_LENGTH, type UserOutput } from '../../shared/auth.js'
+import { useT } from '../i18n/locale.js'
 import { register } from './api.js'
 
 export interface RegisterFormProps {
@@ -8,9 +9,12 @@ export interface RegisterFormProps {
   onSwitchToLogin: () => void
 }
 
-const GENERIC_ERROR_MESSAGE = 'Die Registrierung ist fehlgeschlagen. Bitte versuche es erneut.'
+// ui-text (#87, design.md D6): Ueberschrift, Labels, Schaltflaechen und die frueher als
+// Modulkonstante gehaltene Fehlermeldung laufen jetzt ueber `t('auth.*')`; der Aufruf steht im
+// `catch`-Zweig, damit er die aktive Sprache zum Zeitpunkt des Fehlers traegt (design.md D1).
 
 export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) {
+  const t = useT()
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -31,7 +35,7 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
     } catch {
       // Ein Server- oder Netzwerkfehler wird angezeigt statt lautlos zu verpuffen
       // (AGENTS.md: "Fehler sprudeln bis zum zentralen Handler").
-      setError(GENERIC_ERROR_MESSAGE)
+      setError(t('auth.register.failed'))
     } finally {
       setSubmitting(false)
     }
@@ -41,9 +45,9 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
     <form onSubmit={(event) => void handleSubmit(event)}>
       {/* Die Ebene-1-Ueberschrift der Startansicht traegt der Hero (add-start-view #86,
           design.md D1/D2) - dieses Formular bekommt nur noch eine `<h2>`. */}
-      <h2>Registrierung</h2>
+      <h2>{t('auth.register.title')}</h2>
       <label className="field-label" htmlFor="register-username">
-        Nutzername
+        {t('auth.register.username')}
       </label>
       <input
         id="register-username"
@@ -57,7 +61,7 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
         required
       />
       <label className="field-label" htmlFor="register-email">
-        E-Mail
+        {t('auth.register.email')}
       </label>
       <input
         id="register-email"
@@ -69,7 +73,7 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
         required
       />
       <label className="field-label" htmlFor="register-password">
-        Passwort
+        {t('auth.register.password')}
       </label>
       <input
         id="register-password"
@@ -88,10 +92,10 @@ export function RegisterForm({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
         </p>
       )}
       <button type="submit" className="primary" disabled={submitting}>
-        Registrieren
+        {t('auth.register.submit')}
       </button>
       <button type="button" className="link" onClick={onSwitchToLogin}>
-        Ich habe schon ein Konto
+        {t('auth.register.toLogin')}
       </button>
     </form>
   )

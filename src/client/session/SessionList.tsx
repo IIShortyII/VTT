@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import type { SessionSummary } from '../../shared/session.js'
 import { ChangePasswordForm } from '../auth/ChangePasswordForm.js'
 import { Hero } from '../app/Hero.js'
+import { useT } from '../i18n/locale.js'
 import { Icon } from '../ui/Icon.js'
 import { createSession, joinSession, listSessions } from './api.js'
 import { ROLE_LABELS, SESSION_STATUS_PRESENTATION } from './session-status.js'
@@ -14,6 +15,10 @@ import { ROLE_LABELS, SESSION_STATUS_PRESENTATION } from './session-status.js'
 // user-auth "Passwortänderung in der Oberfläche"). Abmeldung und der globale Hinweis liegen
 // in der App-Shell (ui-shell #84) - diese Ansicht kennt beides nicht mehr. Prop `user` entfaellt
 // (design.md D4, Nachlese aus #84) - die angemeldete Ansicht braucht ihn nirgends.
+// ui-text (#87, design.md D6): Hero-Texte, die drei Aktionen, beide Formulare, Leerzustand,
+// `aria-label` der Liste, `Betreten`, die Summary "Passwort ändern" und die frueher als
+// Modulkonstanten gehaltenen Fehlermeldungen laufen jetzt ueber `t('start.*')`; Pillentext und
+// Rolle der Karten ueber `t(status.label)`/`t(ROLE_LABELS[session.role])`.
 
 export interface SessionListProps {
   onEnter: (sessionId: string) => void
@@ -22,11 +27,8 @@ export interface SessionListProps {
 
 type Panel = 'none' | 'erstellen' | 'beitreten'
 
-const LOAD_FAILURE_MESSAGE = 'Die Spielsitzungen konnten nicht geladen werden.'
-const GENERIC_CREATE_ERROR_MESSAGE = 'Die Spielsitzung konnte nicht erstellt werden. Bitte versuche es erneut.'
-const GENERIC_JOIN_ERROR_MESSAGE = 'Der Beitritt ist fehlgeschlagen. Bitte versuche es erneut.'
-
 export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
+  const t = useT()
   // `null` bis `GET /api/sessions` geantwortet hat (design.md D4, "ausstehend") - erst danach
   // darf zwischen Leerzustand und Liste entschieden werden (Requirement "Leerzustand").
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null)
@@ -54,9 +56,9 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
   useEffect(() => {
     reload().catch((error: unknown) => {
       console.error(error)
-      setLoadError(LOAD_FAILURE_MESSAGE)
+      setLoadError(t('start.loadFailed'))
     })
-  }, [])
+  }, [t])
 
   const toggle = (target: Panel) => () => {
     setCreateError(null)
@@ -85,7 +87,7 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
       }
     } catch (error) {
       console.error(error)
-      setCreateError(GENERIC_CREATE_ERROR_MESSAGE)
+      setCreateError(t('start.createFailed'))
     } finally {
       setCreating(false)
     }
@@ -106,7 +108,7 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
       }
     } catch (error) {
       console.error(error)
-      setJoinError(GENERIC_JOIN_ERROR_MESSAGE)
+      setJoinError(t('start.joinFailed'))
     } finally {
       setJoining(false)
     }
@@ -115,18 +117,18 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
   return (
     <>
       <Hero
-        title="Meine Spielsitzungen"
-        subline="Leite eine Sitzung oder tritt mit einem Code bei."
+        title={t('start.title')}
+        subline={t('start.subline')}
         actions={
           <>
             <button type="button" className="primary" aria-expanded={panel === 'erstellen'} onClick={toggle('erstellen')}>
-              <Icon name="add" /> Sitzung leiten
+              <Icon name="add" /> {t('start.actions.lead')}
             </button>
             <button type="button" aria-expanded={panel === 'beitreten'} onClick={toggle('beitreten')}>
-              <Icon name="players" /> Beitreten
+              <Icon name="players" /> {t('start.actions.join')}
             </button>
             <button type="button" className="link" onClick={onOpenLibrary}>
-              <Icon name="library" /> Kartenbibliothek
+              <Icon name="library" /> {t('start.actions.library')}
             </button>
           </>
         }
@@ -134,9 +136,9 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
 
       {panel === 'erstellen' && (
         <form className="panel" aria-labelledby="create-session-heading" onSubmit={(event) => void handleCreate(event)}>
-          <h2 id="create-session-heading">Neue Spielsitzung</h2>
+          <h2 id="create-session-heading">{t('start.create.title')}</h2>
           <label className="field-label" htmlFor="session-name">
-            Name
+            {t('start.create.name')}
           </label>
           <input
             id="session-name"
@@ -154,10 +156,10 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
           )}
           <div className="panel-actions">
             <button type="submit" className="primary" disabled={creating}>
-              Erstellen
+              {t('start.create.submit')}
             </button>
             <button type="button" onClick={close}>
-              Abbrechen
+              {t('start.cancel')}
             </button>
           </div>
         </form>
@@ -165,9 +167,9 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
 
       {panel === 'beitreten' && (
         <form className="panel" aria-labelledby="join-session-heading" onSubmit={(event) => void handleJoin(event)}>
-          <h2 id="join-session-heading">Spielsitzung beitreten</h2>
+          <h2 id="join-session-heading">{t('start.join.title')}</h2>
           <label className="field-label" htmlFor="session-code">
-            Sitzungscode
+            {t('start.join.code')}
           </label>
           <input
             id="session-code"
@@ -185,10 +187,10 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
           )}
           <div className="panel-actions">
             <button type="submit" className="primary" disabled={joining}>
-              Beitreten
+              {t('start.join.submit')}
             </button>
             <button type="button" onClick={close}>
-              Abbrechen
+              {t('start.cancel')}
             </button>
           </div>
         </form>
@@ -198,13 +200,13 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
 
       {sessions !== null && sessions.length === 0 && loadError === null && (
         <p className="empty-state">
-          <strong>Noch keine Sitzungen</strong>
-          <span>Erstelle eine Sitzung oder tritt mit einem Code bei.</span>
+          <strong>{t('start.empty.title')}</strong>
+          <span>{t('start.empty.hint')}</span>
         </p>
       )}
 
       {sessions !== null && sessions.length > 0 && (
-        <ul className="session-cards" aria-label="Meine Spielsitzungen">
+        <ul className="session-cards" aria-label={t('start.list')}>
           {sessions.map((session) => {
             const status = SESSION_STATUS_PRESENTATION[session.status]
             return (
@@ -212,14 +214,14 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
                 <h3 className="session-card-name">{session.name}</h3>
                 <div className="session-card-meta">
                   <span className={status.modifier ? `status-pill ${status.modifier}` : 'status-pill'}>
-                    <Icon name={status.icon} /> {status.label}
+                    <Icon name={status.icon} /> {t(status.label)}
                   </span>
                   <span>
-                    <Icon name="user" /> {ROLE_LABELS[session.role]}
+                    <Icon name="user" /> {t(ROLE_LABELS[session.role])}
                   </span>
                 </div>
                 <button type="button" onClick={() => onEnter(session.id)}>
-                  Betreten
+                  {t('start.enter')}
                 </button>
               </li>
             )
@@ -228,7 +230,7 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
       )}
 
       <details className="start-account">
-        <summary>Passwort ändern</summary>
+        <summary>{t('start.account.password')}</summary>
         <ChangePasswordForm />
       </details>
     </>

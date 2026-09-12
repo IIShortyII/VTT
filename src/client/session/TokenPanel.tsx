@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from 'react'
 
 import { displayName, type Participant } from '../../shared/session.js'
-import { TOKEN_ICONS, type CreateTokenInput, type Token, type TokenAudience, type TokenStat, type TokenStatsPatch } from '../../shared/token.js'
-import { CONDITION_CATALOG } from './conditions.js'
+import { TOKEN_ICONS, TokenIconSchema, type CreateTokenInput, type Token, type TokenAudience, type TokenIcon, type TokenStat, type TokenStatsPatch } from '../../shared/token.js'
+import { Icon, IconButton } from '../ui/Icon.js'
+import { CONDITION_CATALOG, conditionIcon } from './conditions.js'
 import { TokenShareControls } from './TokenShare.js'
 import { TokenStatsText } from './TokenStats.js'
+import { TOKEN_ICON_LABELS } from './token-icons.js'
 
 // Token-Verwaltung des Spielleiters im Raum (design.md D7/D9, spec.md Requirement
 // "Tokenansicht im Raum"). Kein eigener Ladepfad - der Bestand kommt vom Raum
@@ -23,6 +25,11 @@ import { TokenStatsText } from './TokenStats.js'
 // add-token-sharing (#62, design.md D6): `onShare` je Zeile durchgereicht, `TokenRow`
 // rendert `TokenShareControls` nach den Wertefeldern - fuer den Spielleiter hat jedes Token
 // `shares` (der Server sendet sie ihm immer), die Schalter erscheinen also an jedem Token.
+//
+// add-icon-registry (#85, design.md D6): die Symbolauswahl ist eine Optionsgruppe (Radio)
+// statt eines `<select>` - ein `<option>` kann kein SVG zeigen, jede Option zeigt Icon plus
+// Beschriftung. Die Markierungsliste zeigt je Eintrag das Icon des Katalogeintrags (sonst
+// keins) und eine Icon-only-Schaltflaeche `Entfernen`.
 
 export interface TokenPanelProps {
   sessionId: string
@@ -42,6 +49,7 @@ const DEFAULT_CELL = '0'
 const NO_OWNER_VALUE = ''
 const NO_OWNER_LABEL = 'Spielleiter'
 const NO_CONDITION_PICK_VALUE = ''
+const NO_ICON_VALUE = ''
 
 function toStatField(value: string): number | null {
   return value === '' ? null : Number(value)
@@ -49,6 +57,13 @@ function toStatField(value: string): number | null {
 
 function isPositiveInteger(value: number): boolean {
   return Number.isInteger(value) && value > 0
+}
+
+/** Typzusicherung ohne `as` (design.md D6): `value` ist ein Symbolkatalog-Name genau dann,
+ * wenn `TokenIconSchema` ihn akzeptiert - die Radio-Werte kommen ausschliesslich aus
+ * `TOKEN_ICONS`, ein Fehlschlag ist praktisch nur bei manipuliertem DOM moeglich. */
+function isTokenIcon(value: string): value is TokenIcon {
+  return TokenIconSchema.safeParse(value).success
 }
 
 interface TokenRowProps {
@@ -244,16 +259,21 @@ function TokenRow({ token, players, onRemove, onAssign, onSetStats, onSetConditi
         Markierung hinzufügen
       </button>
 
-      {token.conditions.map((label) => (
-        <button
-          key={label}
-          type="button"
-          aria-label={`${token.name} Markierung ${label} entfernen`}
-          onClick={() => handleRemoveCondition(label)}
-        >
-          Entfernen
-        </button>
-      ))}
+      {/* add-icon-registry (#85, design.md D6/D8): Markierungsliste als Chips - ein
+          Katalogeintrag zeigt sein Icon (dekorativ), eine freie Markierung keins; die
+          Schaltflaeche behaelt ihren bisherigen zugaenglichen Namen. */}
+      <ul aria-label={`${token.name} Markierungen`}>
+        {token.conditions.map((label) => {
+          const icon = conditionIcon(label)
+          return (
+            <li key={label} className="chip">
+              {icon !== null && <Icon name={icon} />}
+              <span>{label}</span>
+              <IconButton name="delete" label={`${token.name} Markierung ${label} entfernen`} onClick={() => handleRemoveCondition(label)} />
+            </li>
+          )
+        })}
+      </ul>
 
       <TokenStatsText token={token} />
     </li>
@@ -263,7 +283,7 @@ function TokenRow({ token, players, onRemove, onAssign, onSetStats, onSetConditi
 export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign, onSetStats, onSetConditions, onShare }: TokenPanelProps) {
   const [name, setName] = useState('')
   const [color, setColor] = useState(DEFAULT_COLOR)
-  const [icon, setIcon] = useState('')
+  const [icon, setIcon] = useState(NO_ICON_VALUE)
   const [size, setSize] = useState(DEFAULT_SIZE)
   const [col, setCol] = useState(DEFAULT_CELL)
   const [row, setRow] = useState(DEFAULT_CELL)
@@ -273,7 +293,7 @@ export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign,
     onCreate({
       name,
       color,
-      icon: icon === '' ? null : (icon as CreateTokenInput['icon']),
+      icon: icon !== NO_ICON_VALUE && isTokenIcon(icon) ? icon : null,
       size: Number(size),
       col: Number(col),
       row: Number(row),
@@ -303,15 +323,22 @@ export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign,
           onChange={(event) => setColor(event.target.value)}
         />
 
-        <label htmlFor="token-panel-icon">Symbol</label>
-        <select id="token-panel-icon" name="icon" value={icon} onChange={(event) => setIcon(event.target.value)}>
-          <option value="">Kein Symbol</option>
+        {/* add-icon-registry (#85, design.md D6): Optionsgruppe statt `<select>` - ein
+            `<option>` kann kein SVG zeigen. Zugaenglicher Name jedes Optionsfelds ist der
+            Text seines Labels; das Icon ist dekorativ. */}
+        <fieldset>
+          <legend>Symbol</legend>
+          <label>
+            <input type="radio" name="icon" value={NO_ICON_VALUE} checked={icon === NO_ICON_VALUE} onChange={(event) => setIcon(event.target.value)} />
+            Kein Symbol
+          </label>
           {TOKEN_ICONS.map((tokenIcon) => (
-            <option key={tokenIcon} value={tokenIcon}>
-              {tokenIcon}
-            </option>
+            <label key={tokenIcon}>
+              <input type="radio" name="icon" value={tokenIcon} checked={icon === tokenIcon} onChange={(event) => setIcon(event.target.value)} />
+              <Icon name={tokenIcon} /> {TOKEN_ICON_LABELS[tokenIcon]}
+            </label>
           ))}
-        </select>
+        </fieldset>
 
         <label htmlFor="token-panel-size">Größe</label>
         <select id="token-panel-size" name="size" value={size} onChange={(event) => setSize(event.target.value)}>

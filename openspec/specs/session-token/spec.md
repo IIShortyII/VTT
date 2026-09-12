@@ -9,7 +9,9 @@ serverseitig gegen die aktuelle Zuweisung geprüft wird, dass Tokens an
 der Karteninstanz hängen und damit Kartenwechsel und Neustart überleben, und dass der
 Bestand beim Betreten und bei jedem Kartenwechsel mitkommt. Wer welche Werte eines Tokens
 sieht, entscheiden Besitzer und Spielleiter je Token, Stat und Spieler (Zielgruppen);
-gefiltert wird pro Empfänger auf dem Server, bevor gesendet wird.
+gefiltert wird pro Empfänger auf dem Server, bevor gesendet wird. Ein besitzerloses Token in
+vollständig verdeckten Zellen (`session-fog`) existiert für einen Spieler nicht — es verlässt
+den Server für ihn in keiner Form.
 
 ## Begriffe
 
@@ -56,9 +58,25 @@ gefiltert wird pro Empfänger auf dem Server, bevor gesendet wird.
 - **Tokenbestand**: alle Tokens der aktiven Instanz als Liste von Tokendarstellungen,
   aufsteigend nach Anlegezeitpunkt; ohne aktive Karte die leere Liste. Er erreicht jeden
   Teilnehmer im Raum **je Verbindung gefiltert** (`constitution.md` §9.2): der Spielleiter
-  sieht alle Werte, ein Spieler die Werte seiner eigenen Tokens und die Stats, deren
-  Zielgruppe `alle` ist oder ihn nennt, sonst `null` und `[]`. Tokens nicht aktiver
-  Instanzen verlassen den Server nicht.
+  erhält alle Tokens mit allen Werten; ein Spieler erhält nur die für ihn sichtbaren Tokens
+  (Requirement „Sichtbarkeit von Tokens im Fog") und auf diesen die Werte seiner eigenen
+  Tokens und die Stats, deren Zielgruppe `alle` ist oder ihn nennt, sonst `null` und `[]`.
+  Ein nicht sichtbares Token verlässt den Server für diesen Empfänger in keiner Form. Tokens
+  nicht aktiver Instanzen verlassen den Server nicht.
+- **Zellen eines Tokens**: die Zellen, die ein Token abdeckt — bei Raster `quadrat` die
+  `size × size` Zellen ab der Ankerzelle (`col` bis `col + size − 1`, `row` bis
+  `row + size − 1`), bei Raster `hex-spitz` und `hex-flach` ausschließlich die Ankerzelle
+  (dieselbe Geometrie, mit der die Kartenansicht das Token zeichnet).
+- **Sichtbares Token**: ein Token ist für einen Empfänger sichtbar, wenn der Empfänger die
+  Rolle `spielleiter` hat, wenn `ownerId` nicht `null` ist (das eigene Token wie das eines
+  Mitspielers) oder wenn mindestens eine der Zellen des Tokens zu den aufgedeckten Zellen der
+  aktiven Instanz gehört (`session-fog`, „Aufgedeckte Zellen"). Verborgen werden damit
+  ausschließlich besitzerlose Tokens in vollständig verdeckten Zellen.
+- **Konvention für Szenarien**: Wo ein Szenario dieser Spec eine aktive Karte voraussetzt,
+  ohne den Fog-Zustand zu nennen, gilt die Karte als vollständig aufgedeckt. Verdeckte
+  Zellen setzen nur die Szenarien der Requirement „Sichtbarkeit von Tokens im Fog" sowie
+  „Verborgenes Token ist beim Bewegen nicht unterscheidbar" und „Verborgenes Token ist beim
+  Teilen nicht unterscheidbar" voraus.
 
 Drahtformat (Client → Server, je mit Acknowledgement):
 `session:token-create` `{ sessionId, name, color, icon, size, col, row }` →
@@ -81,7 +99,9 @@ für den Absender gefiltert (für Spielleiter und Besitzer ohne Wirkung).
 Server → Client: `session:tokens` `{ sessionId, tokens }` mit dem für diesen Empfänger
 gefilterten Tokenbestand — je Verbindung gesendet, nicht als ein Paket an den Raum. Das
 Acknowledgement von `session:enter` (`game-session`) trägt zusätzlich `tokens` mit dem für
-den Betretenden gefilterten Tokenbestand.
+den Betretenden gefilterten Tokenbestand. Nach jeder erfolgreichen `session:fog-set`-Aktion
+(`session-fog`) folgt für jede Verbindung im Raum auf `session:fog` ein `session:tokens` mit
+dem für sie gefilterten Tokenbestand.
 
 ## Requirements
 
@@ -145,7 +165,10 @@ prüfen, pro Aktion `authorizeAction` ohne Rollenanforderung durchlaufen (jede M
 das Token mit `id` **und** `instanceId` gleich der aktiven Instanz der Spielsitzung laden —
 ein unbekanntes Token, ein Token einer anderen Spielsitzung und ein Token einer eingehängten,
 nicht aktiven Instanz SHALL mit identischer Meldung `Token nicht gefunden.` abgelehnt werden
-(`constitution.md` §9.2) — und **danach** die Berechtigung gegen die zu diesem Zeitpunkt
+(`constitution.md` §9.2); ein Token, das für den Absender nach Requirement „Sichtbarkeit
+von Tokens im Fog" nicht sichtbar ist, SHALL ebenso mit `Token nicht gefunden.` abgelehnt
+werden — geprüft nach dem Laden und vor der Berechtigung, damit ein Spieler aus der Meldung
+nicht schließen kann, ob das Token noch auf der aktiven Karte steht — und **danach** die Berechtigung gegen die zu diesem Zeitpunkt
 gespeicherte Zuweisung prüfen: Rolle `spielleiter` oder `ownerId` gleich der `userId` des
 Absenders (`constitution.md` §9.3 — nichts an der Verbindung und keine frühere Bewegung gilt
 als Erlaubnis). Ein Absender ohne diese Berechtigung SHALL `{ ok: false, message }` mit der
@@ -218,6 +241,17 @@ werden. Der Server MUST NOT Reichweite, Kartenrand oder Hindernisse prüfen.
   `unbekannt`, für `Fremd` und für `Verborgen`, jeweils nach `(5, 5)`
 - **THEN** sind alle drei Acknowledgements `{ ok: false, message }` mit identischer
   `message`, und `Fremd` und `Verborgen` stehen in der Datenbank unverändert in ihrer Zelle
+
+#### Scenario: Verborgenes Token ist beim Bewegen nicht unterscheidbar
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit aktiver Karte ohne aufgedeckte
+  Zellen und einem Token `Ork` ohne Besitzer in `(3, 4)`, deren Spieler-Mitglied `sam` den
+  Raum betreten hat, und keine Token-`id` `unbekannt`
+- **WHEN** `sam` `session:token-move` zweimal sendet: für `Ork` nach `(7, 1)` und für
+  `unbekannt` nach `(7, 1)`
+- **THEN** sind beide Acknowledgements `{ ok: false, message }` mit identischer `message`,
+  `Ork` steht in der Datenbank weiterhin in `(3, 4)`, und `sam` erhält kein
+  `session:tokens`
 
 ### Requirement: Token entfernen
 
@@ -1021,7 +1055,9 @@ ohne Besitzer teilt nur der Spielleiter). Der Server SHALL die Payload mit zod p
 eine nicht-leere Liste eindeutiger Zeichenketten — und eine ungültige Payload mit
 `Ungültige Anfrage.` ablehnen. Pro Aktion SHALL `authorizeAction` ohne Rollenanforderung
 durchlaufen werden (jede Mitgliedschaft); das Token wird mit derselben Ladeprüfung wie beim
-Bewegen geladen (`Token nicht gefunden.` für unbekannte, fremde und nicht aktive Tokens).
+Bewegen geladen (`Token nicht gefunden.` für unbekannte, fremde und nicht aktive Tokens sowie für ein
+Token, das der Absender nach Requirement „Sichtbarkeit von Tokens im Fog" nicht sehen darf —
+geprüft vor der Berechtigung, `constitution.md` §9.2).
 **Danach** SHALL die Berechtigung gegen die zu diesem Zeitpunkt gespeicherte Zuweisung
 geprüft werden: Rolle `spielleiter` oder `ownerId` gleich der `userId` des Absenders
 (`constitution.md` §9.3). Ein Absender ohne diese Berechtigung SHALL `{ ok: false, message }`
@@ -1186,3 +1222,155 @@ seine Zielgruppen mit entfernen. Ein neu angelegtes Token SHALL für jeden Stat 
 - **THEN** ist das Acknowledgement `{ ok: true, token }` mit `token.shares` gleich
   `{ hp: 'keine', tempHp: 'keine', ac: 'keine', initiative: 'keine', conditions: 'keine' }`,
   und die Anzahl der Zielgruppen-Zeilen mit dieser Token-`id` in der Datenbank ist `0`
+
+#### Scenario: Verborgenes Token ist beim Teilen nicht unterscheidbar
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit aktiver Karte ohne aufgedeckte
+  Zellen und einem Token `Ork` ohne Besitzer in `(3, 4)`, deren Spieler-Mitglied `sam` den
+  Raum betreten hat, und keine Token-`id` `unbekannt`
+- **WHEN** `sam` `session:token-share` zweimal sendet: für `Ork` mit `stat` `hp` und
+  `audience` `'alle'` und dasselbe für `unbekannt`
+- **THEN** sind beide Acknowledgements `{ ok: false, message }` mit identischer `message`,
+  die Anzahl der Zielgruppen-Zeilen von `Ork` in der Datenbank ist `0`, und `sam` erhält
+  kein `session:tokens`
+
+### Requirement: Sichtbarkeit von Tokens im Fog
+
+Der Server SHALL den Tokenbestand pro Empfänger auch nach Existenz filtern, bevor er ihn
+sendet — im Acknowledgement von `session:enter` wie in jedem `session:tokens`
+(`constitution.md` §9.2). Ein Token SHALL für einen Empfänger enthalten sein, wenn es nach
+„Begriffe" für ihn sichtbar ist: Rolle `spielleiter`, oder `ownerId` nicht `null`, oder
+mindestens eine der Zellen des Tokens ist aufgedeckt — sonst MUST NOT es in irgendeiner Form
+den Empfänger erreichen: weder Position noch Name, Werte, Markierungen oder Freigaben, auch
+dann nicht, wenn eine Zielgruppe eines Stats `alle` ist oder den Empfänger nennt. Die
+sichtbaren Tokens SHALL in Anlegereihenfolge bleiben und danach der Wertefilterung nach
+„Sichtbarkeit der Tokenwerte" unterliegen. Die Regel SHALL bei jedem Senden gegen die zu
+diesem Zeitpunkt gespeicherten aufgedeckten Zellen und die zu diesem Zeitpunkt gespeicherte
+Zuweisung ausgewertet werden (`constitution.md` §9.3) — ein Token erscheint beim Spieler,
+sobald eine seiner Zellen aufgedeckt wird oder es in eine aufgedeckte Zelle zieht, und
+verschwindet, sobald keine seiner Zellen mehr aufgedeckt ist. Nach jeder erfolgreichen
+`session:fog-set`-Aktion (Ziel `zellen`, `bereich` oder `alle`, Aufdecken wie Verdecken)
+SHALL der Server nach `session:fog` jeder Verbindung im Raum `session:tokens` mit dem für
+sie gefilterten Bestand senden; `session:fog-area-create` und `session:fog-area-delete`
+MUST NOT `session:tokens` auslösen. Der Server MUST NOT das Bewegen eines Tokens in
+verdeckte Zellen verhindern.
+
+#### Scenario: Besitzerloses Token im Fog erreicht den Spieler nicht
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit aktiver Karte (Raster `quadrat`,
+  70, 0, 0) ohne aufgedeckte Zellen, einem Token `Ork` ohne Besitzer in Zelle `(3, 4)`, ihr
+  Spielleiter und ein Spieler-Mitglied `sam`
+- **WHEN** beide `session:enter` senden
+- **THEN** trägt das Acknowledgement des Spielleiters `tokens` mit genau `Ork` in `(3, 4)`,
+  und das Acknowledgement von `sam` trägt `tokens` als leere Liste
+
+#### Scenario: Aufdecken lässt das Token erscheinen
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit aktiver Karte ohne aufgedeckte
+  Zellen und einem Token `Ork` ohne Besitzer in `(3, 4)`, deren Spielleiter und ein
+  Spieler-Mitglied `sam` beide den Raum betreten haben
+- **WHEN** der Spielleiter `session:fog-set` mit `revealed: true` und dem Ziel `zellen` mit
+  der Zelle `(3, 4)` sendet
+- **THEN** erhält `sam` `session:fog` mit `revealed` gleich genau `(3, 4)` und danach
+  `session:tokens`, dessen Liste genau `Ork` mit `col` `3`, `row` `4`, `ownerId` `null`,
+  `hp` `null` und `shares` `null` enthält — `session:fog` kommt vor `session:tokens` an —,
+  und der Spielleiter erhält `session:tokens` mit genau `Ork`
+
+#### Scenario: Verdecken lässt das Token verschwinden
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit aktiver Karte, auf der genau
+  `(3, 4)` aufgedeckt ist, und einem Token `Ork` ohne Besitzer in `(3, 4)`, deren
+  Spielleiter und ein Spieler-Mitglied `sam` beide den Raum betreten haben
+- **WHEN** der Spielleiter `session:fog-set` mit `revealed: false` und dem Ziel `zellen` mit
+  der Zelle `(3, 4)` sendet
+- **THEN** erhält `sam` `session:tokens` mit leerer Liste, und der Spielleiter erhält
+  `session:tokens` mit genau `Ork`
+
+#### Scenario: Alles verdecken lässt nur die Tokens mit Besitzer stehen
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit aktiver Karte, auf der `(3, 4)` und
+  `(5, 5)` aufgedeckt sind, einem Token `Ork` ohne Besitzer in `(3, 4)` und einem Token
+  `Goblin` in `(5, 5)`, dessen Besitzer das Spieler-Mitglied `sam` ist, deren Spielleiter
+  und `sam` beide den Raum betreten haben
+- **WHEN** der Spielleiter `session:fog-set` mit `revealed: false` und dem Ziel `alle` sendet
+- **THEN** erhält `sam` `session:tokens`, dessen Liste genau `Goblin` enthält, und der
+  Spielleiter erhält `session:tokens` mit `Ork` und `Goblin`
+
+#### Scenario: Bewegung in den Fog lässt das Token verschwinden
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit aktiver Karte, auf der genau
+  `(3, 4)` aufgedeckt ist, und einem Token `Ork` ohne Besitzer in `(3, 4)`, deren
+  Spielleiter und ein Spieler-Mitglied `sam` beide den Raum betreten haben
+- **WHEN** der Spielleiter `session:token-move` für `Ork` nach `(7, 1)` sendet
+- **THEN** ist das Acknowledgement `{ ok: true, token }` mit `token.col` `7` und `token.row`
+  `1`, `Ork` steht in der Datenbank in `(7, 1)`, `sam` erhält `session:tokens` mit leerer
+  Liste, und der Spielleiter erhält `session:tokens`, in dem `Ork` in `(7, 1)` steht
+
+#### Scenario: Bewegung aus dem Fog lässt das Token erscheinen
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit aktiver Karte, auf der genau
+  `(3, 4)` aufgedeckt ist, und einem Token `Ork` ohne Besitzer in `(7, 1)`, deren
+  Spielleiter und ein Spieler-Mitglied `sam` beide den Raum betreten haben
+- **WHEN** der Spielleiter `session:token-move` für `Ork` nach `(3, 4)` sendet
+- **THEN** erhält `sam` `session:tokens`, dessen Liste genau `Ork` in `(3, 4)` enthält
+
+#### Scenario: Großes Token ist sichtbar, sobald eine seiner Zellen aufgedeckt ist
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit aktiver Karte (Raster `quadrat`,
+  70, 0, 0), auf der genau `(4, 5)` aufgedeckt ist, einem Token `Ork` ohne Besitzer mit
+  `size` `2` in Ankerzelle `(3, 4)`, ihr Spielleiter im Raum und ein Spieler-Mitglied `sam`
+- **WHEN** `sam` `session:enter` sendet, und der Spielleiter danach `session:fog-set` mit
+  `revealed: false` und dem Ziel `zellen` mit `(4, 5)` und anschließend mit `revealed: true`
+  und dem Ziel `zellen` mit `(5, 6)` sendet
+- **THEN** trägt das Acknowledgement von `sam` `tokens` mit genau `Ork`, und das letzte
+  `session:tokens`, das `sam` erhält, hat eine leere Liste
+
+#### Scenario: Bei Hex zählt nur die Ankerzelle
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit aktiver Karte (Raster `hex-spitz`,
+  70, 0, 0), auf der genau `(4, 5)` aufgedeckt ist, einem Token `Ork` ohne Besitzer mit `size` `2`
+  in Ankerzelle `(3, 4)`, ihr Spielleiter im Raum und ein Spieler-Mitglied `sam`
+- **WHEN** `sam` `session:enter` sendet, und der Spielleiter danach `session:fog-set` mit
+  `revealed: true` und dem Ziel `zellen` mit `(3, 4)` sendet
+- **THEN** trägt das Acknowledgement von `sam` `tokens` als leere Liste, und das darauf
+  folgende `session:tokens` an `sam` enthält genau `Ork`
+
+#### Scenario: Eigenes Token bleibt im Fog sichtbar
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit aktiver Karte ohne aufgedeckte
+  Zellen und einem Token `Goblin` in `(3, 4)` mit `hp` `23` und `hpMax` `40`, dessen
+  Besitzer das Spieler-Mitglied `sam` ist
+- **WHEN** `sam` `session:enter` sendet
+- **THEN** trägt das Acknowledgement `tokens` mit genau `Goblin`, dessen `ownerId` die
+  `userId` von `sam`, `hp` `23` und `hpMax` `40` sind
+
+#### Scenario: Token eines Mitspielers ist unabhängig vom Fog sichtbar
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit aktiver Karte ohne aufgedeckte
+  Zellen, zwei Spieler-Mitgliedern `sam` und `tom` und einem Token `Elf` in `(3, 4)` mit
+  `hp` `12` und `hpMax` `12`, dessen Besitzer `tom` ist
+- **WHEN** `sam` `session:enter` sendet
+- **THEN** trägt das Acknowledgement `tokens` mit genau `Elf`, dessen `ownerId` die `userId`
+  von `tom`, `col` `3`, `row` `4`, `hp` `null`, `hpMax` `null` und `shares` `null` sind
+
+#### Scenario: Geteilte Werte eines verborgenen Tokens erreichen den Spieler nicht
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit aktiver Karte ohne aufgedeckte
+  Zellen und einem Token `Ork` ohne Besitzer in `(3, 4)` mit `hp` `30`, `hpMax` `30` und der
+  Markierung `['Liegend']`, dessen Zielgruppen `hp` `alle` und `conditions` die Liste mit
+  `sam` sind, ihr Spielleiter im Raum und das Spieler-Mitglied `sam`
+- **WHEN** `sam` `session:enter` sendet, und der Spielleiter danach `session:fog-set` mit
+  `revealed: true` und dem Ziel `zellen` mit `(3, 4)` sendet
+- **THEN** trägt das Acknowledgement von `sam` `tokens` als leere Liste, und das darauf
+  folgende `session:tokens` an `sam` enthält genau `Ork` mit `hp` `30`, `hpMax` `30` und
+  `conditions` `['Liegend']`
+
+#### Scenario: Bereich anlegen löst keinen Tokenbestand aus
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit aktiver Karte ohne aufgedeckte
+  Zellen und einem Token `Ork` ohne Besitzer in `(3, 4)`, deren Spielleiter und ein
+  Spieler-Mitglied `sam` beide den Raum betreten haben
+- **WHEN** der Spielleiter `session:fog-area-create` mit `name: "Raum 1"` und der Zelle
+  `(3, 4)` sendet
+- **THEN** lautet das Acknowledgement `{ ok: true, fog }`, `sam` erhält `session:fog` mit
+  `areas: null`, und weder `sam` noch der Spielleiter erhalten ein `session:tokens`

@@ -20,12 +20,17 @@ import { imageSize } from '../map/storage.js'
 import { toMapSummary, type GameMapLike } from '../map/rules.js'
 import { authorizeAction } from './authorize.js'
 import type { Presence } from './presence.js'
+import { broadcastTokens } from './tokens.js'
 
 // Eine Stelle, die den Fog-Zustand einer Spielsitzung laedt, filtert, verteilt, und die drei
 // Fog-Handler (add-fog-of-war #16, design.md D3). Reihenfolge in jedem Handler: zod-Parse ->
 // authorizeAction (Rolle `spielleiter`) -> aktive Instanz aus der Spielsitzung lesen (nicht
 // aus der Payload) -> Zellen der Aktion aufloesen -> Schreiben -> `broadcastFog` ->
 // Acknowledgement mit dem ungefilterten Zustand (Muster `server/session/tokens.ts`).
+// add-token-fog-visibility (#17, design.md D4): `handleSetFog` sendet nach `broadcastFog`
+// zusaetzlich `broadcastTokens` - Aufdecken und Verdecken aendern, welche Tokens fuer wen
+// sichtbar sind. `handleCreateFogArea`/`handleDeleteFogArea` bleiben unveraendert: sie
+// aendern die aufgedeckten Zellen nicht.
 
 export interface FogSocketDeps {
   prisma: PrismaClient
@@ -215,6 +220,10 @@ export function registerFogHandlers(io: Server, socket: Socket, deps: FogSocketD
    * Mengenoperation in einer Transaktion aus (design.md D3): Aufdecken legt nur Zellen an,
    * die noch nicht vorhanden sind (kein `skipDuplicates` unter SQLite); Verdecken loescht
    * die Treffermenge. Die Fog-Version waechst in jedem Fall um 1, auch ohne Mengenaenderung.
+   * add-token-fog-visibility (#17, design.md D4): nach `broadcastFog` (je Verbindung zuerst
+   * `session:fog`, danach `session:tokens`) verteilt `broadcastTokens` den fuer die
+   * geaenderte Sichtbarkeit neu gefilterten Tokenbestand - fuer jedes Ziel und beide
+   * Richtungen, auch ohne tatsaechliche Mengenaenderung.
    */
   async function handleSetFog(payload: unknown, callback: (ack: FogAck) => void): Promise<void> {
     const parsed = SetFogInputSchema.safeParse(payload)
@@ -284,12 +293,15 @@ export function registerFogHandlers(io: Server, socket: Socket, deps: FogSocketD
       return
     }
     await broadcastFog(io, prisma, presence, sessionId)
+    await broadcastTokens(io, prisma, presence, sessionId)
     callback({ ok: true, fog })
   }
 
   /**
    * `session:fog-area-create` (spec.md Requirement "Bereiche verwalten"): nur der
    * Spielleiter, aendert weder die aufgedeckten Zellen noch die Fog-Version (design.md D3).
+   * add-token-fog-visibility (#17): keine `broadcastTokens` - ein Bereich aendert die
+   * aufgedeckten Zellen nicht.
    */
   async function handleCreateFogArea(payload: unknown, callback: (ack: FogAck) => void): Promise<void> {
     const parsed = CreateFogAreaInputSchema.safeParse(payload)
@@ -331,7 +343,8 @@ export function registerFogHandlers(io: Server, socket: Socket, deps: FogSocketD
   /**
    * `session:fog-area-delete` (spec.md Requirement "Bereiche verwalten"): nur der
    * Spielleiter. Das Loeschen nimmt die Zellen des Bereichs per Cascade mit, aendert aber
-   * die aufgedeckten Zellen nicht (design.md D3).
+   * die aufgedeckten Zellen nicht (design.md D3). add-token-fog-visibility (#17): keine
+   * `broadcastTokens` - dieselbe Begruendung.
    */
   async function handleDeleteFogArea(payload: unknown, callback: (ack: FogAck) => void): Promise<void> {
     const parsed = DeleteFogAreaInputSchema.safeParse(payload)

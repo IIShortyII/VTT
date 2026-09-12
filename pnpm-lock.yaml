@@ -11,6 +11,12 @@ importers:
       '@fastify/cookie':
         specifier: ^11.1.2
         version: 11.1.2
+      '@fontsource/marcellus':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource/sora':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@prisma/client':
         specifier: ^6
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
@@ -497,6 +503,12 @@ packages:
 
   '@fastify/proxy-addr@5.1.0':
     resolution: {integrity: sha512-INS+6gh91cLUjB+PVHfu1UqcB76Sqtpyp7bnL+FYojhjygvOPA9ctiD/JDKsyD9Xgu4hUhCSJBPig/w7duNajw==}
+
+  '@fontsource/marcellus@5.3.0':
+    resolution: {integrity: sha512-cMnanjpiPIC7Rq4GXIA/Zal5WLSoDV5Mc681tMkWsWfKHXnRnLGlhuGeBnLF6HrqtFkiSdiuy4NCSPfOrz266w==}
+
+  '@fontsource/sora@5.3.0':
+    resolution: {integrity: sha512-SqW3OpKxxfKvxDLPlbdrWf2KooPfbd+W3jaYn483o+Y/JrmU87vjFPNptDqwP428c3vY+gnranLhjcbRaXB0Jw==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -3280,6 +3292,10 @@ snapshots:
     dependencies:
       '@fastify/forwarded': 3.0.2
       ipaddr.js: 2.5.0
+
+  '@fontsource/marcellus@5.3.0': {}
+
+  '@fontsource/sora@5.3.0': {}
 
   '@humanfs/core@0.19.2':
     dependencies:

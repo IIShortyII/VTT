@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { UserOutput } from '../../shared/auth.js'
 import { fetchCurrentUser, logout } from '../auth/api.js'
 import { LoginForm } from '../auth/LoginForm.js'
 import { RegisterForm } from '../auth/RegisterForm.js'
-import { useT } from '../i18n/locale.js'
+import { syncLocale, useT } from '../i18n/locale.js'
 import { MapLibrary } from '../map/MapLibrary.js'
 import { SessionList } from '../session/SessionList.js'
 import { SessionRoom } from '../session/SessionRoom.js'
@@ -34,6 +34,19 @@ export interface AppProps {
 }
 
 export function App({ build = FALLBACK_BUILD }: AppProps) {
+  // ui-text (#87, Nacharbeit Runde 1, Requirement "Sprachwahl"): eine gespeicherte Wahl SHALL
+  // beim *Start der Anwendung* gelten - das ist der Mount von `App`, nicht (nur) der Import
+  // des Moduls `i18n/locale.ts` (design.md D1 liest den Speicher beim Laden des Moduls, das
+  // aber nur einmal pro Prozess geschieht). Ein `useRef`-Waechter gleicht die aktive Sprache
+  // deshalb genau einmal beim allerersten Rendern erneut mit dem Speicher ab, bevor `useT()`
+  // (unten) die Sprache abonniert oder irgendein Text nachgeschlagen wird - so liest die erste
+  // `useSyncExternalStore`-Momentaufnahme bereits den abgeglichenen Stand, statt ihn erst nach
+  // dem Lesen zu aendern.
+  const syncedLocaleRef = useRef(false)
+  if (!syncedLocaleRef.current) {
+    syncedLocaleRef.current = true
+    syncLocale()
+  }
   const t = useT()
   const [state, setState] = useState<AuthState>({ status: 'unbekannt' })
   const [view, setView] = useState<AuthView>('login')

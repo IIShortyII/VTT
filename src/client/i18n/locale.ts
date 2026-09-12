@@ -21,8 +21,9 @@ function isLocale(value: string | null): value is Locale {
   return value === 'de' || value === 'en'
 }
 
-/** Liest die gespeicherte Wahl beim Laden des Moduls (design.md D1). Ein geworfener Zugriff
- * (kein `window`, gesperrter Speicher) oder ein ungueltiger Wert liefert `DEFAULT_LOCALE`. */
+/** Liest die gespeicherte Wahl (design.md D1). Ein geworfener Zugriff (kein `window`,
+ * gesperrter Speicher) oder ein ungueltiger Wert liefert `DEFAULT_LOCALE`. Wird sowohl beim
+ * Laden dieses Moduls als auch von `syncLocale` beim Start der Anwendung aufgerufen. */
 function readStoredLocale(): Locale {
   try {
     const stored = localStorage.getItem(LOCALE_STORAGE_KEY)
@@ -67,6 +68,18 @@ export function setLocale(locale: Locale): void {
   for (const listener of listeners) {
     listener()
   }
+}
+
+/** Gleicht die aktive Sprache erneut mit der gespeicherten Wahl ab (Requirement "Sprachwahl":
+ * "eine gespeicherte Wahl `de` oder `en` SHALL beim Start der Anwendung gelten"). Der "Start
+ * der Anwendung" ist der Mount von `App`, nicht (nur) der Import dieses Moduls: dieses Modul
+ * wird genau einmal geladen, `App` kann in derselben Modulinstanz mehrfach starten (etwa in
+ * Tests, die mehrere Szenarien mit unterschiedlicher gespeicherter Wahl gegen denselben
+ * Prozess fahren) - ohne diesen Abgleich bliebe eine zwischenzeitlich geaenderte gespeicherte
+ * Wahl beim naechsten Start unwirksam. Aufgerufen von `App` einmalig bei ihrem ersten Rendern,
+ * bevor irgendein Text nachgeschlagen wird. */
+export function syncLocale(): void {
+  setLocale(readStoredLocale())
 }
 
 export function subscribe(listener: () => void): () => void {

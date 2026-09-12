@@ -1,7 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
-import { cellKey, type FogState, type FogTarget, type FogTool } from '../../shared/fog.js'
-import type { Cell } from '../../shared/grid.js'
+import {
+  DISTANCE_UNIT_STORAGE_KEY,
+  DistanceUnitSchema,
+  snapToCellCenter,
+  type Annotation,
+  type AnnotationColor,
+  type AnnotationKind,
+  type AnnotationMode,
+  type AnnotationVisibility,
+  type CanvasTool,
+  type DeleteAnnotationTarget,
+  type DistanceUnit,
+} from '../../shared/annotation.js'
+import { cellKey, type FogState, type FogTarget } from '../../shared/fog.js'
+import type { Cell, Point } from '../../shared/grid.js'
 import {
   allowedActions,
   displayName,
@@ -21,8 +34,9 @@ import {
   type TokenStat,
   type TokenStatsPatch,
 } from '../../shared/token.js'
-import type { FogLayer } from '../map/canvas.js'
+import type { AnnotationOptions, FogLayer } from '../map/canvas.js'
 import { MapCanvas } from '../map/MapCanvas.js'
+import { AnnotationPanel } from './AnnotationPanel.js'
 import { FogPanel } from './FogPanel.js'
 import { sessionMapImageUrl } from './fog-api.js'
 import { MapPanel } from './MapPanel.js'
@@ -35,10 +49,10 @@ import { TokenPanel } from './TokenPanel.js'
 // add-token-assignment #15, Requirement "Tokenansicht im Raum"/"Token bewegen"; add-token-stats
 // #61, Requirement "Tokenansicht im Raum"; add-token-sharing #62, Requirement "Zielgruppe
 // eines Tokenwerts setzen"/"Tokenansicht im Raum"; add-fog-of-war #16, Requirement
-// "Fog-Ansicht im Raum"). Zustand und Teilnehmer kommen ausschliesslich aus dem
-// Acknowledgement von `enter` und den nachfolgenden Server-Ereignissen - der angezeigte
-// Zustand folgt dem Server, nie dem zuletzt geklickten Uebergang oder der zuletzt aktivierten
-// Karte (constitution.md §9.1).
+// "Fog-Ansicht im Raum"; add-measure-draw #11, Requirement "Anmerkungsansicht im Raum").
+// Zustand und Teilnehmer kommen ausschliesslich aus dem Acknowledgement von `enter` und den
+// nachfolgenden Server-Ereignissen - der angezeigte Zustand folgt dem Server, nie dem
+// zuletzt geklickten Uebergang oder der zuletzt aktivierten Karte (constitution.md §9.1).
 //
 // reenter-room-after-reconnect (#46, design.md D3): eine von der Fassade gemeldete
 // Wiederverbindung betritt denselben Raum ueber dieselbe Fassade erneut - ausser die
@@ -72,6 +86,7 @@ type RoomState =
       map: ActiveMap | null
       tokens: Token[]
       fog: FogState | null
+      annotations: Annotation[]
     }
 
 /** Vereinigung zweier Zelllisten ohne Doppelte (add-fog-of-war #16, design.md D7) - benutzt,
@@ -85,6 +100,19 @@ function mergeCells(a: Cell[], b: Cell[]): Cell[] {
     byKey.set(cellKey(cell), cell)
   }
   return [...byKey.values()]
+}
+
+/** Einheit aus dem Browserspeicher (add-measure-draw #11, design.md D5): `try/catch`, weil
+ * ein gesperrter oder privater Speicher nicht die Anzeige verhindern soll - Rueckfall
+ * `meter`. Ein gespeicherter, aber nicht mehr gueltiger Wert wird verworfen. */
+function readStoredUnit(): DistanceUnit {
+  try {
+    const stored = localStorage.getItem(DISTANCE_UNIT_STORAGE_KEY)
+    const parsed = DistanceUnitSchema.safeParse(stored)
+    return parsed.success ? parsed.data : 'meter'
+  } catch {
+    return 'meter'
+  }
 }
 
 export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: SessionRoomProps) {
@@ -119,18 +147,41 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
   // DOM, sobald auch ein Spieler eine abgelehnte Bewegung sieht. add-token-sharing (#62,
   // design.md D6): dieselbe Meldung auch fuer eine abgelehnte Freigabe.
   const [tokenError, setTokenError] = useState<string | null>(null)
-  // add-fog-of-war (#16, design.md D7): Werkzeugwahl (Standard "schwenken"), lokale
-  // Ad-hoc-Auswahl fuer "Bereich markieren" und die Fehlermeldung einer abgelehnten
-  // Fog-Aktion.
-  const [fogTool, setFogTool] = useState<FogTool>('schwenken')
+  // add-fog-of-war (#16, design.md D7): lokale Ad-hoc-Auswahl fuer "Bereich markieren" und
+  // die Fehlermeldung einer abgelehnten Fog-Aktion. add-measure-draw (#11, design.md D5):
+  // `fogTool` wird zu `tool: CanvasTool` - EIN Werkzeugzustand fuer Fog- und
+  // Anmerkungswerkzeuge, Standard weiterhin "schwenken".
+  const [tool, setTool] = useState<CanvasTool>('schwenken')
   const [fogSelection, setFogSelection] = useState<Cell[]>([])
   const [fogError, setFogError] = useState<string | null>(null)
   // add-fog-of-war (#16, design.md D6): `onCellsSelected` wird der Canvas-Fassade nur beim
   // Erzeugen uebergeben (wie `onTokenMove`) - dieser Ref haelt das jeweils aktuelle Werkzeug,
   // damit der einmal erzeugte Rueckruf trotzdem das Werkzeug zum Zeitpunkt des Loslassens
   // sieht, nicht das der ersten Wiedergabe.
-  const fogToolRef = useRef<FogTool>(fogTool)
-  fogToolRef.current = fogTool
+  const toolRef = useRef<CanvasTool>(tool)
+  toolRef.current = tool
+
+  // add-measure-draw (#11, design.md D5): Modus/Sichtbarkeit/Farbe der naechsten Anmerkung,
+  // Einheit (aus dem Browserspeicher vorbelegt) und die Fehlermeldung einer abgelehnten
+  // Anmerkungsaktion.
+  const [annotationMode, setAnnotationMode] = useState<AnnotationMode>('gerastert')
+  const [annotationVisibility, setAnnotationVisibility] = useState<AnnotationVisibility>('privat')
+  const [annotationColor, setAnnotationColor] = useState<AnnotationColor>('rot')
+  const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(readStoredUnit)
+  const [annotationError, setAnnotationError] = useState<string | null>(null)
+  // design.md D5: `onAnnotationDrawn` wird der Canvas-Fassade nur beim Erzeugen uebergeben
+  // (Muster `onCellsSelected`/`fogToolRef`) - diese Refs halten Modus/Sichtbarkeit/Farbe und
+  // das aktuelle Raster, damit der einmal erzeugte Rueckruf trotzdem den aktuellen Stand
+  // sieht.
+  const annotationModeRef = useRef<AnnotationMode>(annotationMode)
+  annotationModeRef.current = annotationMode
+  const annotationVisibilityRef = useRef<AnnotationVisibility>(annotationVisibility)
+  annotationVisibilityRef.current = annotationVisibility
+  const annotationColorRef = useRef<AnnotationColor>(annotationColor)
+  annotationColorRef.current = annotationColor
+  const currentGrid = state.status === 'bereit' ? (state.map?.grid ?? null) : null
+  const gridRef = useRef(currentGrid)
+  gridRef.current = currentGrid
 
   // Registriert die Server-Ereignisse und das erneute Betreten bei Wiederverbindung auf einer
   // gegebenen Fassade, und betritt den Raum ueber sie (design.md D3, D10). `isCancelled`
@@ -147,7 +198,7 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
         // Tests aus #49/#50 ab, deren gemockte Acknowledgements das neue Feld nicht fuehren -
         // "Keine bestehende Assertion bricht" (design.md Goals) gilt auch fuer Mocks, die
         // diese Aenderung nicht kennen. add-fog-of-war (#16): `ack.fog ?? null` nach demselben
-        // Muster.
+        // Muster. add-measure-draw (#11): `ack.annotations ?? []` ebenso.
         setState({
           status: 'bereit',
           name: ack.session.name,
@@ -158,6 +209,7 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
           map: ack.map ?? null,
           tokens: ack.tokens ?? [],
           fog: ack.fog ?? null,
+          annotations: ack.annotations ?? [],
         })
         const self = ack.participants.find((participant) => participant.userId === currentUserId)
         setAliasInput(self?.alias ?? '')
@@ -204,6 +256,13 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
       // Fog-Darstellung vollstaendig, auch mit `null`.
       socket.on('fog', ({ fog }) => {
         setState((prev) => (prev.status === 'bereit' ? { ...prev, fog } : prev))
+      })
+      // add-measure-draw (#11, Requirement "Anmerkungsbestand beim Betreten und
+      // Kartenwechsel"): ersetzt den Anmerkungsbestand vollstaendig; die angezeigte Liste
+      // MUSS NICHT lokal geaendert werden, bevor dieses Ereignis eintrifft (constitution.md
+      // §9.1).
+      socket.on('annotations', ({ annotations }) => {
+        setState((prev) => (prev.status === 'bereit' ? { ...prev, annotations } : prev))
       })
       // Nach `replaced` MUSS die Fassade sich nicht von selbst neu verbinden oder den Raum
       // erneut betreten (Requirement "Sitzungsoberflaeche") - nur der Hinweis erscheint, ein
@@ -261,6 +320,13 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
     }
     return { revealed: currentFog.revealed, opaque: currentRole === 'spieler' }
   }, [currentFog, currentRole])
+
+  // add-measure-draw (#11, design.md D5): die drei Anzeigeoptionen als ein Objekt, damit der
+  // `setAnnotationOptions`-Effekt in `MapCanvas` nur bei tatsaechlicher Aenderung feuert.
+  const annotationOptions = useMemo<AnnotationOptions>(
+    () => ({ mode: annotationMode, color: annotationColor, unit: distanceUnit }),
+    [annotationMode, annotationColor, distanceUnit],
+  )
 
   const handleTransition = (action: TransitionAction) => {
     const socket = socketRef.current
@@ -444,18 +510,18 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
 
   // add-fog-of-war (#16, design.md D7, D6): wird der Canvas-Fassade als `onCellsSelected`
   // beim Erzeugen uebergeben und danach nicht erneut gelesen - das aktuelle Werkzeug kommt
-  // deshalb aus `fogToolRef`, nicht aus der `fogTool`-Variable dieses Aufrufs.
+  // deshalb aus `toolRef`, nicht aus der `tool`-Variable dieses Aufrufs.
   const handleFogCellsSelected = (cells: Cell[]) => {
-    const tool = fogToolRef.current
-    if (tool === 'aufdecken') {
+    const currentToolValue = toolRef.current
+    if (currentToolValue === 'aufdecken') {
       sendFogSet(true, { kind: 'zellen', cells })
       return
     }
-    if (tool === 'verdecken') {
+    if (currentToolValue === 'verdecken') {
       sendFogSet(false, { kind: 'zellen', cells })
       return
     }
-    if (tool === 'bereich') {
+    if (currentToolValue === 'bereich') {
       setFogSelection((prev) => mergeCells(prev, cells))
     }
   }
@@ -495,6 +561,60 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
 
   const handleFogClearSelection = () => {
     setFogSelection([])
+  }
+
+  // add-measure-draw (#11, design.md D5): wird der Canvas-Fassade als `onAnnotationDrawn`
+  // beim Erzeugen uebergeben und danach nicht erneut gelesen - Modus/Sichtbarkeit/Farbe und
+  // das Raster kommen deshalb aus Refs, nicht aus den Variablen dieses Aufrufs. Bei
+  // `kind === 'zeichnung'` ist der Modus immer `frei` und die Farbe kommt aus der Farbwahl,
+  // sonst ist die Farbe `null` und der Modus kommt aus der Moduswahl. Bei `gerastert` werden
+  // die Punkte vor dem Senden per `snapToCellCenter` eingerastet (der Server rastet ohnehin
+  // erneut ein, constitution.md §9.1 - das ist nur die angezeigte Vorschau der Absicht). Der
+  // angezeigte Bestand wird NICHT lokal geaendert - das uebernimmt `session:annotations`.
+  const handleAnnotationDrawn = (kind: AnnotationKind, points: Point[]) => {
+    const socket = socketRef.current
+    if (!socket) {
+      return
+    }
+    const mode: AnnotationMode = kind === 'zeichnung' ? 'frei' : annotationModeRef.current
+    const color: AnnotationColor | null = kind === 'zeichnung' ? annotationColorRef.current : null
+    const grid = gridRef.current
+    const sentPoints = mode === 'gerastert' && grid ? points.map((point) => snapToCellCenter(grid, point)) : points
+    socket
+      .createAnnotation(sessionId, { kind, mode, visibility: annotationVisibilityRef.current, color, points: sentPoints })
+      .then((ack) => {
+        setAnnotationError(ack.ok ? null : ack.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
+  const handleAnnotationDelete = (target: DeleteAnnotationTarget) => {
+    const socket = socketRef.current
+    if (!socket) {
+      return
+    }
+    socket
+      .deleteAnnotation(sessionId, target)
+      .then((ack) => {
+        setAnnotationError(ack.ok ? null : ack.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
+  // add-measure-draw (#11, design.md D5): schreibt in `try/catch` - ein gesperrter Speicher
+  // bricht die Sitzung nicht, das Umschalten wirkt trotzdem (nur nicht ueber einen Reload
+  // hinweg).
+  const handleUnitChange = (unit: DistanceUnit) => {
+    setDistanceUnit(unit)
+    try {
+      localStorage.setItem(DISTANCE_UNIT_STORAGE_KEY, unit)
+    } catch {
+      // Blockierter/privater Speicher - die Einstellung gilt trotzdem fuer diese Sitzung.
+    }
   }
 
   // "Hier weiterspielen" (Requirement "Sitzungsoberflaeche"): eine bewusste Handlung des
@@ -599,9 +719,12 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
             onTokenMove={handleTokenMove}
             canMoveToken={(token) => canMoveToken(token, { role: state.role, userId: currentUserId })}
             fog={fogLayer}
-            tool={fogTool}
+            tool={tool}
             selection={fogSelection}
             onCellsSelected={handleFogCellsSelected}
+            annotations={state.annotations}
+            annotationOptions={annotationOptions}
+            onAnnotationDrawn={handleAnnotationDrawn}
           />
         </div>
       )}
@@ -613,6 +736,9 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
 
       {/* add-fog-of-war (#16, design.md D7, D8): fuer jede Rolle, wie `tokenError`. */}
       {fogError !== null && <p role="alert">{fogError}</p>}
+
+      {/* add-measure-draw (#11, design.md D6): fuer jede Rolle, wie `tokenError`/`fogError`. */}
+      {annotationError !== null && <p role="alert">{annotationError}</p>}
 
       {state.role === 'spielleiter' && (
         <MapPanel
@@ -629,15 +755,36 @@ export function SessionRoom({ sessionId, currentUserId, onLeave, onEnded }: Sess
       {state.role === 'spielleiter' && state.fog !== null && (
         <FogPanel
           fog={state.fog}
-          tool={fogTool}
+          tool={tool}
           selectionCount={fogSelection.length}
-          onToolChange={setFogTool}
+          onToolChange={setTool}
           onRevealAll={() => sendFogSet(true, { kind: 'alle' })}
           onHideAll={() => sendFogSet(false, { kind: 'alle' })}
           onAreaCreate={handleFogAreaCreate}
           onClearSelection={handleFogClearSelection}
           onAreaToggle={(areaId, revealed) => sendFogSet(revealed, { kind: 'bereich', areaId })}
           onAreaDelete={handleFogAreaDelete}
+        />
+      )}
+
+      {/* add-measure-draw (#11, design.md D6): jede Rolle, nur bei aktiver Karte. */}
+      {state.map !== null && (
+        <AnnotationPanel
+          annotations={state.annotations}
+          grid={state.map.grid}
+          participants={state.participants}
+          viewer={{ role: state.role, userId: currentUserId }}
+          tool={tool}
+          mode={annotationMode}
+          visibility={annotationVisibility}
+          color={annotationColor}
+          unit={distanceUnit}
+          onToolChange={setTool}
+          onModeChange={setAnnotationMode}
+          onVisibilityChange={setAnnotationVisibility}
+          onColorChange={setAnnotationColor}
+          onUnitChange={handleUnitChange}
+          onDelete={handleAnnotationDelete}
         />
       )}
 

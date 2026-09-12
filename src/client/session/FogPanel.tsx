@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 
+import type { CanvasTool } from '../../shared/annotation.js'
 import { FOG_TOOLS, type FogState, type FogTool } from '../../shared/fog.js'
 
 // Fog-Verwaltung des Spielleiters im Raum (add-fog-of-war #16, design.md D8, spec.md
@@ -9,7 +10,7 @@ import { FOG_TOOLS, type FogState, type FogTool } from '../../shared/fog.js'
 
 export interface FogPanelProps {
   fog: FogState
-  tool: FogTool
+  tool: CanvasTool
   selectionCount: number
   onToolChange: (tool: FogTool) => void
   onRevealAll: () => void

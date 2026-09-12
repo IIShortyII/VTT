@@ -1,7 +1,20 @@
 import { Application, Assets, Container, Graphics, Sprite, Text, type FederatedPointerEvent, type Texture } from 'pixi.js'
 
-import { cellKey, cellsInRange, type FogTool } from '../../shared/fog.js'
-import { cellAt, cellCenter, cellCorners, cellRange, type Cell } from '../../shared/grid.js'
+import {
+  ANNOTATION_COLOR_HEX,
+  ANNOTATION_MAX_POINTS,
+  annotationLabel,
+  isAnnotationTool,
+  snapToCellCenter,
+  type Annotation,
+  type AnnotationColor,
+  type AnnotationKind,
+  type AnnotationMode,
+  type CanvasTool,
+  type DistanceUnit,
+} from '../../shared/annotation.js'
+import { cellKey, cellsInRange } from '../../shared/fog.js'
+import { cellAt, cellCenter, cellCorners, cellRange, type Cell, type Point } from '../../shared/grid.js'
 import type { Grid } from '../../shared/map.js'
 import type { Token } from '../../shared/token.js'
 import { conditionSymbol } from '../session/conditions.js'
@@ -9,9 +22,10 @@ import { panBy, zoomAt, type View } from './viewport.js'
 
 // Die einzige Datei, die `pixi.js` importiert (design.md D8) - die Mock-Grenze der
 // Komponententests (spec.md "Testinfrastruktur"): ein Test ersetzt dieses Modul, statt
-// PixiJS-Interna nachzubilden. Alle Rechnung liegt in `shared/grid.ts`, `shared/fog.ts` und
-// `client/map/viewport.ts` und ist dort getestet; hier steht nur das Zeichnen und die
-// Ereignisverdrahtung, die der menschliche App-Test abnimmt (constitution.md §3.4).
+// PixiJS-Interna nachzubilden. Alle Rechnung liegt in `shared/grid.ts`, `shared/fog.ts`,
+// `shared/annotation.ts` und `client/map/viewport.ts` und ist dort getestet; hier steht nur
+// das Zeichnen und die Ereignisverdrahtung, die der menschliche App-Test abnimmt
+// (constitution.md §3.4).
 
 /** Fog-Ebene der Kartenansicht (add-fog-of-war #16, design.md D6): die aufgedeckten Zellen
  * und ob die Verdeckung deckend ist (`opaque` - fuer einen Spieler `true`, fuer den
@@ -19,6 +33,14 @@ import { panBy, zoomAt, type View } from './viewport.js'
 export interface FogLayer {
   revealed: Cell[]
   opaque: boolean
+}
+
+/** Anzeigeoptionen der Zeichnungs-/Messebene (add-measure-draw #11, design.md D4): Modus und
+ * Farbe fuer eine gerade begonnene Anmerkung, Einheit fuer jedes Etikett. */
+export interface AnnotationOptions {
+  mode: AnnotationMode
+  color: AnnotationColor
+  unit: DistanceUnit
 }
 
 export interface MapCanvasOptions {
@@ -37,10 +59,18 @@ export interface MapCanvasOptions {
   canMoveToken?: (token: Token) => boolean
   // add-fog-of-war (#16, design.md D6): Fog-Ebene, aktuelles Werkzeug und gespeicherte
   // Auswahl beim Erzeugen; `onCellsSelected` wie `onTokenMove` nur beim Erzeugen gelesen.
+  // add-measure-draw (#11, design.md D4): `tool` ist jetzt `CanvasTool` (Obermenge von
+  // `FogTool`) - ein Werkzeugzustand fuer beide Verwaltungen.
   fog?: FogLayer | null
-  tool?: FogTool
+  tool?: CanvasTool
   selection?: Cell[]
   onCellsSelected?: (cells: Cell[]) => void
+  // add-measure-draw (#11, design.md D4): Anmerkungsbestand und Anzeigeoptionen fuer
+  // Zeichnungs- und Messebene; `onAnnotationDrawn` wie `onCellsSelected` nur beim Erzeugen
+  // gelesen.
+  annotations?: Annotation[]
+  annotationOptions?: AnnotationOptions
+  onAnnotationDrawn?: (kind: AnnotationKind, points: Point[]) => void
 }
 
 export interface MapCanvasHandle {
@@ -48,8 +78,10 @@ export interface MapCanvasHandle {
   setImage(url: string | null): void
   setTokens(tokens: Token[]): void
   setFog(fog: FogLayer | null): void
-  setTool(tool: FogTool): void
+  setTool(tool: CanvasTool): void
   setSelection(cells: Cell[]): void
+  setAnnotations(list: Annotation[]): void
+  setAnnotationOptions(options: AnnotationOptions): void
   destroy(): void
 }
 
@@ -113,8 +145,23 @@ const SELECTION_COLOR = 0x3399ff
 const SELECTION_FILL_ALPHA = 0.35
 const SELECTION_STROKE_WIDTH = 2
 
-/** Parst einen Hex-Farbwert (`#rrggbb`, aus `shared/token.ts` bereits validiert) in die von
- * PixiJS erwartete Zahl. */
+// add-measure-draw (#11, design.md D4): feste Messfarbe (weiss mit dunklem Textrand) und
+// Strichstaerken - Zeichnung `grid.size / 10`, Messung `max(2, grid.size / 20)`. Aussehen
+// frei, App-Test.
+const MEASURE_COLOR = 0xffffff
+const MEASURE_TEXT_FONT_SIZE = 14
+const MEASURE_TEXT_STROKE_COLOR = 0x000000
+const MEASURE_TEXT_STROKE_WIDTH = 3
+const MEASURE_STROKE_MIN_WIDTH = 2
+const MEASURE_STROKE_DIVISOR = 20
+const DRAWING_STROKE_DIVISOR = 10
+const ANGLE_ARC_MIN_RADIUS = 10
+const ANGLE_ARC_GRID_FACTOR = 0.3
+
+const DEFAULT_ANNOTATION_OPTIONS: AnnotationOptions = { mode: 'gerastert', color: 'rot', unit: 'meter' }
+
+/** Parst einen Hex-Farbwert (`#rrggbb`, aus `shared/token.ts`/`shared/annotation.ts` bereits
+ * validiert) in die von PixiJS erwartete Zahl. */
 function parseColor(hex: string): number {
   return Number.parseInt(hex.slice(1), 16)
 }
@@ -132,11 +179,19 @@ function mergeCells(a: Cell[], b: Cell[]): Cell[] {
   return [...byKey.values()]
 }
 
+/** Mittelpunkt zweier Bildpunkte (add-measure-draw #11, design.md D4) - Etikettposition einer
+ * Strecke. */
+function midpoint(a: Point, b: Point): Point {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+}
+
 /**
  * Erzeugt die Kartenansicht: Bild und Raster auf einem Canvas mit Schwenken und Zoomen
  * (design.md D8, spec.md Requirement "Sicht mit Schwenken und Zoomen"), die Tokenebene
- * darueber (session-token #14, design.md D6) und die Fog-/Auswahl-Ebenen dazwischen
- * (add-fog-of-war #16, design.md D6). `container` bekommt das erzeugte `<canvas>` angehaengt.
+ * darueber (session-token #14, design.md D6), die Fog-/Auswahl-Ebenen dazwischen
+ * (add-fog-of-war #16, design.md D6) und die Zeichnungs-/Mess-/Vorschau-Ebenen
+ * (add-measure-draw #11, design.md D4). `container` bekommt das erzeugte `<canvas>`
+ * angehaengt.
  *
  * App-Test Runde 2 (#14): scheitert der Aufbau, nachdem das `<canvas>` bereits angehaengt
  * ist, wird die Application wieder zerstoert (`removeView`) - kein verwaistes Element im
@@ -164,8 +219,35 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     const selectionGraphics = new Graphics()
     root.addChild(selectionGraphics)
 
+    // add-measure-draw (#11, design.md D4): Zeichnungsebene ueber der Auswahl, unter den
+    // Tokens - ein geteilter Strich verdeckt keine Tokens. `eventMode = 'none'`: die Ebene
+    // blockiert weder Token-Ziehen noch Schwenken.
+    const drawingGraphics = new Graphics()
+    drawingGraphics.eventMode = 'none'
+    root.addChild(drawingGraphics)
+
     const tokenLayer = new Container()
     root.addChild(tokenLayer)
+
+    // add-measure-draw (#11, design.md D4): Messebene (Container mit je Messung einer
+    // Graphics plus Text) und Vorschau-Ebene (Graphics + Text) ueber den Tokens - ein
+    // Etikett bleibt lesbar, auch wenn von dort aus gemessen wird.
+    const measureLayer = new Container()
+    measureLayer.eventMode = 'none'
+    root.addChild(measureLayer)
+
+    const previewGraphics = new Graphics()
+    previewGraphics.eventMode = 'none'
+    root.addChild(previewGraphics)
+
+    const previewText = new Text({
+      text: '',
+      style: { fill: MEASURE_COLOR, fontSize: MEASURE_TEXT_FONT_SIZE, stroke: { color: MEASURE_TEXT_STROKE_COLOR, width: MEASURE_TEXT_STROKE_WIDTH } },
+    })
+    previewText.anchor.set(0.5)
+    previewText.eventMode = 'none'
+    previewText.visible = false
+    root.addChild(previewText)
 
     let sprite: Sprite | null = null
     let currentGrid: Grid = options.grid
@@ -174,9 +256,13 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     const onTokenMove = options.onTokenMove
     const canMoveTokenOption = options.canMoveToken
     let currentFog: FogLayer | null = options.fog ?? null
-    let currentTool: FogTool = options.tool ?? 'schwenken'
+    let currentTool: CanvasTool = options.tool ?? 'schwenken'
     let currentSelection: Cell[] = options.selection ?? []
     const onCellsSelected = options.onCellsSelected
+    let currentAnnotations: Annotation[] = options.annotations ?? []
+    let currentAnnotationOptions: AnnotationOptions = options.annotationOptions ?? DEFAULT_ANNOTATION_OPTIONS
+    const onAnnotationDrawn = options.onAnnotationDrawn
+    let measureEntries: Container[] = []
     let loadedUrl: string | null = null
     let imageCounter = 0
     let loadToken = 0
@@ -268,6 +354,95 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       if (hasSegment) {
         selectionGraphics.fill({ color: SELECTION_COLOR, alpha: SELECTION_FILL_ALPHA })
         selectionGraphics.stroke({ width: SELECTION_STROKE_WIDTH, color: SELECTION_COLOR })
+      }
+    }
+
+    /** add-measure-draw (#11, design.md D4): Etikett einer Anmerkung (oder eines noch
+     * ungespeicherten Entwurfs derselben Form) - dieselbe Quelle wie Liste und Kartenansicht
+     * (`annotationLabel`, `shared/annotation.ts`). */
+    function measureLabel(kind: AnnotationKind, mode: AnnotationMode, points: Point[]): string {
+      return annotationLabel({ kind, mode, points }, currentGrid, currentAnnotationOptions.unit)
+    }
+
+    function measureStrokeWidth(): number {
+      return Math.max(MEASURE_STROKE_MIN_WIDTH, currentGrid.size / MEASURE_STROKE_DIVISOR)
+    }
+
+    /** add-measure-draw (#11, design.md D4): eine gespeicherte Messung oder Zeichnung als
+     * Container mit Graphics-Form und (ausser bei `zeichnung`) einem Etikett-Text. */
+    function buildMeasureEntry(annotation: Annotation): Container {
+      const entry = new Container()
+      const shape = new Graphics()
+      entry.addChild(shape)
+      const strokeWidth = measureStrokeWidth()
+      const [a, b, c] = annotation.points
+      let labelPosition: Point = a
+
+      if (annotation.kind === 'strecke') {
+        shape.moveTo(a.x, a.y)
+        shape.lineTo(b.x, b.y)
+        shape.stroke({ width: strokeWidth, color: MEASURE_COLOR })
+        labelPosition = midpoint(a, b)
+      } else if (annotation.kind === 'kreis') {
+        const radius = Math.hypot(b.x - a.x, b.y - a.y)
+        shape.circle(a.x, a.y, radius)
+        shape.stroke({ width: strokeWidth, color: MEASURE_COLOR })
+        labelPosition = a
+      } else {
+        // 'winkel'
+        shape.moveTo(a.x, a.y)
+        shape.lineTo(b.x, b.y)
+        shape.moveTo(a.x, a.y)
+        shape.lineTo(c.x, c.y)
+        shape.stroke({ width: strokeWidth, color: MEASURE_COLOR })
+        const legA = Math.hypot(b.x - a.x, b.y - a.y)
+        const legB = Math.hypot(c.x - a.x, c.y - a.y)
+        const arcRadius = Math.max(ANGLE_ARC_MIN_RADIUS, Math.min(currentGrid.size * ANGLE_ARC_GRID_FACTOR, legA, legB))
+        if (legA > 0 && legB > 0) {
+          shape.arc(a.x, a.y, arcRadius, Math.atan2(b.y - a.y, b.x - a.x), Math.atan2(c.y - a.y, c.x - a.x))
+          shape.stroke({ width: strokeWidth, color: MEASURE_COLOR })
+        }
+        labelPosition = a
+      }
+
+      const text = new Text({
+        text: measureLabel(annotation.kind, annotation.mode, annotation.points),
+        style: {
+          fill: MEASURE_COLOR,
+          fontSize: MEASURE_TEXT_FONT_SIZE,
+          stroke: { color: MEASURE_TEXT_STROKE_COLOR, width: MEASURE_TEXT_STROKE_WIDTH },
+        },
+      })
+      text.anchor.set(0.5)
+      text.position.set(labelPosition.x, labelPosition.y)
+      entry.addChild(text)
+      return entry
+    }
+
+    /** add-measure-draw (#11, design.md D4): Zeichnungsebene neu zeichnen (ein Strich je
+     * `zeichnung`), Messebene neu aufbauen - alte `Text`-Objekte werden explizit zerstoert
+     * (kein Lecken von Texturen bei jedem `session:annotations`). */
+    function drawAnnotations(): void {
+      drawingGraphics.clear()
+      for (const annotation of currentAnnotations) {
+        if (annotation.kind !== 'zeichnung') {
+          continue
+        }
+        const [first, ...rest] = annotation.points
+        drawingGraphics.moveTo(first.x, first.y)
+        for (const point of rest) {
+          drawingGraphics.lineTo(point.x, point.y)
+        }
+        drawingGraphics.stroke({ width: currentGrid.size / DRAWING_STROKE_DIVISOR, color: parseColor(ANNOTATION_COLOR_HEX[annotation.color ?? 'rot']) })
+      }
+
+      for (const entry of measureEntries) {
+        measureLayer.removeChild(entry)
+        entry.destroy({ children: true })
+      }
+      measureEntries = currentAnnotations.filter((annotation) => annotation.kind !== 'zeichnung').map(buildMeasureEntry)
+      for (const entry of measureEntries) {
+        measureLayer.addChild(entry)
       }
     }
 
@@ -369,6 +544,159 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     let toolDragStart: Cell | null = null
     let toolPreview: Cell[] = []
 
+    // add-measure-draw (#11, design.md D4): Gestenzustand je Messwerkzeug - Strecke/Kreis
+    // merken den ersten Punkt, Winkel den Scheitel und das erste Schenkelende, Zeichnung die
+    // laufende Punktliste.
+    let measureStart: Point | null = null
+    let angleVertex: Point | null = null
+    let angleFirstEnd: Point | null = null
+    let drawingPoints: Point[] = []
+
+    /** Punkt in Wurzelkoordinaten, bei `gerastert` auf die Zellmitte eingerastet (design.md
+     * D4) - die Vorschau zeigt, was gesendet wird. */
+    function snappedPoint(raw: Point): Point {
+      return currentAnnotationOptions.mode === 'gerastert' ? snapToCellCenter(currentGrid, raw) : raw
+    }
+
+    function clearAnnotationPreview(): void {
+      measureStart = null
+      angleVertex = null
+      angleFirstEnd = null
+      drawingPoints = []
+      previewGraphics.clear()
+      previewText.visible = false
+    }
+
+    function setPreviewLabel(position: Point, text: string): void {
+      previewText.text = text
+      previewText.position.set(position.x, position.y)
+      previewText.visible = true
+    }
+
+    /** Zeichnet die lokale Vorschau einer laufenden Geste (design.md D4) - dieselbe Etikett-
+     * Quelle wie eine gespeicherte Anmerkung (`measureLabel`). */
+    function drawPreviewShape(kind: AnnotationKind, mode: AnnotationMode, points: Point[]): void {
+      previewGraphics.clear()
+      const strokeWidth = measureStrokeWidth()
+
+      if (kind === 'strecke' && points.length === 2) {
+        previewGraphics.moveTo(points[0].x, points[0].y)
+        previewGraphics.lineTo(points[1].x, points[1].y)
+        previewGraphics.stroke({ width: strokeWidth, color: MEASURE_COLOR })
+        setPreviewLabel(midpoint(points[0], points[1]), measureLabel(kind, mode, points))
+        return
+      }
+      if (kind === 'kreis' && points.length === 2) {
+        const radius = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y)
+        previewGraphics.circle(points[0].x, points[0].y, radius)
+        previewGraphics.stroke({ width: strokeWidth, color: MEASURE_COLOR })
+        setPreviewLabel(points[0], measureLabel(kind, mode, points))
+        return
+      }
+      if (kind === 'winkel') {
+        const vertex = points[0]
+        previewGraphics.moveTo(vertex.x, vertex.y)
+        previewGraphics.lineTo(points[1].x, points[1].y)
+        if (points.length === 3) {
+          previewGraphics.moveTo(vertex.x, vertex.y)
+          previewGraphics.lineTo(points[2].x, points[2].y)
+        }
+        previewGraphics.stroke({ width: strokeWidth, color: MEASURE_COLOR })
+        if (points.length === 3) {
+          setPreviewLabel(vertex, measureLabel('winkel', mode, points))
+        } else {
+          previewText.visible = false
+        }
+        return
+      }
+      // 'zeichnung'
+      if (points.length >= 1) {
+        previewGraphics.moveTo(points[0].x, points[0].y)
+        for (let i = 1; i < points.length; i++) {
+          previewGraphics.lineTo(points[i].x, points[i].y)
+        }
+        previewGraphics.stroke({ width: currentGrid.size / DRAWING_STROKE_DIVISOR, color: parseColor(ANNOTATION_COLOR_HEX[currentAnnotationOptions.color]) })
+      }
+      previewText.visible = false
+    }
+
+    /** `pointerdown` bei einem Anmerkungswerkzeug (design.md D4): Strecke/Kreis merken den
+     * ersten Punkt, Winkel zaehlt Klicks (Scheitel, erstes Ende, dann Meldung), Zeichnung
+     * beginnt die Punktliste. */
+    function handleAnnotationPointerDown(event: FederatedPointerEvent): void {
+      const raw = root.toLocal(event.global)
+
+      if (currentTool === 'zeichnung') {
+        drawingPoints = [raw]
+        drawPreviewShape('zeichnung', 'frei', drawingPoints)
+        return
+      }
+
+      const point = snappedPoint(raw)
+
+      if (currentTool === 'winkel') {
+        if (angleVertex === null) {
+          angleVertex = point
+          return
+        }
+        if (angleFirstEnd === null) {
+          angleFirstEnd = point
+          return
+        }
+        const points = [angleVertex, angleFirstEnd, point]
+        clearAnnotationPreview()
+        onAnnotationDrawn?.('winkel', points)
+        return
+      }
+
+      // 'strecke' | 'kreis'
+      measureStart = point
+    }
+
+    function handleAnnotationPointerMove(event: FederatedPointerEvent): void {
+      if ((currentTool === 'strecke' || currentTool === 'kreis') && measureStart !== null) {
+        const current = snappedPoint(root.toLocal(event.global))
+        drawPreviewShape(currentTool, currentAnnotationOptions.mode, [measureStart, current])
+        return
+      }
+      if (currentTool === 'winkel' && angleVertex !== null && angleFirstEnd !== null) {
+        const current = snappedPoint(root.toLocal(event.global))
+        drawPreviewShape('winkel', currentAnnotationOptions.mode, [angleVertex, angleFirstEnd, current])
+        return
+      }
+      if (currentTool === 'zeichnung' && drawingPoints.length > 0) {
+        const point = root.toLocal(event.global)
+        const last = drawingPoints[drawingPoints.length - 1]
+        if ((point.x !== last.x || point.y !== last.y) && drawingPoints.length < ANNOTATION_MAX_POINTS) {
+          drawingPoints = [...drawingPoints, point]
+          drawPreviewShape('zeichnung', 'frei', drawingPoints)
+        }
+      }
+    }
+
+    /** `pointerup`/`pointerupoutside` bei Strecke/Kreis/Zeichnung meldet das fertige Objekt
+     * (design.md D4) - Winkel meldet stattdessen beim dritten Klick (`pointerdown`), hier
+     * geschieht fuer `winkel` nichts. */
+    function handleAnnotationPointerUp(event: FederatedPointerEvent): void {
+      if (currentTool === 'strecke' || currentTool === 'kreis') {
+        if (measureStart === null) {
+          return
+        }
+        const current = snappedPoint(root.toLocal(event.global))
+        const points = [measureStart, current]
+        clearAnnotationPreview()
+        onAnnotationDrawn?.(currentTool, points)
+        return
+      }
+      if (currentTool === 'zeichnung') {
+        const points = drawingPoints
+        clearAnnotationPreview()
+        if (points.length >= 2) {
+          onAnnotationDrawn?.('zeichnung', points)
+        }
+      }
+    }
+
     function buildTokenContainer(token: Token): Container {
       const tokenContainer = new Container()
       const center = tokenCenter(token)
@@ -411,9 +739,9 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
         tokenContainer.eventMode = 'static'
         tokenContainer.cursor = 'grab'
         tokenContainer.on('pointerdown', (event: FederatedPointerEvent) => {
-          // add-fog-of-war (#16, design.md D6): bei einem Fog-Werkzeug weder
-          // `stopPropagation` noch Ziehen - die Buehne bekommt das Ereignis und beginnt
-          // stattdessen eine Zellauswahl.
+          // add-fog-of-war (#16, design.md D6): bei jedem Werkzeug ausser "schwenken" weder
+          // `stopPropagation` noch Ziehen - die Buehne bekommt das Ereignis stattdessen
+          // (Fog-Auswahl oder Anmerkungsgeste, add-measure-draw #11, design.md D4).
           if (currentTool !== 'schwenken') {
             return
           }
@@ -489,6 +817,13 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     let lastPoint = { x: 0, y: 0 }
 
     function onPointerDown(event: FederatedPointerEvent): void {
+      // add-measure-draw (#11, design.md D4): bei einem Anmerkungswerkzeug beginnt das
+      // Ziehen bzw. der Klick eine Mess-/Zeichengeste statt einer Zellauswahl oder eines
+      // Schwenkens.
+      if (isAnnotationTool(currentTool)) {
+        handleAnnotationPointerDown(event)
+        return
+      }
       // add-fog-of-war (#16, design.md D6): bei einem Fog-Werkzeug beginnt das Ziehen eine
       // Zellauswahl statt eine Schwenkbewegung.
       if (currentTool !== 'schwenken') {
@@ -503,6 +838,10 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     }
 
     function onPointerMove(event: FederatedPointerEvent): void {
+      if (isAnnotationTool(currentTool)) {
+        handleAnnotationPointerMove(event)
+        return
+      }
       if (toolDragStart) {
         const point = root.toLocal(event.global)
         const current = cellAt(currentGrid, point)
@@ -527,6 +866,10 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     }
 
     function onPointerUp(event: FederatedPointerEvent): void {
+      if (isAnnotationTool(currentTool)) {
+        handleAnnotationPointerUp(event)
+        return
+      }
       if (toolDragStart) {
         const point = root.toLocal(event.global)
         const current = cellAt(currentGrid, point)
@@ -579,6 +922,7 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     drawFog()
     drawSelection()
     drawTokens()
+    drawAnnotations()
     await applyImage(options.imageUrl)
 
     return {
@@ -588,8 +932,10 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
         drawFog()
         drawSelection()
         // Mittelpunkte haengen am Raster - ein Rasterwechsel zeichnet die Tokens neu
-        // (design.md D6).
+        // (design.md D6). add-measure-draw (#11, design.md D4): Anmerkungen ebenso - ihre
+        // Etiketten rechnen mit dem dann gueltigen Raster.
         drawTokens()
+        drawAnnotations()
       },
       setImage(url: string | null): void {
         void applyImage(url)
@@ -602,16 +948,26 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
         currentFog = fog
         drawFog()
       },
-      setTool(tool: FogTool): void {
+      setTool(tool: CanvasTool): void {
         currentTool = tool
-        // Werkzeugwechsel bricht eine laufende Auswahlbewegung ab (design.md D6).
+        // Werkzeugwechsel bricht eine laufende Auswahlbewegung bzw. Anmerkungsgeste ab
+        // (design.md D6/D4).
         toolDragStart = null
         toolPreview = []
+        clearAnnotationPreview()
         drawSelection()
       },
       setSelection(cells: Cell[]): void {
         currentSelection = cells
         drawSelection()
+      },
+      setAnnotations(list: Annotation[]): void {
+        currentAnnotations = list
+        drawAnnotations()
+      },
+      setAnnotationOptions(annotationOptions: AnnotationOptions): void {
+        currentAnnotationOptions = annotationOptions
+        drawAnnotations()
       },
       destroy(): void {
         if (destroyed) {
@@ -651,8 +1007,9 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
         // Instanz noch braucht - das naechste "Text.destroy()" einer Tokenaenderung wirft
         // dann "this._texturePool[key] is undefined". "{ removeView: true }" entfernt nur das
         // eigene Canvas, ohne renderer-uebergreifende, globale Ressourcen anzufassen. Die
-        // Fog-/Auswahl-Ebenen sind wie die Rastergrafik Kinder von `root` und werden hierueber
-        // (mit `children: true`) mit zerstoert - kein eigener Aufruf noetig.
+        // Fog-/Auswahl-/Zeichnungs-/Mess-/Vorschau-Ebenen sind wie die Rastergrafik Kinder von
+        // `root` und werden hierueber (mit `children: true`) mit zerstoert - kein eigener
+        // Aufruf noetig (add-measure-draw #11, design.md D4).
         app.destroy({ removeView: true }, { children: true, texture: true })
       },
     }

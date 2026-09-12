@@ -7,6 +7,7 @@ import { resolveSession, SESSION_COOKIE_NAME } from '../auth/session.js'
 import type { Clock } from '../core/clock.js'
 import { findOwnMap, toMapSummary, type GameMapLike } from '../map/rules.js'
 import { emitActiveMap } from './active-map.js'
+import { broadcastAnnotations } from './annotations.js'
 import { broadcastFog } from './fog.js'
 import type { Presence } from './presence.js'
 import { broadcastTokens } from './tokens.js'
@@ -202,6 +203,10 @@ export function registerSessionMapRoutes(app: FastifyInstance, deps: SessionMapR
       // Cascade hat die Tokens bereits geloescht - der leere Bestand erreicht den Raum wie
       // bei jedem anderen Kartenwechsel.
       await broadcastTokens(io, prisma, presence, gameSession.id)
+      // add-measure-draw (#11, Requirement Aushaengen loescht die Anmerkungen): die Cascade
+      // hat die Annotation-Zeilen der Instanz bereits geloescht - der leere Bestand erreicht
+      // den Raum wie bei jedem anderen Kartenwechsel.
+      await broadcastAnnotations(io, prisma, presence, gameSession.id)
     }
 
     reply.status(204).send()

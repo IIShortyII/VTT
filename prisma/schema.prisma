@@ -38,6 +38,10 @@ model User {
   // add-token-sharing (#62): Gegenrelation zu den Zielgruppen-Zeilen, in denen dieser Nutzer
   // als Empfaenger steht - siehe design.md D1.
   tokenShares TokenShare[]
+  // add-measure-draw (#11): Gegenrelation zu den Anmerkungen, deren Urheber dieser Nutzer
+  // ist - siehe design.md D1. `null` beim Loeschen des Nutzers (onDelete: SetNull an
+  // Annotation.author).
+  annotations Annotation[]
 }
 
 model Account {
@@ -165,6 +169,9 @@ model MapInstance {
   // Instanz - siehe design.md D1.
   fogCells   FogCell[]
   fogAreas   FogArea[]
+  // add-measure-draw (#11): Gegenrelation zu den Anmerkungen dieser Instanz - siehe
+  // design.md D1. Aushaengen loescht sie per Cascade.
+  annotations Annotation[]
 
   @@unique([sessionId, mapId])
   @@index([mapId])
@@ -286,4 +293,27 @@ model FogAreaCell {
   area   FogArea @relation(fields: [areaId], references: [id], onDelete: Cascade)
 
   @@unique([areaId, col, row])
+}
+
+// add-measure-draw (#11): eine Messung oder Zeichnung auf einer Karteninstanz (design.md
+// D1, spec.md "Begriffe" "Anmerkung"). Punkte als JSON-Text in einer Spalte (kein Prisma
+// "Json" unter SQLite, kein Tabellen-Neuaufbau je Punkt - Muster "Raster als vier Spalten
+// statt JSON", #49 D1, hier aber "eine Spalte statt eine Zeile je Punkt", design.md D1).
+// "authorId" nullable mit "SetNull" - ein geloeschter Nutzer hinterlaesst eine Anmerkung mit
+// Urheber "null" (design.md D1). "onDelete: Cascade" von der Instanz - Aushaengen loescht die
+// Anmerkungen mit (spec.md Requirement "Anmerkung entfernen").
+model Annotation {
+  id         String      @id @default(cuid())
+  instanceId String
+  authorId   String?
+  kind       String
+  mode       String
+  visibility String
+  color      String?
+  points     String
+  createdAt  DateTime    @default(now())
+  instance   MapInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  author     User?       @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([instanceId])
 }

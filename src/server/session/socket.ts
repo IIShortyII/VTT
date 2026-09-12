@@ -18,6 +18,7 @@ import { ActivateMapInputSchema, SESSION_MAP_EVENTS, type ActivateMapAck } from 
 import { SESSION_COOKIE_NAME } from '../auth/session.js'
 import type { Clock } from '../core/clock.js'
 import { emitActiveMap, loadActiveMap } from './active-map.js'
+import { broadcastAnnotations, loadAnnotationsFor, registerAnnotationHandlers } from './annotations.js'
 import { authorizeAction } from './authorize.js'
 import { broadcastFog, loadFogFor, registerFogHandlers } from './fog.js'
 import type { Presence } from './presence.js'
@@ -105,6 +106,8 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
     // Handler - `uploadDir` zusaetzlich, weil "alle Zellen aufdecken" die Bildabmessungen
     // braucht (`resolveTargetCells`).
     registerFogHandlers(io, socket, { prisma, clock, presence, uploadDir })
+    // add-measure-draw (#11, design.md D3): dieselbe Registrierungsstelle wie Token-/Fog-Handler.
+    registerAnnotationHandlers(io, socket, { prisma, clock, presence })
 
     // Der disconnect-Handler hat keinen Absender, dem er antworten koennte - Fehler werden
     // nur geloggt (design.md D8, AGENTS.md: kein stilles catch{}).
@@ -183,7 +186,11 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
     // add-fog-of-war (#16, Requirement "Fog beim Betreten und Kartenwechsel"): die fuer den
     // Betretenden gefilterte Fog-Darstellung der aktiven Instanz, `null` ohne aktive Karte.
     const fog = await loadFogFor(prisma, sessionId, role)
-    callback({ ok: true, session: summary, participants, map, tokens, fog })
+    // add-measure-draw (#11, Requirement "Anmerkungsbestand beim Betreten und
+    // Kartenwechsel"): der fuer den Betretenden gefilterte Anmerkungsbestand der aktiven
+    // Instanz.
+    const annotations = await loadAnnotationsFor(prisma, sessionId, { role, userId: user.id })
+    callback({ ok: true, session: summary, participants, map, tokens, fog, annotations })
   }
 
   async function handleTransition(socket: Socket, payload: unknown, callback: (ack: TransitionAck) => void): Promise<void> {
@@ -297,6 +304,10 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
     // session-token (#14, Requirement "Tokenbestand beim Betreten und Kartenwechsel"): nach
     // jedem Kartenwechsel folgt der Bestand der nun aktiven Instanz.
     await broadcastTokens(io, prisma, presence, sessionId)
+    // add-measure-draw (#11, Requirement Anmerkungsbestand beim Betreten und Kartenwechsel):
+    // nach jedem Kartenwechsel folgt der Anmerkungsbestand der nun aktiven Instanz, nach dem
+    // Tokenbestand.
+    await broadcastAnnotations(io, prisma, presence, sessionId)
     callback({ ok: true, map })
   }
 

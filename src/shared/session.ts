@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { FogState } from './fog.js'
 import type { ActiveMap } from './session-map.js'
 import type { Token } from './token.js'
 
@@ -170,9 +171,18 @@ export const AliasInputSchema = z.object({
 })
 export type AliasInput = z.infer<typeof AliasInputSchema>
 
-/** Acknowledgement von `session:enter`. */
+/** Acknowledgement von `session:enter`. add-fog-of-war (#16, design.md D3): `fog` traegt die
+ * fuer den Betretenden gefilterte Fog-Darstellung der aktiven Karteninstanz, `null` ohne
+ * aktive Karte. */
 export type EnterAck =
-  | { ok: true; session: SessionSummary; participants: Participant[]; map: ActiveMap | null; tokens: Token[] }
+  | {
+      ok: true
+      session: SessionSummary
+      participants: Participant[]
+      map: ActiveMap | null
+      tokens: Token[]
+      fog: FogState | null
+    }
   | { ok: false; message: string }
 
 /** Acknowledgement von `session:transition`. */

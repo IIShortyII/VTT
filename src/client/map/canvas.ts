@@ -1,5 +1,6 @@
 import { Application, Assets, Container, Graphics, Sprite, Text, type FederatedPointerEvent, type Texture } from 'pixi.js'
 
+import { cellKey, cellsInRange, type FogTool } from '../../shared/fog.js'
 import { cellAt, cellCenter, cellCorners, cellRange, type Cell } from '../../shared/grid.js'
 import type { Grid } from '../../shared/map.js'
 import type { Token } from '../../shared/token.js'
@@ -8,9 +9,17 @@ import { panBy, zoomAt, type View } from './viewport.js'
 
 // Die einzige Datei, die `pixi.js` importiert (design.md D8) - die Mock-Grenze der
 // Komponententests (spec.md "Testinfrastruktur"): ein Test ersetzt dieses Modul, statt
-// PixiJS-Interna nachzubilden. Alle Rechnung liegt in `shared/grid.ts` und
+// PixiJS-Interna nachzubilden. Alle Rechnung liegt in `shared/grid.ts`, `shared/fog.ts` und
 // `client/map/viewport.ts` und ist dort getestet; hier steht nur das Zeichnen und die
 // Ereignisverdrahtung, die der menschliche App-Test abnimmt (constitution.md §3.4).
+
+/** Fog-Ebene der Kartenansicht (add-fog-of-war #16, design.md D6): die aufgedeckten Zellen
+ * und ob die Verdeckung deckend ist (`opaque` - fuer einen Spieler `true`, fuer den
+ * Spielleiter `false`). `null` zeichnet keine Fog-Ebene (ohne aktive Karte). */
+export interface FogLayer {
+  revealed: Cell[]
+  opaque: boolean
+}
 
 export interface MapCanvasOptions {
   imageUrl: string | null
@@ -26,12 +35,21 @@ export interface MapCanvasOptions {
   tokens: Token[]
   onTokenMove?: (tokenId: string, cell: Cell) => void
   canMoveToken?: (token: Token) => boolean
+  // add-fog-of-war (#16, design.md D6): Fog-Ebene, aktuelles Werkzeug und gespeicherte
+  // Auswahl beim Erzeugen; `onCellsSelected` wie `onTokenMove` nur beim Erzeugen gelesen.
+  fog?: FogLayer | null
+  tool?: FogTool
+  selection?: Cell[]
+  onCellsSelected?: (cells: Cell[]) => void
 }
 
 export interface MapCanvasHandle {
   setGrid(grid: Grid): void
   setImage(url: string | null): void
   setTokens(tokens: Token[]): void
+  setFog(fog: FogLayer | null): void
+  setTool(tool: FogTool): void
+  setSelection(cells: Cell[]): void
   destroy(): void
 }
 
@@ -86,17 +104,39 @@ const TOKEN_BAR_TEMP_COLOR = 0x3399ff
 const TOKEN_CONDITION_MAX_SYMBOLS = 3
 const TOKEN_CONDITION_SYMBOL_COLOR = 0xffffff
 
+// add-fog-of-war (#16, design.md D6): Farbe/Alpha der Fog-Ebene (deckend fuer Spieler,
+// halbtransparent fuer den Spielleiter) und der Auswahl-Ebene (Aussehen frei, App-Test).
+const FOG_COLOR = 0x000000
+const FOG_OPAQUE_ALPHA = 1
+const FOG_TRANSLUCENT_ALPHA = 0.55
+const SELECTION_COLOR = 0x3399ff
+const SELECTION_FILL_ALPHA = 0.35
+const SELECTION_STROKE_WIDTH = 2
+
 /** Parst einen Hex-Farbwert (`#rrggbb`, aus `shared/token.ts` bereits validiert) in die von
  * PixiJS erwartete Zahl. */
 function parseColor(hex: string): number {
   return Number.parseInt(hex.slice(1), 16)
 }
 
+/** Vereinigung zweier Zelllisten ohne Doppelte (add-fog-of-war #16, design.md D6) - benutzt
+ * fuer das Vorschau-Rechteck zusaetzlich zur gespeicherten Auswahl. */
+function mergeCells(a: Cell[], b: Cell[]): Cell[] {
+  const byKey = new Map<string, Cell>()
+  for (const cell of a) {
+    byKey.set(cellKey(cell), cell)
+  }
+  for (const cell of b) {
+    byKey.set(cellKey(cell), cell)
+  }
+  return [...byKey.values()]
+}
+
 /**
  * Erzeugt die Kartenansicht: Bild und Raster auf einem Canvas mit Schwenken und Zoomen
- * (design.md D8, spec.md Requirement "Sicht mit Schwenken und Zoomen"), sowie die
- * Tokenebene darueber (session-token #14, design.md D6). `container` bekommt das erzeugte
- * `<canvas>` angehaengt.
+ * (design.md D8, spec.md Requirement "Sicht mit Schwenken und Zoomen"), die Tokenebene
+ * darueber (session-token #14, design.md D6) und die Fog-/Auswahl-Ebenen dazwischen
+ * (add-fog-of-war #16, design.md D6). `container` bekommt das erzeugte `<canvas>` angehaengt.
  *
  * App-Test Runde 2 (#14): scheitert der Aufbau, nachdem das `<canvas>` bereits angehaengt
  * ist, wird die Application wieder zerstoert (`removeView`) - kein verwaistes Element im
@@ -116,6 +156,14 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     const gridGraphics = new Graphics()
     root.addChild(gridGraphics)
 
+    // add-fog-of-war (#16, design.md D6): Fog-Ebene ueber Bild und Raster, Auswahl-Ebene
+    // darueber, beide unter der Tokenebene - Tokens bleiben sichtbar (#17, Nicht im Umfang).
+    const fogGraphics = new Graphics()
+    root.addChild(fogGraphics)
+
+    const selectionGraphics = new Graphics()
+    root.addChild(selectionGraphics)
+
     const tokenLayer = new Container()
     root.addChild(tokenLayer)
 
@@ -125,6 +173,10 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     let tokenContainers: Container[] = []
     const onTokenMove = options.onTokenMove
     const canMoveTokenOption = options.canMoveToken
+    let currentFog: FogLayer | null = options.fog ?? null
+    let currentTool: FogTool = options.tool ?? 'schwenken'
+    let currentSelection: Cell[] = options.selection ?? []
+    const onCellsSelected = options.onCellsSelected
     let loadedUrl: string | null = null
     let imageCounter = 0
     let loadToken = 0
@@ -136,10 +188,13 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       root.scale.set(view.scale)
     }
 
+    function currentSize(): { width: number; height: number } {
+      return { width: sprite?.texture.width ?? FALLBACK_WIDTH, height: sprite?.texture.height ?? FALLBACK_HEIGHT }
+    }
+
     function drawGrid(): void {
       gridGraphics.clear()
-      const width = sprite?.texture.width ?? FALLBACK_WIDTH
-      const height = sprite?.texture.height ?? FALLBACK_HEIGHT
+      const { width, height } = currentSize()
       const range = cellRange(currentGrid, width, height)
       for (let row = range.minRow; row <= range.maxRow; row++) {
         for (let col = range.minCol; col <= range.maxCol; col++) {
@@ -155,6 +210,65 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
         }
       }
       gridGraphics.stroke({ width: GRID_LINE_WIDTH, color: GRID_LINE_COLOR })
+    }
+
+    /** add-fog-of-war (#16, design.md D6): jede Zelle des Zellbereichs der Karte, die nicht
+     * aufgedeckt ist, als dunkle Flaeche - deckend fuer Spieler (`opaque`), sonst
+     * halbtransparent. Ohne Fog-Darstellung (`currentFog === null`) bleibt die Ebene leer. */
+    function drawFog(): void {
+      fogGraphics.clear()
+      if (!currentFog) {
+        return
+      }
+      const { width, height } = currentSize()
+      const range = cellRange(currentGrid, width, height)
+      const revealedKeys = new Set(currentFog.revealed.map(cellKey))
+      let hasSegment = false
+      for (let row = range.minRow; row <= range.maxRow; row++) {
+        for (let col = range.minCol; col <= range.maxCol; col++) {
+          if (revealedKeys.has(cellKey({ col, row }))) {
+            continue
+          }
+          const corners = cellCorners(currentGrid, { col, row })
+          if (corners.length === 0) {
+            continue
+          }
+          hasSegment = true
+          fogGraphics.moveTo(corners[0].x, corners[0].y)
+          for (let i = 1; i < corners.length; i++) {
+            fogGraphics.lineTo(corners[i].x, corners[i].y)
+          }
+          fogGraphics.closePath()
+        }
+      }
+      if (hasSegment) {
+        fogGraphics.fill({ color: FOG_COLOR, alpha: currentFog.opaque ? FOG_OPAQUE_ALPHA : FOG_TRANSLUCENT_ALPHA })
+      }
+    }
+
+    /** add-fog-of-war (#16, design.md D6): die gespeicherte Auswahl plus ein waehrend des
+     * Ziehens aktives Vorschau-Rechteck (`toolPreview`) als halbtransparente Akzentflaeche
+     * mit Rand. */
+    function drawSelection(): void {
+      selectionGraphics.clear()
+      const cells = toolPreview.length > 0 ? mergeCells(currentSelection, toolPreview) : currentSelection
+      let hasSegment = false
+      for (const cell of cells) {
+        const corners = cellCorners(currentGrid, cell)
+        if (corners.length === 0) {
+          continue
+        }
+        hasSegment = true
+        selectionGraphics.moveTo(corners[0].x, corners[0].y)
+        for (let i = 1; i < corners.length; i++) {
+          selectionGraphics.lineTo(corners[i].x, corners[i].y)
+        }
+        selectionGraphics.closePath()
+      }
+      if (hasSegment) {
+        selectionGraphics.fill({ color: SELECTION_COLOR, alpha: SELECTION_FILL_ALPHA })
+        selectionGraphics.stroke({ width: SELECTION_STROKE_WIDTH, color: SELECTION_COLOR })
+      }
     }
 
     /**
@@ -182,6 +296,7 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
         }
         loadedUrl = null
         drawGrid()
+        drawFog()
         if (previousUrl) {
           await Assets.unload(previousUrl).catch(() => undefined)
         }
@@ -220,6 +335,7 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       root.addChildAt(sprite, 0)
       loadedUrl = versionedUrl
       drawGrid()
+      drawFog()
 
       if (previousUrl) {
         await Assets.unload(previousUrl).catch(() => undefined)
@@ -247,6 +363,11 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     let dragTokenId: string | null = null
     let dragContainer: Container | null = null
     let dragOrigin: { x: number; y: number } | null = null
+
+    // add-fog-of-war (#16, design.md D6): Ziehen mit einem Fog-Werkzeug waehlt statt zu
+    // schwenken einen Zellbereich - Startzelle und laufendes Vorschau-Rechteck.
+    let toolDragStart: Cell | null = null
+    let toolPreview: Cell[] = []
 
     function buildTokenContainer(token: Token): Container {
       const tokenContainer = new Container()
@@ -290,6 +411,12 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
         tokenContainer.eventMode = 'static'
         tokenContainer.cursor = 'grab'
         tokenContainer.on('pointerdown', (event: FederatedPointerEvent) => {
+          // add-fog-of-war (#16, design.md D6): bei einem Fog-Werkzeug weder
+          // `stopPropagation` noch Ziehen - die Buehne bekommt das Ereignis und beginnt
+          // stattdessen eine Zellauswahl.
+          if (currentTool !== 'schwenken') {
+            return
+          }
           event.stopPropagation()
           dragTokenId = token.id
           dragContainer = tokenContainer
@@ -362,11 +489,27 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     let lastPoint = { x: 0, y: 0 }
 
     function onPointerDown(event: FederatedPointerEvent): void {
+      // add-fog-of-war (#16, design.md D6): bei einem Fog-Werkzeug beginnt das Ziehen eine
+      // Zellauswahl statt eine Schwenkbewegung.
+      if (currentTool !== 'schwenken') {
+        const point = root.toLocal(event.global)
+        toolDragStart = cellAt(currentGrid, point)
+        toolPreview = [toolDragStart]
+        drawSelection()
+        return
+      }
       dragging = true
       lastPoint = { x: event.global.x, y: event.global.y }
     }
 
     function onPointerMove(event: FederatedPointerEvent): void {
+      if (toolDragStart) {
+        const point = root.toLocal(event.global)
+        const current = cellAt(currentGrid, point)
+        toolPreview = cellsInRange(toolDragStart, current)
+        drawSelection()
+        return
+      }
       if (dragTokenId !== null) {
         if (dragContainer) {
           const point = root.toLocal(event.global)
@@ -384,6 +527,16 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     }
 
     function onPointerUp(event: FederatedPointerEvent): void {
+      if (toolDragStart) {
+        const point = root.toLocal(event.global)
+        const current = cellAt(currentGrid, point)
+        const cells = cellsInRange(toolDragStart, current)
+        toolDragStart = null
+        toolPreview = []
+        drawSelection()
+        onCellsSelected?.(cells)
+        return
+      }
       if (dragTokenId !== null) {
         const tokenId = dragTokenId
         const draggedContainer = dragContainer
@@ -423,6 +576,8 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     app.renderer.on('resize', onResize)
 
     drawGrid()
+    drawFog()
+    drawSelection()
     drawTokens()
     await applyImage(options.imageUrl)
 
@@ -430,6 +585,8 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       setGrid(grid: Grid): void {
         currentGrid = grid
         drawGrid()
+        drawFog()
+        drawSelection()
         // Mittelpunkte haengen am Raster - ein Rasterwechsel zeichnet die Tokens neu
         // (design.md D6).
         drawTokens()
@@ -440,6 +597,21 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       setTokens(tokens: Token[]): void {
         currentTokens = tokens
         drawTokens()
+      },
+      setFog(fog: FogLayer | null): void {
+        currentFog = fog
+        drawFog()
+      },
+      setTool(tool: FogTool): void {
+        currentTool = tool
+        // Werkzeugwechsel bricht eine laufende Auswahlbewegung ab (design.md D6).
+        toolDragStart = null
+        toolPreview = []
+        drawSelection()
+      },
+      setSelection(cells: Cell[]): void {
+        currentSelection = cells
+        drawSelection()
       },
       destroy(): void {
         if (destroyed) {
@@ -478,7 +650,9 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
         // abgebaute erste Instanz zerstoerte darueber den Pool, den die zweite, sichtbare
         // Instanz noch braucht - das naechste "Text.destroy()" einer Tokenaenderung wirft
         // dann "this._texturePool[key] is undefined". "{ removeView: true }" entfernt nur das
-        // eigene Canvas, ohne renderer-uebergreifende, globale Ressourcen anzufassen.
+        // eigene Canvas, ohne renderer-uebergreifende, globale Ressourcen anzufassen. Die
+        // Fog-/Auswahl-Ebenen sind wie die Rastergrafik Kinder von `root` und werden hierueber
+        // (mit `children: true`) mit zerstoert - kein eigener Aufruf noetig.
         app.destroy({ removeView: true }, { children: true, texture: true })
       },
     }

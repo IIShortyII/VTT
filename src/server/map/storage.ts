@@ -2,12 +2,18 @@ import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
+import sharp from 'sharp'
+
 import type { ImageMimeType } from '../../shared/map.js'
 
 // Dateiablage neben der DB (design.md D2): Signaturpruefung, Schreiben, Loeschen - alles ueber
 // `node:fs/promises` mit injiziertem Verzeichnis, damit Tests gegen `os.tmpdir()` laufen.
 // Der Dateiname stammt nie vom Client - immer `<mapId>-<token>.<ext>` mit einem serverseitig
 // erzeugten Token (constitution.md §9, Path-Traversal strukturell ausgeschlossen).
+//
+// add-fog-of-war (#16, design.md D5): die einzige Stelle in `server/map/`, die `sharp`
+// importiert - `imageSize` liest die Bildabmessungen fuer den Sonderfall "alle Zellen
+// aufdecken" (`server/session/fog.ts`, `resolveTargetCells`).
 
 const EXTENSION_BY_MIME_TYPE: Record<ImageMimeType, string> = {
   'image/png': 'png',
@@ -78,4 +84,14 @@ export async function removeImage(dir: string, fileName: string): Promise<void> 
     }
     throw error
   }
+}
+
+/** Bildabmessungen einer abgelegten Bilddatei (add-fog-of-war #16, design.md D5) - benutzt
+ * fuer den Sonderfall "alle Zellen aufdecken" ohne explizit gewaehltes Rechteck
+ * (`server/session/fog.ts`, `resolveTargetCells`). Eine fehlende Abmessung (bei `sharp`
+ * theoretisch moeglich, praktisch nur bei beschaedigten Dateien) wird als `0` gemeldet -
+ * `cellRange` liefert dafuer einen leeren Bereich, kein Fehler. */
+export async function imageSize(dir: string, fileName: string): Promise<{ width: number; height: number }> {
+  const metadata = await sharp(imagePath(dir, fileName)).metadata()
+  return { width: metadata.width ?? 0, height: metadata.height ?? 0 }
 }

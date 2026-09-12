@@ -7,6 +7,7 @@ import { resolveSession, SESSION_COOKIE_NAME } from '../auth/session.js'
 import type { Clock } from '../core/clock.js'
 import { findOwnMap, toMapSummary, type GameMapLike } from '../map/rules.js'
 import { emitActiveMap } from './active-map.js'
+import { broadcastFog } from './fog.js'
 import type { Presence } from './presence.js'
 import { broadcastTokens } from './tokens.js'
 
@@ -190,6 +191,13 @@ export function registerSessionMapRoutes(app: FastifyInstance, deps: SessionMapR
 
     if (wasActive) {
       emitActiveMap(io, gameSession.id, null)
+      // add-fog-of-war (#16, Requirement "Fog beim Betreten und Kartenwechsel"): Aushaengen
+      // der aktiven Instanz sendet ebenfalls "session:fog" (hier immer `null`, da keine
+      // Instanz mehr aktiv ist) - vor dem Tokenbestand, wie bei jedem anderen Kartenwechsel.
+      // Die Cascade hat die `FogCell`-/`FogArea`-Zeilen der geloeschten Instanz bereits mit
+      // entfernt (design.md D1, Requirement "Aushängen löscht aufgedeckte Zellen und
+      // Bereiche").
+      await broadcastFog(io, prisma, presence, gameSession.id)
       // session-token (#14, Requirement "Aushängen löscht die Tokens der Instanz"): die
       // Cascade hat die Tokens bereits geloescht - der leere Bestand erreicht den Raum wie
       // bei jedem anderen Kartenwechsel.

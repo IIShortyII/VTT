@@ -1,27 +1,31 @@
 import { useEffect, useRef } from 'react'
 
+import type { FogTool } from '../../shared/fog.js'
 import type { Cell } from '../../shared/grid.js'
 import type { Grid } from '../../shared/map.js'
 import type { Token } from '../../shared/token.js'
-import type { MapCanvasHandle } from './canvas.js'
+import type { FogLayer, MapCanvasHandle } from './canvas.js'
 
 // Duenner React-Rahmen um die PixiJS-Fassade (design.md D9, D8): erzeugt den Canvas einmal
-// im `ref`-Element, reagiert auf Aenderungen von `grid`/`imageUrl`/`tokens` per
-// `setGrid`/`setImage`/`setTokens` und gibt die Canvas-Ressourcen im Cleanup genau einmal
-// frei (spec.md Requirement "Bibliotheksoberflaeche", Szenario "Verlassen gibt die
-// Kartenansicht frei").
+// im `ref`-Element, reagiert auf Aenderungen von `grid`/`imageUrl`/`tokens`/`fog`/`tool`/
+// `selection` per `setGrid`/`setImage`/`setTokens`/`setFog`/`setTool`/`setSelection` und gibt
+// die Canvas-Ressourcen im Cleanup genau einmal frei (spec.md Requirement
+// "Bibliotheksoberflaeche", Szenario "Verlassen gibt die Kartenansicht frei").
 //
 // Die Fassade (`./canvas.js`) wird erst beim Mounten per dynamischem `import()` geladen, nie
 // statisch am Modulanfang (design.md D9): ein statischer Import wuerde `pixi.js` samt
 // `earcut` (reines ES-Modul) in die Importkette jeder Ansicht ziehen, die `App` rendert -
 // im Browser ein unnoetig grosses Startbuendel, unter Jest ein Ladefehler in jeder Suite,
-// die die `App` rendert. Nur der Typ `MapCanvasHandle` wird statisch bezogen (`import type`
-// erzeugt keinen Laufzeit-Import).
+// die die `App` rendert. Nur die Typen `MapCanvasHandle`/`FogLayer` werden statisch bezogen
+// (`import type` erzeugt keinen Laufzeit-Import).
 //
 // session-token (#14, design.md D6): `onTokenMove` wird nur beim Erzeugen uebergeben (wie
 // `imageUrl`/`grid` beim ersten Mount) - eine Aenderung des Rueckrufs nach dem Mount muss
 // nicht wirken, weil sich die Rolle im Raum nicht aendert. add-token-assignment (#15,
-// design.md D5): `canMoveToken` ebenso - nur beim Erzeugen gelesen.
+// design.md D5): `canMoveToken` ebenso - nur beim Erzeugen gelesen. add-fog-of-war (#16,
+// design.md D6): `onCellsSelected` ebenso nur beim Erzeugen gelesen - Aufrufer, die das
+// aktuelle Werkzeug brauchen (`SessionRoom.tsx`), lesen es ueber eine Ref, nicht ueber diesen
+// Rueckruf.
 
 export interface MapCanvasProps {
   imageUrl: string | null
@@ -29,21 +33,24 @@ export interface MapCanvasProps {
   tokens: Token[]
   onTokenMove?: (tokenId: string, cell: Cell) => void
   canMoveToken?: (token: Token) => boolean
+  fog?: FogLayer | null
+  tool?: FogTool
+  selection?: Cell[]
+  onCellsSelected?: (cells: Cell[]) => void
 }
 
-export function MapCanvas({ imageUrl, grid, tokens, onTokenMove, canMoveToken }: MapCanvasProps) {
+export function MapCanvas({ imageUrl, grid, tokens, onTokenMove, canMoveToken, fog, tool, selection, onCellsSelected }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const handleRef = useRef<MapCanvasHandle | null>(null)
   // App-Test Runde 2 (#14): `createMapCanvas` laeuft asynchron (`app.init`) - trifft waehrend
   // dieser Zeit ein neuer Wert ein (z. B. `session:tokens`), laeuft kein Effekt unten dafuer
   // erneut (das Handle stand ja noch nicht). Dieser Ref haelt die jeweils aktuellsten Props,
   // damit der Mount-Effekt sie nach dem Erzeugen einmalig nachziehen kann.
-  const latestPropsRef = useRef({ grid, imageUrl, tokens })
-  latestPropsRef.current = { grid, imageUrl, tokens }
+  const latestPropsRef = useRef({ grid, imageUrl, tokens, fog, tool, selection })
+  latestPropsRef.current = { grid, imageUrl, tokens, fog, tool, selection }
 
-  // Nur beim Mounten erzeugen - spaetere Aenderungen von `grid`/`imageUrl`/`tokens` gehen
-  // ueber die Effekte darunter (`setGrid`/`setImage`/`setTokens`), nicht ueber eine
-  // Neuerzeugung.
+  // Nur beim Mounten erzeugen - spaetere Aenderungen von `grid`/`imageUrl`/`tokens`/`fog`/
+  // `tool`/`selection` gehen ueber die Effekte darunter, nicht ueber eine Neuerzeugung.
   useEffect(() => {
     const container = containerRef.current
     if (!container) {
@@ -56,6 +63,9 @@ export function MapCanvas({ imageUrl, grid, tokens, onTokenMove, canMoveToken }:
     const initialGrid = grid
     const initialImageUrl = imageUrl
     const initialTokens = tokens
+    const initialFog = fog ?? null
+    const initialTool = tool ?? 'schwenken'
+    const initialSelection = selection ?? []
     import('./canvas.js')
       .then(({ createMapCanvas }) =>
         createMapCanvas(container, {
@@ -64,6 +74,10 @@ export function MapCanvas({ imageUrl, grid, tokens, onTokenMove, canMoveToken }:
           tokens: initialTokens,
           onTokenMove,
           canMoveToken,
+          fog: initialFog,
+          tool: initialTool,
+          selection: initialSelection,
+          onCellsSelected,
         }),
       )
       .then((handle) => {
@@ -83,6 +97,17 @@ export function MapCanvas({ imageUrl, grid, tokens, onTokenMove, canMoveToken }:
         }
         if (latest.tokens !== initialTokens) {
           handle.setTokens?.(latest.tokens)
+        }
+        // add-fog-of-war (#16, design.md D6): tolerante Aufrufe - Mocks aus #49/#50/#14
+        // kennen `setFog`/`setTool`/`setSelection` nicht (Muster `setTokens`).
+        if ((latest.fog ?? null) !== initialFog) {
+          handle.setFog?.(latest.fog ?? null)
+        }
+        if ((latest.tool ?? 'schwenken') !== initialTool) {
+          handle.setTool?.(latest.tool ?? 'schwenken')
+        }
+        if ((latest.selection ?? []) !== initialSelection) {
+          handle.setSelection?.(latest.selection ?? [])
         }
       })
       .catch((error: unknown) => {
@@ -109,6 +134,20 @@ export function MapCanvas({ imageUrl, grid, tokens, onTokenMove, canMoveToken }:
   useEffect(() => {
     handleRef.current?.setTokens?.(tokens)
   }, [tokens])
+
+  // add-fog-of-war (#16, design.md D6): tolerante Aufrufe - dieselbe Begruendung wie bei
+  // `setTokens` oben, fuer Mocks aus Changes vor #16.
+  useEffect(() => {
+    handleRef.current?.setFog?.(fog ?? null)
+  }, [fog])
+
+  useEffect(() => {
+    handleRef.current?.setTool?.(tool ?? 'schwenken')
+  }, [tool])
+
+  useEffect(() => {
+    handleRef.current?.setSelection?.(selection ?? [])
+  }, [selection])
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 }

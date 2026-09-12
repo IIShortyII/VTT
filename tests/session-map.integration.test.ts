@@ -12,11 +12,19 @@
 // Bilder wie in #49 (Signatur plus Fuellbytes). DB-Aussagen direkt aus `MapInstance` und
 // `GameSession.activeInstanceId` (design.md D8).
 //
+// Delta add-fog-of-war (tasks.md 1.4, MODIFIED-Delta map-library): das Szenario "Mitglied
+// erhält das Bild der aktiven Karte" ist auf seine neue Aussage umgestellt — die
+// Bibliotheksroute `GET /api/maps/:id/image` liefert einem Mitglied `404` (wie eine unbekannte
+// Karte), das vollstaendige bzw. maskierte Bild kommt nur ueber `GET
+// /api/sessions/:id/map-image`. Die uebrigen Szenarien bleiben unveraendert.
+//
 // Rote Phase (tasks.md 1.1, constitution.md §3.1): bis die Routen und die Migration aus 2.1
 // existieren, fehlen Instanzrouten (404 statt 201/200/204) bzw. Tabelle `MapInstance` und
 // Spalte `GameSession.activeInstanceId`. Tests, die die neue Tabelle/Spalte im GIVEN oder in
 // der Aussage lesen, scheitern dann am Prisma-Laufzeitzugriff; Tests, die nur eine Route
-// treffen, an der Statusaussage. Beides ist der erwartete rote Grund, kein Setup-/Tippfehler.
+// treffen, an der Statusaussage. Fuer das umgestellte Fog-Szenario ist der erwartete rote
+// Grund, dass die Bibliotheksroute heute `200` liefert und die Sitzungsroute
+// `/api/sessions/:id/map-image` noch fehlt (`404` statt `200`).
 
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -153,6 +161,15 @@ function pngBody(total = 64): Buffer {
   Buffer.from(PNG_SIGNATURE).copy(buffer)
   return buffer
 }
+
+// Ein echtes, dekodierbares 1x1-PNG (rot, deckend). Die Sitzungsroute `map-image` maskiert das
+// Bild mit `sharp` und braucht dafuer ein gueltiges Bild — die Fuellbyte-Attrappe `pngBody`
+// reicht dort nicht. Als base64-Konstante eingebettet, damit diese Suite kein `sharp` importiert
+// (die Bild-Szenarien mit `sharp` liegen in session-map-image.integration.test.ts, design.md D9).
+const REAL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z/C/HgAGgwJ/lK3Q6wAAAABJRU5ErkJggg==',
+  'base64',
+)
 
 // --- App und HTTP-Hilfen --------------------------------------------------------------------
 
@@ -459,16 +476,23 @@ test('Mitglied erhält das Bild der aktiven Karte', async () => {
   await addMembership(gs.id, sl.userId, 'spielleiter')
   await addMembership(gs.id, sam.userId, 'spieler')
   const taverne = await makeMap(sl.userId, 'Taverne')
-  const body = pngBody(96)
-  await putImage(app, `/api/maps/${taverne.id}/image`, body, 'image/png', sl.sid)
+  await putImage(app, `/api/maps/${taverne.id}/image`, REAL_PNG, 'image/png', sl.sid)
   const instanz = await mountDirect(gs.id, taverne.id)
   await setActive(gs.id, instanz.id)
 
-  const res = await get(app, `/api/maps/${taverne.id}/image`, sam.sid)
+  // MODIFIED (add-fog-of-war, map-library): die Bibliotheksroute liefert einem Mitglied `404`
+  // wie eine unbekannte Karte — das Bild kommt nur ueber die Sitzungsroute.
+  const aufTaverne = await get(app, `/api/maps/${taverne.id}/image`, sam.sid)
+  const aufUnbekannt = await get(app, '/api/maps/unbekannt/image', sam.sid)
+  const ueberSitzung = await get(app, `/api/sessions/${gs.id}/map-image`, sam.sid)
 
-  expect(res.statusCode).toBe(200)
-  expect(headerOf(res, 'content-type')).toContain('image/png')
-  expect(res.rawPayload.equals(body)).toBe(true)
+  expect(aufTaverne.statusCode).toBe(404)
+  expect(aufUnbekannt.statusCode).toBe(404)
+  expect(aufUnbekannt.statusCode).toBe(aufTaverne.statusCode)
+  expect(bodyOf(aufUnbekannt).message).toBe(bodyOf(aufTaverne).message)
+
+  expect(ueberSitzung.statusCode).toBe(200)
+  expect(headerOf(ueberSitzung, 'content-type')).toContain('image/webp')
 })
 
 test('Eingehängte, nicht aktive Karte bleibt für Mitglieder unsichtbar', async () => {

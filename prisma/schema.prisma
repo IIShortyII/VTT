@@ -142,19 +142,29 @@ model GameMap {
 // `onDelete: Cascade` an der Spielsitzung (eine geloeschte Spielsitzung nimmt ihre Instanzen
 // mit), `onDelete: Restrict` an der Karte (Loeschsperre, design.md D6 - die Route prueft
 // selbst und antwortet mit `409`; der Fremdschluessel ist nur der Rueckhalt).
+// add-fog-of-war (#16): `fogVersion` ist der Cache-Schluessel des maskierten Bilds und das
+// Signal fuer einen Spieler-Client, das Bild neu zu laden (design.md D1) - waechst nur, wenn
+// sich die aufgedeckten Zellen (`FogCell`) aendern, nicht bei einer Bereichsaenderung.
+// `fogCells`/`fogAreas` sind die Gegenrelationen; Aushaengen der Instanz loescht beide per
+// Cascade.
 model MapInstance {
-  id        String      @id @default(cuid())
-  sessionId String
-  mapId     String
-  position  Int
-  createdAt DateTime    @default(now())
-  session   GameSession @relation("SessionInstances", fields: [sessionId], references: [id], onDelete: Cascade)
-  map       GameMap     @relation(fields: [mapId], references: [id], onDelete: Restrict)
+  id         String      @id @default(cuid())
+  sessionId  String
+  mapId      String
+  position   Int
+  fogVersion Int         @default(0)
+  createdAt  DateTime    @default(now())
+  session    GameSession @relation("SessionInstances", fields: [sessionId], references: [id], onDelete: Cascade)
+  map        GameMap     @relation(fields: [mapId], references: [id], onDelete: Restrict)
   // Gegenrelation zum Zeiger `GameSession.activeInstance` - nicht-null genau dann, wenn diese
   // Instanz die aktive Karte ihrer Spielsitzung ist.
-  activeIn  GameSession? @relation("ActiveInstance")
+  activeIn   GameSession? @relation("ActiveInstance")
   // session-token (#14): Gegenrelation zu den Tokens dieser Instanz - siehe design.md D1.
-  tokens    Token[]
+  tokens     Token[]
+  // add-fog-of-war (#16): Gegenrelation zu den aufgedeckten Zellen und den Bereichen dieser
+  // Instanz - siehe design.md D1.
+  fogCells   FogCell[]
+  fogAreas   FogArea[]
 
   @@unique([sessionId, mapId])
   @@index([mapId])
@@ -234,4 +244,46 @@ model TokenShare {
   @@unique([tokenId, stat, userId])
   @@index([tokenId])
   @@index([userId])
+}
+
+// add-fog-of-war (#16): eine aufgedeckte Zelle einer Karteninstanz (design.md D1) - eine
+// Zeile je Zelle, `@@unique([instanceId, col, row])` macht "keine Zelle doppelt" zu einer
+// Datenbankeigenschaft (Muster `TokenCondition`, #61 D1). `onDelete: Cascade` - Aushaengen
+// der Instanz loescht die aufgedeckten Zellen mit.
+model FogCell {
+  id         String      @id @default(cuid())
+  instanceId String
+  col        Int
+  row        Int
+  instance   MapInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, col, row])
+}
+
+// add-fog-of-war (#16): ein benannter, gespeicherter Bereich einer Karteninstanz (design.md
+// D1) - eine Vorbereitung des Spielleiters, die aufgedeckten Zellen bleiben die einzige
+// Wahrheit ("revealed" ist abgeleitet, keine Spalte hier). `onDelete: Cascade` von der
+// Instanz - Aushaengen loescht die Bereiche mit.
+model FogArea {
+  id         String        @id @default(cuid())
+  instanceId String
+  name       String
+  createdAt  DateTime      @default(now())
+  instance   MapInstance   @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  cells      FogAreaCell[]
+
+  @@index([instanceId])
+}
+
+// add-fog-of-war (#16): die Zellen eines Bereichs (design.md D1) - eine Zeile je Zelle,
+// `@@unique([areaId, col, row])` macht "keine Zelle doppelt je Bereich" zu einer
+// Datenbankeigenschaft. `onDelete: Cascade` - ein geloeschter Bereich nimmt seine Zellen mit.
+model FogAreaCell {
+  id     String  @id @default(cuid())
+  areaId String
+  col    Int
+  row    Int
+  area   FogArea @relation(fields: [areaId], references: [id], onDelete: Cascade)
+
+  @@unique([areaId, col, row])
 }

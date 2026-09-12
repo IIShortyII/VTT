@@ -19,6 +19,7 @@ import { SESSION_COOKIE_NAME } from '../auth/session.js'
 import type { Clock } from '../core/clock.js'
 import { emitActiveMap, loadActiveMap } from './active-map.js'
 import { authorizeAction } from './authorize.js'
+import { broadcastFog, loadFogFor, registerFogHandlers } from './fog.js'
 import type { Presence } from './presence.js'
 import { broadcastParticipants, broadcastStatus, buildParticipants, emitParticipants, roomName } from './room.js'
 import { toSessionSummary } from './rules.js'
@@ -43,6 +44,7 @@ export interface SessionSocketDeps {
   prisma: PrismaClient
   clock: Clock
   presence: Presence
+  uploadDir: string
 }
 
 const INVALID_PAYLOAD_MESSAGE = 'Ungültige Anfrage.'
@@ -52,7 +54,7 @@ const TRANSITION_NOT_ALLOWED_MESSAGE = 'Dieser Übergang ist nicht erlaubt.'
 const INSTANCE_NOT_FOUND_MESSAGE = 'Karteninstanz nicht gefunden.'
 
 export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void {
-  const { prisma, clock, presence } = deps
+  const { prisma, clock, presence, uploadDir } = deps
 
   // Handshake-Middleware (design.md D6): nur pruefen, dass ueberhaupt ein `sid`-Cookie
   // vorhanden ist - keine DB-Abfrage hier. Der Wert ist ein Verweis, keine Erlaubnis; die
@@ -99,6 +101,10 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
     })
 
     registerTokenHandlers(io, socket, { prisma, clock, presence })
+    // add-fog-of-war (#16, design.md D3): dieselbe Registrierungsstelle wie die Token-
+    // Handler - `uploadDir` zusaetzlich, weil "alle Zellen aufdecken" die Bildabmessungen
+    // braucht (`resolveTargetCells`).
+    registerFogHandlers(io, socket, { prisma, clock, presence, uploadDir })
 
     // Der disconnect-Handler hat keinen Absender, dem er antworten koennte - Fehler werden
     // nur geloggt (design.md D8, AGENTS.md: kein stilles catch{}).
@@ -174,7 +180,10 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
     // Rolle und userId dieses Betretenden - Spielleiter alles, Besitzer sein Token, sonst
     // nichts (constitution.md §9.2).
     const tokens = await loadTokensFor(prisma, sessionId, { role, userId: user.id })
-    callback({ ok: true, session: summary, participants, map, tokens })
+    // add-fog-of-war (#16, Requirement "Fog beim Betreten und Kartenwechsel"): die fuer den
+    // Betretenden gefilterte Fog-Darstellung der aktiven Instanz, `null` ohne aktive Karte.
+    const fog = await loadFogFor(prisma, sessionId, role)
+    callback({ ok: true, session: summary, participants, map, tokens, fog })
   }
 
   async function handleTransition(socket: Socket, payload: unknown, callback: (ack: TransitionAck) => void): Promise<void> {
@@ -281,9 +290,12 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
     await prisma.gameSession.update({ where: { id: sessionId }, data: { activeInstanceId: instanceId } })
     const map = await loadActiveMap(prisma, sessionId)
     emitActiveMap(io, sessionId, map)
+    // add-fog-of-war (#16, Requirement "Fog beim Betreten und Kartenwechsel"): nach jedem
+    // Kartenwechsel folgt der Fog der nun aktiven Instanz, vor dem Tokenbestand - Reihenfolge
+    // auf der Leitung ist "session:map" vor "session:fog" vor "session:tokens".
+    await broadcastFog(io, prisma, presence, sessionId)
     // session-token (#14, Requirement "Tokenbestand beim Betreten und Kartenwechsel"): nach
-    // jedem Kartenwechsel folgt der Bestand der nun aktiven Instanz - Reihenfolge auf der
-    // Leitung ist "session:map" vor "session:tokens".
+    // jedem Kartenwechsel folgt der Bestand der nun aktiven Instanz.
     await broadcastTokens(io, prisma, presence, sessionId)
     callback({ ok: true, map })
   }

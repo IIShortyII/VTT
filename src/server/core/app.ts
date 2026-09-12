@@ -8,6 +8,7 @@ import { IMAGE_MIME_TYPES, MAX_IMAGE_BYTES } from '../../shared/map.js'
 import { registerAuthRoutes } from '../auth/routes.js'
 import { registerMapRoutes } from '../map/routes.js'
 import { ensureUploadDir } from '../map/storage.js'
+import { registerMapImageRoute } from '../session/map-image.js'
 import { Presence } from '../session/presence.js'
 import { registerSessionMapRoutes } from '../session/maps.js'
 import { registerSessionRoutes } from '../session/routes.js'
@@ -101,11 +102,14 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
 
   registerAuthRoutes(app, { prisma, clock, cookieSecure })
   registerSessionRoutes(app, { prisma, clock, cookieSecure, io, presence })
-  registerSessionSocket(io, { prisma, clock, presence })
+  registerSessionSocket(io, { prisma, clock, presence, uploadDir })
   registerMapRoutes(app, { prisma, clock, uploadDir, io })
   // session-map (#50): Instanzrouten einer Spielsitzung (Liste, Einhaengen, Aushaengen) -
   // `io`, weil das Aushaengen der aktiven Instanz den Raum informiert (design.md D2).
   registerSessionMapRoutes(app, { prisma, clock, io, presence })
+  // add-fog-of-war (#16, design.md D4): das Kartenbild einer Spielsitzung - dem Spielleiter
+  // das Original, einem Spieler das serverseitig maskierte Bild.
+  registerMapImageRoute(app, { prisma, clock, uploadDir })
 
   return app
 }

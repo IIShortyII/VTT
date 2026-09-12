@@ -34,7 +34,9 @@ Acknowledgement `{ ok: true, map }` mit der Aktive-Karte-Darstellung oder
 `{ ok: false, message }`) und `session:map` `{ sessionId, map }` (Server → Client, `map` ist
 die Aktive-Karte-Darstellung oder `null`). Das Acknowledgement von `session:enter`
 (`game-session`) trägt zusätzlich `map` mit der Aktive-Karte-Darstellung oder `null` sowie
-`fog` mit der Fog-Darstellung (`session-fog`) oder `null`. Die Kartenansicht im Raum bezieht
+`fog` mit der Fog-Darstellung (`session-fog`) oder `null` sowie `annotations` mit dem
+gefilterten Anmerkungsbestand (`session-annotation`; nach `session:map` folgt je Verbindung
+`session:fog` → `session:tokens` → `session:annotations`). Die Kartenansicht im Raum bezieht
 das Bild der aktiven Karte nicht über `/api/maps/<mapId>/image`, sondern über
 `/api/sessions/<sessionId>/map-image` (`session-fog`, Requirement „Kartenbild der
 Spielsitzung") — für Spieler mit dem Abfrageparameter `fog=<version>`.

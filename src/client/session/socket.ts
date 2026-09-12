@@ -1,5 +1,13 @@
 import { io, type Socket } from 'socket.io-client'
 
+import {
+  SESSION_ANNOTATION_EVENTS,
+  type AnnotationsEvent,
+  type CreateAnnotationAck,
+  type CreateAnnotationInput,
+  type DeleteAnnotationAck,
+  type DeleteAnnotationTarget,
+} from '../../shared/annotation.js'
 import { SESSION_FOG_EVENTS, type FogAck, type FogEvent, type FogTarget } from '../../shared/fog.js'
 import type { Cell } from '../../shared/grid.js'
 import {
@@ -31,14 +39,18 @@ import {
 } from '../../shared/token.js'
 
 // Duenne Fassade ueber socket.io-client (design.md D10) - kennt genau die Ereignisse des
-// Vertrags aus shared/session.ts, shared/session-map.ts, shared/token.ts und shared/fog.ts,
-// nichts sonst. Das ist zugleich die Mock-Grenze fuer Komponententests
-// (`jest.mock('../src/client/session/socket.js')`); ohne sie muesste jeder Test
-// socket.io-client selbst nachbauen.
+// Vertrags aus shared/session.ts, shared/session-map.ts, shared/token.ts, shared/fog.ts und
+// shared/annotation.ts, nichts sonst. Das ist zugleich die Mock-Grenze fuer
+// Komponententests (`jest.mock('../src/client/session/socket.js')`); ohne sie muesste jeder
+// Test socket.io-client selbst nachbauen.
 
 /** Eingabe von `createToken` - `sessionId` kommt vom Aufrufer, der Rest wie im Formular
  * (design.md D5). */
 export type CreateTokenFormInput = Omit<CreateTokenInput, 'sessionId'>
+
+/** Eingabe von `createAnnotation` (add-measure-draw #11, design.md D5) - `sessionId` kommt
+ * vom Aufrufer, der Rest aus der Raumansicht (Werkzeug, Modus, Sichtbarkeit, Farbe, Punkte). */
+export type AnnotationFormInput = Omit<CreateAnnotationInput, 'sessionId'>
 
 export interface SessionSocketFacade {
   connect(): void
@@ -61,6 +73,9 @@ export interface SessionSocketFacade {
   setFog(sessionId: string, revealed: boolean, target: FogTarget): Promise<FogAck>
   createFogArea(sessionId: string, name: string, cells: Cell[]): Promise<FogAck>
   deleteFogArea(sessionId: string, areaId: string): Promise<FogAck>
+  // add-measure-draw (#11, design.md D5): die beiden Anmerkungs-Absichten jeder Rolle.
+  createAnnotation(sessionId: string, input: AnnotationFormInput): Promise<CreateAnnotationAck>
+  deleteAnnotation(sessionId: string, target: DeleteAnnotationTarget): Promise<DeleteAnnotationAck>
   on(event: 'participants', handler: (payload: ParticipantsEvent) => void): void
   on(event: 'status', handler: (payload: StatusEvent) => void): void
   on(event: 'replaced', handler: (payload: ReplacedEvent) => void): void
@@ -68,6 +83,7 @@ export interface SessionSocketFacade {
   on(event: 'map', handler: (payload: MapEvent) => void): void
   on(event: 'tokens', handler: (payload: TokensEvent) => void): void
   on(event: 'fog', handler: (payload: FogEvent) => void): void
+  on(event: 'annotations', handler: (payload: AnnotationsEvent) => void): void
   on(event: 'disconnect', handler: (reason: string) => void): void
   /** Feuert bei jeder erfolgreichen Verbindung ausser der ersten (design.md D2) - der Server
    * hat die Verbindung angenommen, kennt den Raum dieser Verbindung nach der vorangegangenen
@@ -88,6 +104,9 @@ function wireEventFor(event: string): string {
   }
   if (event === 'fog') {
     return SESSION_FOG_EVENTS.fog
+  }
+  if (event === 'annotations') {
+    return SESSION_ANNOTATION_EVENTS.annotations
   }
   return SESSION_EVENTS[event as 'participants' | 'status' | 'replaced' | 'ended']
 }
@@ -176,6 +195,14 @@ export function createSessionSocket(): SessionSocketFacade {
     deleteFogArea: (sessionId: string, areaId: string) =>
       new Promise<FogAck>((resolve) => {
         socket.emit(SESSION_FOG_EVENTS.areaDelete, { sessionId, areaId }, (ack: FogAck) => resolve(ack))
+      }),
+    createAnnotation: (sessionId: string, input: AnnotationFormInput) =>
+      new Promise<CreateAnnotationAck>((resolve) => {
+        socket.emit(SESSION_ANNOTATION_EVENTS.create, { sessionId, ...input }, (ack: CreateAnnotationAck) => resolve(ack))
+      }),
+    deleteAnnotation: (sessionId: string, target: DeleteAnnotationTarget) =>
+      new Promise<DeleteAnnotationAck>((resolve) => {
+        socket.emit(SESSION_ANNOTATION_EVENTS.delete, { sessionId, target }, (ack: DeleteAnnotationAck) => resolve(ack))
       }),
     on: (event: string, handler: (payload: unknown) => void) => {
       if (event === 'reconnect') {

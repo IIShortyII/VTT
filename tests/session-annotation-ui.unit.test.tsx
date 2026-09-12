@@ -496,9 +496,9 @@ test('Liste zeigt Art, Etikett, Sichtbarkeit und Urheber', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
-  await screen.findByRole('group', { name: 'Messen & Zeichnen' })
+  const gruppe = await screen.findByRole('group', { name: 'Messen & Zeichnen' })
 
-  const liste = screen.getByRole('list')
+  const liste = within(gruppe).getByRole('list')
   const eintraege = within(liste).getAllByRole('listitem').map((li) => (li.textContent ?? '').replace(/Entfernen$/, '').trim())
   expect(eintraege).toEqual([
     'Strecke: 3 Felder (4,5 m) · geteilt · sam',

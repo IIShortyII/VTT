@@ -435,13 +435,13 @@ test('Spielleiter legt ein Token an', async () => {
 
   const beimSl = once(slSocket, 'session:tokens')
   const beimSpieler = once(spSocket, 'session:tokens')
-  const ack = await tokenCreate(slSocket, { sessionId: gs.id, name: 'Goblin', color: '#3366ff', icon: '💀', size: 2, col: 3, row: 4 })
+  const ack = await tokenCreate(slSocket, { sessionId: gs.id, name: 'Goblin', color: '#3366ff', icon: 'undead', size: 2, col: 3, row: 4 })
 
   expect(ack.ok).toBe(true)
   const token = rec(ack.token, 'token im Acknowledgement')
   expect(token.name).toBe('Goblin')
   expect(token.color).toBe('#3366ff')
-  expect(token.icon).toBe('💀')
+  expect(token.icon).toBe('undead')
   expect(token.size).toBe(2)
   expect(token.col).toBe(3)
   expect(token.row).toBe(4)
@@ -532,6 +532,7 @@ test('Ungültige Felder werden abgelehnt', async () => {
   const leererName = await tokenCreate(slSocket, { sessionId: gs.id, name: '', color: '#3366ff', icon: null, size: 1, col: 0, row: 0 })
   const falscheFarbe = await tokenCreate(slSocket, { sessionId: gs.id, name: 'Goblin', color: 'rot', icon: null, size: 1, col: 0, row: 0 })
   const zuGross = await tokenCreate(slSocket, { sessionId: gs.id, name: 'Goblin', color: '#3366ff', icon: null, size: 5, col: 0, row: 0 })
+  const emojiSymbol = await tokenCreate(slSocket, { sessionId: gs.id, name: 'Goblin', color: '#3366ff', icon: '💀', size: 1, col: 0, row: 0 })
 
   expect(leererName.ok).toBe(false)
   expect(typeof leererName.message).toBe('string')
@@ -539,6 +540,8 @@ test('Ungültige Felder werden abgelehnt', async () => {
   expect(typeof falscheFarbe.message).toBe('string')
   expect(zuGross.ok).toBe(false)
   expect(typeof zuGross.message).toBe('string')
+  expect(emojiSymbol.ok).toBe(false)
+  expect(typeof emojiSymbol.message).toBe('string')
   expect(await db().token.count()).toBe(0)
 })
 

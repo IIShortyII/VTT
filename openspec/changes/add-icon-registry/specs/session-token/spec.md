@@ -278,8 +278,10 @@ gerendert werden.
 - **WHEN** er die Schaltfläche `Goblin Markierung Liegend entfernen` auslöst
 - **THEN** sendet die Socket-Fassade `setTokenConditions` mit `sessionId`, der `id` von
   `Goblin` und `['Segen']`; vor dem Auslösen zeigte die Markierungsliste des Tokens den
-  Eintrag `Liegend` mit dem Icon seines Katalogeintrags (`ui-icons`) als `<svg>` mit
-  `aria-hidden="true"` und den Eintrag `Segen` (kein Katalogeintrag) ohne `<svg>`
+  Eintrag `Liegend` mit dem Icon seines Katalogeintrags (`ui-icons`) als dekoratives `<svg>`
+  mit `aria-hidden="true"` und den Eintrag `Segen` (kein Katalogeintrag) ohne dekoratives
+  `<svg>` — beide Einträge enthalten daneben die Icon-only-Schaltfläche `Entfernen`, deren
+  benanntes `<svg>` (`role="img"`) nicht als Katalog-Icon zählt
 
 #### Scenario: Spieler sieht die Werte seines Tokens
 

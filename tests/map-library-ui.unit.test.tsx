@@ -364,7 +364,7 @@ test('Verlassen gibt die Kartenansicht frei', async () => {
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: /zurück|zurueck/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Zur Bibliothek' }))
   })
 
   await waitFor(() => expect(canvasMock.__handle.destroy).toHaveBeenCalledTimes(1))

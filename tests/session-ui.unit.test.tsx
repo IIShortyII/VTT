@@ -16,7 +16,7 @@
 // Ereignis `reconnect` (Handler ohne Argument) ueber denselben Handler-Mechanismus wie
 // `participants` oder `replaced` (design.md D2).
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 import { App } from '../src/client/app/App.js'
 
@@ -160,7 +160,10 @@ test('Sitzungsliste mit Erstellen und Beitreten', async () => {
   expect(screen.getAllByText(/geschlossen/i).length).toBeGreaterThan(0)
   expect(nameFeld(container)).not.toBeNull()
   expect(codeFeld(container)).not.toBeNull()
-  expect(screen.getByRole('button', { name: /abmelden/i })).toBeTruthy()
+  // Abmeldung in der Top-Bar (ui-shell), nicht mehr in der Liste; Startansicht ohne Zurueck.
+  const header = screen.getByRole('banner')
+  expect(within(header).getByRole('button', { name: /abmelden/i })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Zurück' })).toBeNull()
 })
 
 test('Raumansicht des Spielleiters', async () => {

@@ -1,0 +1,314 @@
+@import '@fontsource/marcellus/400.css';
+@import '@fontsource/sora/400.css';
+@import '@fontsource/sora/500.css';
+@import '@fontsource/sora/600.css';
+
+:root {
+  color-scheme: dark;
+
+  /* Neutral-Rampe (1-2 App-Hintergrund · 3-5 Flächen · 6-8 Rahmen · 9-10 Vollton · 11-12 Text) */
+  --gray-1: #0c0f13;
+  --gray-2: #0e1014;
+  --gray-3: #13161c;
+  --gray-4: #161a20;
+  --gray-5: #1c2129;
+  --gray-6: #2a313b;
+  --gray-7: #3a4150;
+  --gray-8: #4a5260;
+  --gray-9: #6f7884;
+  --gray-10: #7a8089;
+  --gray-11: #98a1ad;
+  --gray-12: #eef1f6;
+
+  /* Semantische Neutrale — alles unterhalb liest diese, nie die Rampe */
+  --color-bg: var(--gray-2);
+  --color-bg-subtle: var(--gray-1);
+  --color-panel: var(--gray-3);
+  --color-surface: var(--gray-4);
+  --color-surface-hover: var(--gray-5);
+  --color-border-faint: var(--gray-6);
+  --color-border: var(--gray-7);
+  --color-border-strong: var(--gray-8);
+  --color-text: var(--gray-12);
+  --color-text-muted: var(--gray-11);
+  --color-text-faint: var(--gray-9);
+  --input-bg: #0e1115;
+  --panel-grad: linear-gradient(180deg, var(--gray-5), var(--gray-2));
+
+  /* Gold — die Markenfarbe */
+  --accent-9: #d9b45b;
+  --gold-1: #b88f45;
+  --gold-2: #e6c673;
+  --gold-grad: linear-gradient(180deg, var(--gold-2), var(--gold-1));
+  --gold-border: #6a521f;
+  --gold-inset: #ffe9b0;
+  --gold-text: #e6c673;
+  --gold-dark: #1a1408;
+
+  /* Statusfamilien: teal aktiv/info · amber pausiert/warnung · rot gefahr/beendet */
+  --teal: #57c7c0;
+  --teal-bg: #0d1f1d;
+  --teal-border: #1f4a44;
+  --amber: #e6c673;
+  --amber-bg: #241e0e;
+  --amber-border: #6a5320;
+  --red: #f0a5a5;
+  --red-bg: #1f1416;
+  --red-border: #5a2a2a;
+  --color-focus: var(--teal);
+
+  /* Spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+
+  /* Radius — je eine Rolle: 1 Raster · 2 Buttons/Inputs · 3 Zeilen · 5 Panels/Popups · pill */
+  --radius-1: 4px;
+  --radius-2: 6px;
+  --radius-3: 8px;
+  --radius-5: 10px;
+  --radius-pill: 999px;
+
+  /* Typografie */
+  --font-display: 'Marcellus', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Sora', system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+  --font-size-1: 0.7rem;
+  --font-size-2: 0.8rem;
+  --font-size-3: 1rem;
+  --font-size-4: 1.4rem;
+  --font-size-hero: 2.5rem;
+
+  /* Layout und Elevation */
+  --content-max: 55rem;
+  --shadow-panel: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* --amber und --gold-2/--gold-text teilen denselben Wert — absichtlich: die
+   Warnfarbe ist das helle Gold, damit „pausiert" zur Marke passt. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+h1,
+h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+}
+
+button {
+  font: inherit;
+  min-height: 36px;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-hover);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.primary {
+  border-color: var(--gold-border);
+  background: var(--gold-grad);
+  color: var(--gold-dark);
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 var(--gold-inset);
+}
+
+button.primary:hover:not(:disabled) {
+  border-color: var(--gold-border);
+  background: var(--gold-grad);
+  filter: brightness(1.06);
+}
+
+button.danger {
+  border-color: var(--red-border);
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+button.danger:hover:not(:disabled) {
+  border-color: var(--red);
+}
+
+button.link {
+  min-height: 0;
+  border: none;
+  padding: 0;
+  background: none;
+  color: var(--color-text-muted);
+  text-decoration: underline;
+}
+
+button.link:hover:not(:disabled) {
+  color: var(--color-text);
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-border-faint);
+  border-radius: var(--radius-2);
+  background: var(--input-bg);
+  color: var(--color-text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--accent-9);
+  outline: 2px solid var(--accent-9);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-9) 35%, transparent);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-5);
+  background: var(--panel-grad);
+  box-shadow: var(--shadow-panel);
+}
+
+.panel h3 {
+  margin: 0;
+  font-size: var(--font-size-1);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--color-text-muted);
+}
+
+.chip {
+  min-height: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 0.85em;
+}
+
+.chip:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.chip.is-active {
+  border-color: var(--gold-border);
+  background: var(--gold-grad);
+  color: var(--gold-dark);
+  font-weight: 600;
+}
+
+.chip.is-active:hover:not(:disabled) {
+  border-color: var(--gold-border);
+  background: var(--gold-grad);
+  color: var(--gold-dark);
+  filter: brightness(1.08);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 8.5rem;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-2);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.status-pill--active {
+  border-color: var(--teal-border);
+  background: var(--teal-bg);
+  color: var(--teal);
+}
+
+.status-pill--paused {
+  border-color: var(--amber-border);
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+
+.status-pill--ended {
+  border-color: var(--red-border);
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.field-label {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: var(--font-size-1);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-muted);
+}
+
+.field-error {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-1);
+  color: var(--red);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-2) 0;
+  color: var(--color-text-muted);
+}
+
+.empty-state strong {
+  color: var(--color-text);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  button,
+  .chip {
+    transition:
+      border-color 0.12s ease,
+      background 0.12s ease;
+  }
+}

@@ -57,5 +57,6 @@
     "tsx": "^4",
     "typescript": "^5",
     "vite": "^7"
-  }
+  },
+  "version": "0.1.0"
 }

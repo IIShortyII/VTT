@@ -6,24 +6,23 @@ import { ChangePasswordForm } from '../auth/ChangePasswordForm.js'
 import { createSession, joinSession, listSessions } from './api.js'
 
 // Sitzungsliste der angemeldeten Ansicht (design.md D10, Requirement "Sitzungsoberflaeche").
-// Abmelden und ChangePasswordForm bleiben hier, damit die Szenarien der
-// user-auth-Anmeldeoberflaeche weiter gelten. `onOpenLibrary` fuehrt zur Kartenbibliothek
+// ChangePasswordForm bleibt hier, damit die Szenarien der user-auth-Anmeldeoberflaeche weiter
+// gelten. Abmeldung und der globale Hinweis liegen in der App-Shell (ui-shell #84, design.md
+// D4) - diese Ansicht kennt beides nicht mehr. `onOpenLibrary` fuehrt zur Kartenbibliothek
 // (map-library #49, spec.md Requirement "Bibliotheksoberflaeche") - die Requirements dieser
 // Ansicht selbst aendern sich dadurch nicht.
 
 export interface SessionListProps {
   user: UserOutput
-  hinweis: string | null
   onEnter: (sessionId: string) => void
   onOpenLibrary: () => void
-  onLogout: () => void
 }
 
 const LOAD_FAILURE_MESSAGE = 'Die Spielsitzungen konnten nicht geladen werden.'
 const GENERIC_CREATE_ERROR_MESSAGE = 'Die Spielsitzung konnte nicht erstellt werden. Bitte versuche es erneut.'
 const GENERIC_JOIN_ERROR_MESSAGE = 'Der Beitritt ist fehlgeschlagen. Bitte versuche es erneut.'
 
-export function SessionList({ user, hinweis, onEnter, onOpenLibrary, onLogout }: SessionListProps) {
+export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [name, setName] = useState('')
@@ -94,11 +93,6 @@ export function SessionList({ user, hinweis, onEnter, onOpenLibrary, onLogout }:
 
   return (
     <div>
-      <p>Angemeldet als {user.email}</p>
-      {hinweis !== null && <p role="alert">{hinweis}</p>}
-      <button type="button" onClick={onLogout}>
-        Abmelden
-      </button>
       <button type="button" onClick={onOpenLibrary}>
         Kartenbibliothek
       </button>

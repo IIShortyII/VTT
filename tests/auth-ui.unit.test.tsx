@@ -13,7 +13,7 @@
 // ihn). Die beiden Szenarien der Registrierungsoberfläche sind rot, weil das
 // Registrierungsformular das Nutzernamensfeld noch nicht rendert.
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { App } from '../src/client/app/App.js'
 
 const FEHLERMELDUNG = 'E-Mail oder Passwort ist falsch.'
@@ -170,8 +170,9 @@ test('Fehlgeschlagene Abmeldung wird angezeigt', async () => {
   await waitFor(() => expect(screen.getByText(/abmelden fehlgeschlagen/i)).toBeTruthy())
   // … und die Ansicht bleibt angemeldet: der Server hat die Abmeldung nicht bestaetigt
   // (constitution.md §9.1).
-  expect(screen.getByRole('button', { name: /abmelden/i })).toBeTruthy()
-  expect(screen.getByText(/angemeldet als/i)).toBeTruthy()
+  const header = screen.getByRole('banner')
+  expect(within(header).getByText('Gandalf')).toBeTruthy()
+  expect(within(header).getByRole('button', { name: 'Abmelden' })).toBeTruthy()
 })
 
 // --- Registrierungsoberfläche (#45) ---------------------------------------------------------
@@ -246,14 +247,13 @@ test('Angemeldete Ansicht bietet die Passwortänderung an', async () => {
   mockFetch([{ pfad: '/api/auth/me', antwort: antwort(200, ANGEMELDETER_NUTZER) }])
 
   const { container } = render(<App />)
-  await screen.findByText(/angemeldet als/i)
+  await screen.findByRole('button', { name: /ändern/i })
 
-  // Neben der Abmeldung: Eingabefelder für das bisherige und das neue Passwort sowie eine
-  // Schaltfläche zum Ändern.
+  // Die Passwortänderung liegt in der Sitzungsliste (die Abmeldung liegt in der Top-Bar,
+  // ui-shell): Eingabefelder für das bisherige und das neue Passwort und eine Schaltfläche zum Ändern.
   expect(bisherigesPasswortFeld(container)).not.toBeNull()
   expect(neuesPasswortFeld(container)).not.toBeNull()
   expect(screen.getByRole('button', { name: /ändern/i })).toBeTruthy()
-  expect(screen.getByRole('button', { name: /abmelden/i })).toBeTruthy()
 })
 
 test('Abgelehnte Passwortänderung wird angezeigt', async () => {
@@ -267,7 +267,7 @@ test('Abgelehnte Passwortänderung wird angezeigt', async () => {
   ])
 
   const { container } = render(<App />)
-  await screen.findByText(/angemeldet als/i)
+  await screen.findByRole('button', { name: /ändern/i })
   const bisher = must(bisherigesPasswortFeld(container), 'ein Feld für das bisherige Passwort')
   const neu = must(neuesPasswortFeld(container), 'ein Feld für das neue Passwort')
   fireEvent.change(bisher, { target: { value: 'ein-sicheres-passwort' } })
@@ -279,7 +279,7 @@ test('Abgelehnte Passwortänderung wird angezeigt', async () => {
   await waitFor(() => expect(screen.getAllByText(ABLEHNUNG).length).toBeGreaterThan(0))
   // … und die Ansicht bleibt angemeldet (constitution.md §9.1): eine abgelehnte Änderung meldet
   // den Nutzer nicht ab.
-  expect(screen.getByText(/angemeldet als/i)).toBeTruthy()
+  expect(screen.getByRole('button', { name: /ändern/i })).toBeTruthy()
 })
 
 test('Erfolgreiche Passwortänderung wird bestätigt', async () => {
@@ -289,7 +289,7 @@ test('Erfolgreiche Passwortänderung wird bestätigt', async () => {
   ])
 
   const { container } = render(<App />)
-  await screen.findByText(/angemeldet als/i)
+  await screen.findByRole('button', { name: /ändern/i })
   const bisher = must(bisherigesPasswortFeld(container), 'ein Feld für das bisherige Passwort')
   const neu = must(neuesPasswortFeld(container), 'ein Feld für das neue Passwort')
   fireEvent.change(bisher, { target: { value: 'ein-sicheres-passwort' } })
@@ -303,5 +303,5 @@ test('Erfolgreiche Passwortänderung wird bestätigt', async () => {
   expect((must(bisherigesPasswortFeld(container), 'das bisherige Passwortfeld') as HTMLInputElement).value).toBe('')
   expect((must(neuesPasswortFeld(container), 'das neue Passwortfeld') as HTMLInputElement).value).toBe('')
   // … und die Ansicht bleibt angemeldet.
-  expect(screen.getByText(/angemeldet als/i)).toBeTruthy()
+  expect(screen.getByRole('button', { name: /ändern/i })).toBeTruthy()
 })

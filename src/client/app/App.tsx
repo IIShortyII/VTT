@@ -7,6 +7,8 @@ import { RegisterForm } from '../auth/RegisterForm.js'
 import { MapLibrary } from '../map/MapLibrary.js'
 import { SessionList } from '../session/SessionList.js'
 import { SessionRoom } from '../session/SessionRoom.js'
+import { AppShell } from './AppShell.js'
+import { FALLBACK_BUILD, type BuildInfo } from './build-info.js'
 
 // Kein Router: der Auth-Zustand entscheidet, welche Ansicht erscheint (design.md D7/D10).
 // "unbekannt" ist kein Detail, sondern verhindert, dass beim Reload fuer einen Moment das
@@ -26,13 +28,18 @@ function logoutFailureMessage(error: unknown): string {
   return `Abmelden fehlgeschlagen: ${cause}`
 }
 
-export function App() {
+export interface AppProps {
+  build?: BuildInfo
+}
+
+export function App({ build = FALLBACK_BUILD }: AppProps) {
   const [state, setState] = useState<AuthState>({ status: 'unbekannt' })
   const [view, setView] = useState<AuthView>('login')
   // Fehler, die keine Antwort des Servers sind (Netzfehler, kaputte Antwortform) - kommt hier
   // eine Antwort an, entscheidet der Server (constitution.md §9.1); scheitert die Anfrage
   // selbst, bleibt nur dieser Hinweis (design.md D4). Traegt nach `session:ended` auch den
-  // entsprechenden Hinweis der Sitzungsliste (Requirement "Sitzungsoberflaeche").
+  // entsprechenden Hinweis der Sitzungsliste (Requirement "Sitzungsoberflaeche"). Wird von der
+  // Shell gezeigt (ui-shell #84, design.md D3), nicht mehr von einer einzelnen Ansicht.
   const [hinweis, setHinweis] = useState<string | null>(null)
   const [sessionView, setSessionView] = useState<SessionView>({ view: 'liste' })
 
@@ -87,49 +94,65 @@ export function App() {
     }
   }
 
-  if (state.status === 'unbekannt') {
-    return <p>Lädt …</p>
-  }
+  // Ein Zurueck-Pfad, ausschliesslich in der Top-Bar (ui-shell #84, design.md D3): fuehrt aus
+  // Raum und Bibliothek zur Sitzungsliste. `canGoBack` ist nur in einer Unteransicht wahr - die
+  // Sitzungsliste selbst und jede Ansicht eines nicht angemeldeten Besuchers zeigen keine
+  // Schaltflaeche `Zurueck`.
+  const canGoBack = state.status === 'angemeldet' && sessionView.view !== 'liste'
+  const onBack = () => setSessionView({ view: 'liste' })
+  const account = state.status === 'angemeldet' ? { username: state.user.username } : null
 
-  if (state.status === 'angemeldet') {
+  let content
+  if (state.status === 'unbekannt') {
+    content = <p>Lädt …</p>
+  } else if (state.status === 'angemeldet') {
     if (sessionView.view === 'raum') {
-      return (
+      content = (
         <SessionRoom
           sessionId={sessionView.sessionId}
           currentUserId={state.user.id}
-          onLeave={() => setSessionView({ view: 'liste' })}
           onEnded={(message) => {
             setHinweis(message)
             setSessionView({ view: 'liste' })
           }}
         />
       )
+    } else if (sessionView.view === 'bibliothek') {
+      content = <MapLibrary />
+    } else {
+      content = (
+        <SessionList
+          user={state.user}
+          onEnter={(sessionId) => {
+            setHinweis(null)
+            setSessionView({ view: 'raum', sessionId })
+          }}
+          onOpenLibrary={() => setSessionView({ view: 'bibliothek' })}
+        />
+      )
     }
-    if (sessionView.view === 'bibliothek') {
-      return <MapLibrary onBack={() => setSessionView({ view: 'liste' })} />
-    }
-    return (
-      <SessionList
-        user={state.user}
-        hinweis={hinweis}
-        onEnter={(sessionId) => {
-          setHinweis(null)
-          setSessionView({ view: 'raum', sessionId })
-        }}
-        onOpenLibrary={() => setSessionView({ view: 'bibliothek' })}
-        onLogout={() => void handleLogout()}
-      />
+  } else {
+    content = (
+      <>
+        {view === 'login' ? (
+          <LoginForm onSuccess={handleAuthenticated} onSwitchToRegister={() => setView('register')} />
+        ) : (
+          <RegisterForm onSuccess={handleAuthenticated} onSwitchToLogin={() => setView('login')} />
+        )}
+      </>
     )
   }
 
   return (
-    <div>
-      {hinweis !== null && <p role="alert">{hinweis}</p>}
-      {view === 'login' ? (
-        <LoginForm onSuccess={handleAuthenticated} onSwitchToRegister={() => setView('register')} />
-      ) : (
-        <RegisterForm onSuccess={handleAuthenticated} onSwitchToLogin={() => setView('login')} />
-      )}
-    </div>
+    <AppShell
+      canGoBack={canGoBack}
+      onBack={onBack}
+      account={account}
+      onLogout={() => void handleLogout()}
+      hinweis={hinweis}
+      build={build}
+    >
+      {content}
+    </AppShell>
   )
 }

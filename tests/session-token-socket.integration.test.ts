@@ -120,6 +120,11 @@ interface GameDb {
     count(args?: unknown): Promise<number>
     deleteMany(): Promise<unknown>
   }
+  fogCell: {
+    createMany(args: { data: Array<{ instanceId: string; col: number; row: number }> }): Promise<unknown>
+    count(args?: unknown): Promise<number>
+    deleteMany(): Promise<unknown>
+  }
   token: {
     create(args: {
       data: {
@@ -300,7 +305,17 @@ async function makeMap(ownerId: string, name: string, opts: { image?: boolean } 
 
 async function mountDirect(sessionId: string, mapId: string): Promise<MapInstanceRow> {
   const vorhandene = await db().mapInstance.count({ where: { sessionId } })
-  return db().mapInstance.create({ data: { sessionId, mapId, position: vorhandene + 1 } })
+  const instanz = await db().mapInstance.create({ data: { sessionId, mapId, position: vorhandene + 1 } })
+  // Konvention (add-token-fog-visibility, design.md D6): eine aktive Karte ohne Fog-Angabe gilt
+  // als vollstaendig aufgedeckt. Deshalb deckt der Einhaenge-Helfer die Zellen (0..14) x (0..14)
+  // der Instanz als FogCell-Zeilen auf (eine createMany-Anweisung) - damit sind alle in den
+  // bestehenden Szenarien genannten Zellen aufgedeckt und keine Assertion aendert sich.
+  const zellen: Array<{ instanceId: string; col: number; row: number }> = []
+  for (let col = 0; col < 15; col += 1) {
+    for (let row = 0; row < 15; row += 1) zellen.push({ instanceId: instanz.id, col, row })
+  }
+  await db().fogCell.createMany({ data: zellen })
+  return instanz
 }
 
 async function setActive(sessionId: string, instanceId: string | null): Promise<void> {
@@ -383,6 +398,7 @@ afterEach(async () => {
   const c = prisma as unknown as Partial<GameDb>
   if (c.tokenCondition) await c.tokenCondition.deleteMany()
   if (c.token) await c.token.deleteMany()
+  if (c.fogCell) await c.fogCell.deleteMany()
   if (c.mapInstance) await c.mapInstance.deleteMany()
   if (c.gameMap) await c.gameMap.deleteMany()
   if (c.membership) await c.membership.deleteMany()

@@ -224,8 +224,10 @@ test('Raumansicht des Spielers', async () => {
   await betreten()
 
   await waitFor(() => expect(screen.getAllByText(/gestartet/i).length).toBeGreaterThan(0))
-  expect(screen.getByText(/\bleiter\b/)).toBeTruthy()
-  expect(screen.getByText(/\bich\b/)).toBeTruthy()
+  // Teilnehmer stehen in der Liste im Inhaltsbereich (main), nicht in der Top-Bar (banner).
+  const main = screen.getByRole('main')
+  expect(within(main).getByText(/\bleiter\b/)).toBeTruthy()
+  expect(within(main).getByText(/\bich\b/)).toBeTruthy()
   // Kein Sitzungscode und keine Schaltflaeche fuer einen Zustandsuebergang.
   expect(screen.queryByText(/code/i)).toBeNull()
   expect(screen.queryByRole('button', { name: /starten|beenden|öffnen|oeffnen|pausieren/i })).toBeNull()

@@ -8,7 +8,7 @@
 
 ## 0. Vorbereitung (Mensch, vor dem test-author)
 
-- [ ] 0.1 Im Feature-Worktree `vite.config.ts` durch die von der Sitzung bereitgestellte
+- [x] 0.1 Im Feature-Worktree `vite.config.ts` durch die von der Sitzung bereitgestellte
       Fassung mit `define` (`__APP_VERSION__`, `__BUILD_SHA__`) ersetzen, in `package.json`
       `"version": "0.1.0"` setzen und beides committen
       (`chore(build): Version und Build-SHA als Vite-Defines (#84)`) — beide Dateien liegen
@@ -16,7 +16,7 @@
 
 ## 1. Tests (test-author)
 
-- [ ] 1.1 Komponententests für die Shell (jsdom-Docblock, `@testing-library/react`): die
+- [x] 1.1 Komponententests für die Shell (jsdom-Docblock, `@testing-library/react`): die
       neun Szenarien aus `specs/ui-shell/spec.md`, Testname = Szenarioname; `App` ohne Props
       rendern, `fetch` nach dem Muster der bestehenden Auth-/Sitzungs-/Bibliothekstests
       mocken, den Raum nach dem Socket-Mock-Muster der Sitzungstests; Adressen ausschließlich
@@ -26,7 +26,7 @@
       nichts ändern). Verifizieren, dass jeder Test an seiner Assertion rot ist (kein
       `<header>`, keine Schaltfläche `Zurück`, kein `<footer>`), nicht an einem Lade- oder
       Typfehler
-- [ ] 1.2 Bestehende Tests zu den MODIFIED-Szenarien umstellen: „Fehlgeschlagene Abmeldung
+- [x] 1.2 Bestehende Tests zu den MODIFIED-Szenarien umstellen: „Fehlgeschlagene Abmeldung
       wird angezeigt" (Verbleib über Nutzername und `Abmelden` in der Top-Bar statt
       „Angemeldet als"), „Angemeldete Ansicht bietet die Passwortänderung an" (ohne Bezug
       auf eine Abmeldung daneben), „Sitzungsliste mit Erstellen und Beitreten" (keine
@@ -35,29 +35,29 @@
 
 ## 2. Implementierung (implementer)
 
-- [ ] 2.1 `src/client/app/build-info.ts` (neu, `BuildInfo`, `FALLBACK_BUILD`) und
+- [x] 2.1 `src/client/app/build-info.ts` (neu, `BuildInfo`, `FALLBACK_BUILD`) und
       `src/client/vite-env.d.ts` (neu, Deklaration der beiden Defines) nach design.md D2
-- [ ] 2.2 `src/client/app/AppShell.tsx` (neu) genau nach design.md D1: Header mit
+- [x] 2.2 `src/client/app/AppShell.tsx` (neu) genau nach design.md D1: Header mit
       `Zurück` (nur bei `canGoBack`, `autoFocus`, Chevron aria-hidden), Marke (`VTT` in
       eigenem Element), Konto (Nutzername · `Abmelden`); `main.app-shell` mit globalem
       Hinweis (`role="alert"`) und `children`; Footer `Version <version> · Build <sha>`
-- [ ] 2.3 `src/client/app/App.tsx` nach design.md D3: jede Ansicht in `AppShell`,
+- [x] 2.3 `src/client/app/App.tsx` nach design.md D3: jede Ansicht in `AppShell`,
       `canGoBack`/`onBack`/`account`/`onLogout`/`hinweis`/`build` verdrahtet, Prop
       `build?: BuildInfo`; `src/client/main.tsx` liest die Defines mit `typeof`-Wächter und
       übergibt `build`
-- [ ] 2.4 Ansichten nach design.md D4: `SessionList` ohne „Angemeldet als", `Abmelden`,
+- [x] 2.4 Ansichten nach design.md D4: `SessionList` ohne „Angemeldet als", `Abmelden`,
       `hinweis` (Props `onLogout`/`hinweis` entfernt); `SessionRoom` ohne „Zurück zur Liste"
       (Prop `onLeave` entfernt); `MapLibrary` ohne „Zurück zur Sitzungsliste" (Prop `onBack`
       entfernt), innere Schaltfläche `Zur Bibliothek`
-- [ ] 2.5 `src/client/app/theme.css`: Abschnitt „Shell" mit den sieben Selektoren nach
+- [x] 2.5 `src/client/app/theme.css`: Abschnitt „Shell" mit den sieben Selektoren nach
       design.md D5, vor dem Bewegungsblock, Format-Vertrag von `ui-theme` eingehalten;
       verifizieren mit `pnpm typecheck:src`, `pnpm lint` und `pnpm build`
 
 ## 3. Abschluss
 
-- [ ] 3.1 Gate grün (Typecheck, Lint, komplette Jest-Suite inkl. der bestehenden Tests),
+- [x] 3.1 Gate grün (Typecheck, Lint, komplette Jest-Suite inkl. der bestehenden Tests),
       Review „ok"
-- [ ] 3.2 App-Test durch den Menschen (Worktree: `.env` kopieren, Dev-DB migrieren, Server
+- [x] 3.2 App-Test durch den Menschen (Worktree: `.env` kopieren, Dev-DB migrieren, Server
       und Vite starten): Top-Bar sticky mit Gold-Haarlinie, Marke mittig in der Serif mit
       weitem Letter-Spacing, rechts Nutzername · Abmelden; Anmeldeformular ohne Konto und
       ohne Zurück; Sitzungsliste ohne Zurück, ohne „Angemeldet als"; Raum und Bibliothek mit
@@ -66,7 +66,7 @@
       unten mit echter Version `0.1.0` und dem Kurz-SHA des Worktree-Commits; Abmelden aus
       dem Raum heraus führt zum Anmeldeformular; Server stoppen → Hinweis erscheint oben
       im Inhaltsbereich
-- [ ] 3.3 Change nach `openspec/changes/archive/YYYY-MM-DD-add-app-shell/` verschieben
+- [x] 3.3 Change nach `openspec/changes/archive/YYYY-MM-DD-add-app-shell/` verschieben
       (Delta in `openspec/specs/ui-shell/` (neu) sowie die MODIFIED-Blöcke in
       `user-auth`, `game-session` und `map-library` einsynchronisieren) und PR mit
       `Closes #84` öffnen (constitution.md §3.6)

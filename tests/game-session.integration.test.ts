@@ -238,10 +238,17 @@ test('Geschlossene Spielsitzung und unbekannter Code sind nicht unterscheidbar',
   const geschlossen = await post(app, '/api/sessions/join', { code: 'ABC234' }, spieler.sid)
   const unbekannt = await post(app, '/api/sessions/join', { code: 'ZZZ999' }, spieler.sid)
 
+  const MELDUNG = 'Sitzungscode prüfen und ob die Spielleitung die Sitzung geöffnet hat.'
   expect(geschlossen.statusCode).toBe(404)
   expect(unbekannt.statusCode).toBe(404)
   expect(unbekannt.statusCode).toBe(geschlossen.statusCode)
   expect(bodyOf(unbekannt).message).toBe(bodyOf(geschlossen).message)
+  // add-ui-form (#90): die identische Meldung nennt die Handlung, nicht den Grund, und traegt
+  // `field` gleich `code`, damit der Client sie am Feld `Sitzungscode` zeigen kann.
+  expect(bodyOf(geschlossen).message).toBe(MELDUNG)
+  expect(bodyOf(unbekannt).message).toBe(MELDUNG)
+  expect(bodyOf(geschlossen).field).toBe('code')
+  expect(bodyOf(unbekannt).field).toBe('code')
   expect(await db().membership.count({ where: { userId: spieler.userId } })).toBe(0)
 })
 

@@ -428,21 +428,27 @@ export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomPr
       })
   }
 
-  const handleTokenCreate = (input: Omit<CreateTokenInput, 'sessionId'>) => {
+  // ui-form (#90, design.md D7): das Formular `Tokens` wartet auf das Acknowledgement -
+  // ohne Socket `Promise.resolve(false)`, sonst wird `ack.ok` (bestaetigend/ablehnend)
+  // durchgereicht, damit das Panel `Name` nur nach einem bestaetigenden Acknowledgement
+  // leert.
+  const handleTokenCreate = (input: Omit<CreateTokenInput, 'sessionId'>): Promise<boolean> => {
     const socket = socketRef.current
     if (!socket) {
-      return
+      return Promise.resolve(false)
     }
-    socket
+    return socket
       .createToken(sessionId, input)
       .then((ack) => {
         setTokenError(ack.ok ? null : ack.message)
         if (ack.ok) {
           push(t('toast.tokenCreated'))
         }
+        return ack.ok
       })
       .catch((error: unknown) => {
         console.error(error)
+        return false
       })
   }
 

@@ -6,23 +6,21 @@
 // Geprueft wird, *was* die Anwendung anbietet, anfordert und anzeigt — nicht, wie es aussieht
 // (AGENTS.md: Rendering nimmt der menschliche App-Test ab). `fetch` ist gemockt (Antworten nach
 // Pfad und Methode; PUT-Body und Content-Type werden festgehalten). Die PixiJS-Fassade
-// ist per Modul-Mock ersetzt — kein Test importiert `pixi.js` (design.md D8/D10). Der Mock
-// trifft den *aufloesbaren* Modulschluessel `../src/client/map/canvas.js` mit `.js`-Endung,
-// so wie `MapCanvas` die Fassade importiert (der `moduleNameMapper` loest ihn auf die
-// `.ts`-Datei auf); ein virtueller Mock unter einem anderen Schluessel greift nicht, sobald
-// `canvas.ts` existiert (design.md D10). Der Einstieg laeuft ueber die gerenderte `App`.
+// ist per Modul-Mock ersetzt — kein Test importiert `pixi.js` (design.md D8/D10).
 //
-// add-ui-dialog (#89, MODIFIED map-library): Das Loeschen laeuft jetzt ueber den
-// Bestaetigungsdialog von `ui-dialog` statt ueber einen Zwei-Klick-Knopf. „Löschen nach
-// Bestätigung" prueft daher den `alertdialog` (Titel `Karte „Taverne" löschen?`, Beschreibung,
-// bestaetigende Schaltflaeche `Löschen` mit Klasse `danger`) und sendet `DELETE` erst nach
-// dessen Bestaetigung; „Abgebrochenes Löschen sendet nichts" ist neu. Beide adressieren die
-// bestaetigende Schaltflaeche NUR innerhalb des Dialogs (`within`), weil die Kartenansicht
-// ebenfalls eine Schaltflaeche `Löschen` traegt (design.md D9). Die uebrigen Szenarien bleiben.
+// add-ui-dialog (#89, MODIFIED map-library): Das Loeschen laeuft ueber den Bestaetigungsdialog
+// von `ui-dialog`.
 //
-// Rote Phase: `App` ist noch nicht vom `ConfirmProvider` umschlossen und `MapLibrary` oeffnet
-// noch keinen Dialog (Zwei-Klick-Knopf `Wirklich löschen`). Die beiden Dialog-Szenarien
-// scheitern daher am fehlenden `alertdialog` — der erwartete rote Grund (constitution.md §3.1).
+// add-ui-form (#90, MODIFIED map-library): Das Formular „Neue Karte" folgt dem Formularmuster
+// von `ui-form` (design.md D6): `Anlegen` ist gesperrt, solange `CreateMapInputSchema` den
+// Zustand nicht akzeptiert; eine Ablehnung von `POST /api/maps` mit `field` gleich `name`
+// erscheint als Feldfehler des Feldes `Name`, eine Upload-Ablehnung als Formularfehler.
+// „Einstieg aus der Sitzungsliste" bekommt die Sperr-Assertion (Name leer → `Anlegen`
+// gesperrt), „Abgelehntes Anlegen zeigt den Fehler am Namen" ist neu.
+//
+// Rote Phase: das Formular „Neue Karte" traegt noch keine gesperrte Absende-Schaltflaeche aus
+// dem Schema und keinen Feldfehler nach dem Formularmuster — die Szenarien scheitern an der
+// erwarteten Assertion (constitution.md §3.1), kein Lade- oder Typfehler.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
@@ -72,6 +70,13 @@ function antwort(status: number, body: unknown): Response {
 
 function urlOf(input: RequestInfo | URL): string {
   return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+}
+
+/** Der Feldfehler eines Steuerelements: das `role="alert"`-Element, auf das `aria-describedby`
+ * zeigt (design.md D11). */
+function feldFehlerVon(control: HTMLElement): HTMLElement | null {
+  const id = control.getAttribute('aria-describedby')
+  return id ? document.getElementById(id) : null
 }
 
 function installFetch(routes: Route[]): void {
@@ -162,6 +167,8 @@ test('Einstieg aus der Sitzungsliste', async () => {
 
   expect(screen.getByText(/neue karte/i)).toBeTruthy()
   expect(calls.some((c) => c.method === 'GET' && c.url.includes('/api/maps'))).toBe(true)
+  // MODIFIED (#90): `Anlegen` ist gesperrt, solange `Name` leer ist.
+  expect((screen.getByRole('button', { name: 'Anlegen' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
 test('Liste zeigt eigene Karten mit Bildstatus', async () => {
@@ -210,7 +217,7 @@ test('Neue Karte mit Bild anlegen', async () => {
   const fileInput = must(dateiFeld(container), 'das Dateifeld im Formular „Neue Karte"')
   const form = must(fileInput.closest('form'), 'das Formular „Neue Karte"')
   const nameFeld = must(
-    form.querySelector('input[name="name"], input#name, input[type="text"]') as HTMLInputElement | null,
+    form.querySelector('input[name="name"], input#name, input#map-name, input[type="text"]') as HTMLInputElement | null,
     'das Namensfeld',
   )
 
@@ -232,6 +239,35 @@ test('Neue Karte mit Bild anlegen', async () => {
   expect(putCall.rawBody).toBe(datei)
 
   await waitFor(() => expect(calls.filter((c) => c.method === 'GET' && c.url.includes('/api/maps')).length).toBeGreaterThanOrEqual(2))
+})
+
+test('Abgelehntes Anlegen zeigt den Fehler am Namen', async () => {
+  const MELDUNG = 'Der Name ist bereits vergeben.'
+  installFetch([
+    ...basis(),
+    { method: 'GET', match: (u) => u.includes('/api/maps'), make: () => antwort(200, []) },
+    { method: 'POST', match: (u) => u.endsWith('/api/maps'), make: () => antwort(400, { message: MELDUNG, field: 'name' }) },
+  ])
+
+  render(<App />)
+  await oeffneBibliothek()
+
+  const nameFeld = screen.getByLabelText('Name')
+  fireEvent.change(nameFeld, { target: { value: 'Krypta' } })
+  const form = must(nameFeld.closest('form'), 'das Formular „Neue Karte"')
+
+  await act(async () => {
+    fireEvent.submit(form)
+  })
+
+  // Der Fehler steht am Feld `Name`.
+  await waitFor(() => expect(nameFeld.getAttribute('aria-invalid')).toBe('true'))
+  const fehler = must(feldFehlerVon(nameFeld), 'ein Feldfehler am Feld „Name"')
+  expect(fehler.getAttribute('role')).toBe('alert')
+  expect(fehler.textContent).toContain(MELDUNG)
+  // Kein Bild-Upload, keine erneute Abfrage der Liste (nur der Einstiegs-GET).
+  expect(calls.some((c) => c.method === 'PUT' && /\/api\/maps\/.*\/image/.test(c.url))).toBe(false)
+  expect(calls.filter((c) => c.method === 'GET' && c.url.includes('/api/maps')).length).toBe(1)
 })
 
 test('Karte öffnen zeigt Kartenansicht und Rasterformular', async () => {

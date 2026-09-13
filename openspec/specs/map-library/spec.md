@@ -417,7 +417,11 @@ Anwendung MUST NOT einen zweiten Klick auf dieselbe Schaltfläche als Bestätigu
 
 Was die Kartenansicht zeigt, SHALL ausschließlich aus Antworten des Servers stammen — ein
 gespeichertes Raster wird mit dem Wert aus der Antwort gezeichnet, nicht mit der Eingabe
-(`constitution.md` §9.1). Ein vom Server gemeldeter Fehlschlag SHALL sichtbar sein. Beim
+(`constitution.md` §9.1). Ein vom Server gemeldeter Fehlschlag SHALL sichtbar sein. Das Formular „Neue Karte"
+SHALL dem Formularmuster von `ui-form` folgen: Felder `Name` (`name`) und `Bilddatei`,
+Absende-Schaltfläche `Anlegen`; gültig ist der Zustand, den `CreateMapInputSchema`
+akzeptiert; eine Ablehnung von `POST /api/maps` mit `field` gleich `name` erscheint als
+Feldfehler des Feldes `Name`, eine Ablehnung des Bild-Uploads als Formularfehler. Beim
 Verlassen der Kartenansicht SHALL die Anwendung die Canvas-Ressourcen genau einmal freigeben.
 
 #### Scenario: Einstieg aus der Sitzungsliste
@@ -425,7 +429,8 @@ Verlassen der Kartenansicht SHALL die Anwendung die Canvas-Ressourcen genau einm
 - **GIVEN** ein angemeldeter Nutzer sieht die Sitzungsliste
 - **WHEN** er „Kartenbibliothek" wählt
 - **THEN** zeigt die Anwendung die Bibliothek mit dem Formular „Neue Karte" und hat die
-  Kartenliste vom Server abgefragt
+  Kartenliste vom Server abgefragt; die Schaltfläche `Anlegen` ist gesperrt, solange `Name`
+  leer ist
 
 #### Scenario: Liste zeigt eigene Karten mit Bildstatus
 
@@ -441,6 +446,15 @@ Verlassen der Kartenansicht SHALL die Anwendung die Canvas-Ressourcen genau einm
 - **THEN** sendet die Anwendung `POST /api/maps` mit `{ "name": "Krypta" }`, danach
   `PUT /api/maps/<id>/image` mit `Content-Type: image/png` und der Datei als Body, und lädt
   danach die Liste neu
+
+#### Scenario: Abgelehntes Anlegen zeigt den Fehler am Namen
+
+- **GIVEN** die Bibliothek ist gerendert, und `POST /api/maps` antwortet mit `400`, einer
+  Meldung und `field` gleich `name`
+- **WHEN** der Nutzer den Namen „Krypta" eingibt und das Formular abschickt
+- **THEN** trägt das Feld `Name` `aria-invalid="true"` und verweist per `aria-describedby` auf ein
+  Element mit der Rolle `alert` und dieser Meldung, es wurde kein `PUT /api/maps/<id>/image` gesendet, und die
+  Kartenliste wurde nicht erneut abgefragt
 
 #### Scenario: Karte öffnen zeigt Kartenansicht und Rasterformular
 

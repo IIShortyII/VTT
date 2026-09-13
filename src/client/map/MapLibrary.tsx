@@ -1,8 +1,9 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 
-import { DEFAULT_GRID, GRID_TYPES, IMAGE_MIME_TYPES, type Grid, type GridType, type MapSummary } from '../../shared/map.js'
+import { CreateMapInputSchema, DEFAULT_GRID, GRID_TYPES, IMAGE_MIME_TYPES, type Grid, type GridType, type MapSummary } from '../../shared/map.js'
 import { useT } from '../i18n/locale.js'
 import { useConfirm } from '../ui/confirm.js'
+import { Field, SubmitButton } from '../ui/form.js'
 import { createMap, deleteMap, listMaps, mapImageUrl, updateMap, uploadMapImage } from './api.js'
 import { MapCanvas } from './MapCanvas.js'
 
@@ -18,6 +19,11 @@ import { MapCanvas } from './MapCanvas.js'
 // nach, statt den Zwei-Klick-Zustand zu halten - `confirmingDelete`/`handleDeleteClick`
 // entfallen. Nur die drei `map.delete.*`-Schluessel laufen ueber `useT()`; alle uebrigen
 // Rohstrings dieser Datei bleiben bis Epic C (#87-Entscheidung).
+// ui-form (#90, design.md D6): nur das Formular "Neue Karte" folgt dem Formularmuster -
+// `createError` weicht `createFieldErrors`/`createFormError`, `creating` ist `pending`.
+// Ablehnung von `createMap` mit `field` `name` -> Feldfehler; Ablehnung von `uploadMapImage`
+// und `catch` -> Formularfehler (`GENERIC_CREATE_ERROR_MESSAGE` bleibt). Das Rasterformular der
+// Kartenansicht bleibt unveraendert (Epic C).
 
 type LibraryView = { view: 'liste' } | { view: 'detail'; mapId: string }
 
@@ -42,7 +48,8 @@ export function MapLibrary() {
 
   const [name, setName] = useState('')
   const [file, setFile] = useState<File | null>(null)
-  const [createError, setCreateError] = useState<string | null>(null)
+  const [createFieldErrors, setCreateFieldErrors] = useState<{ name?: string }>({})
+  const [createFormError, setCreateFormError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
   const [current, setCurrent] = useState<MapSummary | null>(null)
@@ -55,6 +62,8 @@ export function MapLibrary() {
   const [draftSize, setDraftSize] = useState<number>(DEFAULT_GRID.size)
   const [draftOffsetX, setDraftOffsetX] = useState<number>(DEFAULT_GRID.offsetX)
   const [draftOffsetY, setDraftOffsetY] = useState<number>(DEFAULT_GRID.offsetY)
+
+  const createValid = CreateMapInputSchema.safeParse({ name }).success
 
   const reload = async () => {
     const result = await listMaps()
@@ -96,18 +105,26 @@ export function MapLibrary() {
 
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (!createValid || creating) {
+      return
+    }
     setCreating(true)
-    setCreateError(null)
+    setCreateFieldErrors({})
+    setCreateFormError(null)
     try {
       const result = await createMap({ name })
       if (!result.ok) {
-        setCreateError(result.message)
+        if (result.field === 'name') {
+          setCreateFieldErrors({ name: result.message })
+        } else {
+          setCreateFormError(result.message)
+        }
         return
       }
       if (file) {
         const uploadResult = await uploadMapImage(result.map.id, file)
         if (!uploadResult.ok) {
-          setCreateError(uploadResult.message)
+          setCreateFormError(uploadResult.message)
         }
       }
       setName('')
@@ -115,7 +132,7 @@ export function MapLibrary() {
       await reload()
     } catch (error) {
       console.error(error)
-      setCreateError(GENERIC_CREATE_ERROR_MESSAGE)
+      setCreateFormError(GENERIC_CREATE_ERROR_MESSAGE)
     } finally {
       setCreating(false)
     }
@@ -306,21 +323,28 @@ export function MapLibrary() {
         ))}
       </ul>
 
-      <form onSubmit={(event) => void handleCreate(event)}>
+      <form className="form-grid" onSubmit={(event) => void handleCreate(event)}>
         <h2>Neue Karte</h2>
-        <label htmlFor="map-name">Name</label>
-        <input id="map-name" name="name" type="text" value={name} onChange={(event) => setName(event.target.value)} required />
-        <label htmlFor="map-file">Bilddatei</label>
-        <input
-          id="map-file"
-          type="file"
-          accept={IMAGE_ACCEPT}
-          onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-        />
-        {createError !== null && <p role="alert">{createError}</p>}
-        <button type="submit" disabled={creating}>
-          Anlegen
-        </button>
+        <Field id="map-name" label="Name" error={createFieldErrors.name ?? null}>
+          {(control) => (
+            <input {...control} name="name" type="text" value={name} onChange={(event) => setName(event.target.value)} required />
+          )}
+        </Field>
+        <Field id="map-file" label="Bilddatei">
+          {(control) => (
+            <input {...control} type="file" accept={IMAGE_ACCEPT} onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+          )}
+        </Field>
+        {createFormError !== null && (
+          <p className="form-error" role="alert">
+            {createFormError}
+          </p>
+        )}
+        <div className="form-actions">
+          <SubmitButton pending={creating} disabled={!createValid}>
+            Anlegen
+          </SubmitButton>
+        </div>
       </form>
     </div>
   )

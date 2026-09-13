@@ -165,7 +165,8 @@ Servers (`constitution.md` §9.1).
 
 Die Startansicht SHALL die geladenen Spielsitzungen als Karten in der Sitzungsliste zeigen.
 Jede Karte SHALL den Namen als Überschrift, die Zustandspille mit Text und Icon nach der
-Zuordnungstabelle, die Rolle mit Text und Icon sowie die Schaltfläche `Betreten` enthalten.
+Zuordnungstabelle, die Rolle mit Text und Icon sowie die Schaltfläche `Betreten` enthalten;
+Pillentext, Rollentext und `Betreten` sind Texte der aktiven Sprache (`ui-text`).
 Text, Varianten-Klasse und Icon der Pille sowie die Rolle SHALL ausschließlich aus `status`
 und `role` der Serverantwort abgeleitet werden (`constitution.md` §9.1). `Betreten` SHALL
 den Raum dieser Spielsitzung öffnen.
@@ -196,10 +197,12 @@ den Raum dieser Spielsitzung öffnen.
 #### Scenario: Betreten öffnet den Raum der Karte
 
 - **GIVEN** die Sitzungsliste zeigt die Karten `Freitagsrunde` (`id: "s1"`) und
-  `Sonntagsrunde` (`id: "s2"`)
+  `Sonntagsrunde` (`id: "s2"`), und das Acknowledgement von `session:enter` bestätigt
+  `Sonntagsrunde` mit `status: "geoeffnet"`
 - **WHEN** der Nutzer `Betreten` innerhalb der Karte `Sonntagsrunde` auslöst
 - **THEN** sendet die Anwendung `session:enter` mit der `sessionId` `s2`, und die
-  Raumansicht ist gerendert
+  Raumansicht ist gerendert (Überschrift der Ebene 1 `Sonntagsrunde`, Zustandspille
+  `Geöffnet`)
 
 ### Requirement: Leerzustand
 

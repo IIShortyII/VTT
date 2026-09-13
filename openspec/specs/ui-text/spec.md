@@ -143,8 +143,11 @@ Schaltfläche der aktiven Sprache SHALL `disabled` sein und `aria-current="true"
 Schaltfläche der anderen Sprache SHALL auslösbar sein und MUST NOT `aria-current` tragen.
 Das Auslösen SHALL die aktive Sprache setzen („Sprachwahl"). Die sichtbaren Texte der
 angemeldeten Startansicht und der Raumansicht (Zustandspille, Übergangs-Verben, Konto,
-`Zurück`) SHALL der aktiven Sprache folgen; Nutzername, Sitzungsname, Sitzungscode und die
-Marke `VTT` sind Daten bzw. Eigennamen und MUST NOT übersetzt werden.
+Kontomenü, Sitzungscode-Popover, `Zurück`) SHALL der aktiven Sprache folgen; Nutzername,
+Sitzungsname, Sitzungscode und die Marke `VTT` sind Daten bzw. Eigennamen und MUST NOT
+übersetzt werden. Die Abmeldung liegt im Kontomenü (`ui-shell`, „Top-Bar") und der
+Sitzungscode hinter der Maske (`ui-menu`, „Popover"); beide sind erst nach dem Öffnen des
+jeweiligen Menüs bzw. Popovers sichtbar.
 
 #### Scenario: Schalter zeigt die aktive Sprache
 
@@ -168,13 +171,16 @@ Marke `VTT` sind Daten bzw. Eigennamen und MUST NOT übersetzt werden.
 - **GIVEN** der Server meldet einen angemeldeten Nutzer mit dem Nutzernamen `Gandalf`, und
   `GET /api/sessions` liefert `Freitagsrunde` (`status: "gestartet"`, `role: "spielleiter"`);
   die Anwendung ist gerendert und zeigt die Schaltfläche `Sitzung leiten`
-- **WHEN** der Nutzer die Schaltfläche `English` in der Top-Bar auslöst
+- **WHEN** der Nutzer die Schaltfläche `English` in der Top-Bar auslöst und danach die
+  Menü-Schaltfläche `Gandalf` im `<header>` auslöst
 - **THEN** zeigt sie die Überschrift der Ebene 1 `My game sessions`, die Schaltflächen
-  `Run a session`, `Join`, `Map library` und `Log out`, die Liste `My game sessions` mit
+  `Run a session`, `Join` und `Map library`, die Liste `My game sessions` mit
   einem Eintrag, der die Überschrift `Freitagsrunde`, den Text `Running`, den Text
-  `Game master` und die Schaltfläche `Enter` enthält, den Text `Gandalf` im `<header>` und
-  den Text `Version 0.0.0-dev · Build dev` im `<footer>`; es gibt weder eine Schaltfläche
-  `Sitzung leiten` noch den Text `Läuft`
+  `Game master` und die Schaltfläche `Enter` enthält, die Menü-Schaltfläche `Gandalf` im
+  `<header>`, ein Menü `Gandalf` mit den Einträgen `Change password` und `Log out` in dieser
+  Reihenfolge und den Text `Version 0.0.0-dev · Build dev` im `<footer>`; es gibt weder eine
+  Schaltfläche `Sitzung leiten` oder `Log out` noch einen Menüeintrag `Abmelden` noch den
+  Text `Läuft`
 
 #### Scenario: Raumansicht unter Englisch
 
@@ -182,12 +188,14 @@ Marke `VTT` sind Daten bzw. Eigennamen und MUST NOT übersetzt werden.
   einen angemeldeten Nutzer, `GET /api/sessions` liefert `Freitagsrunde`
   (`status: "geoeffnet"`, `role: "spielleiter"`), und das Acknowledgement von
   `session:enter` nennt `role: "spielleiter"`, `status: "geoeffnet"` und `code: "ABC234"`
-- **WHEN** der Nutzer die Schaltfläche `Enter` der Karte auslöst und die Raumansicht
-  gerendert ist (Überschrift der Ebene 1 `Freitagsrunde`)
+- **WHEN** der Nutzer die Schaltfläche `Enter` der Karte auslöst, die Raumansicht
+  gerendert ist (Überschrift der Ebene 1 `Freitagsrunde`) und er die Schaltfläche
+  `Show session code` auslöst
 - **THEN** zeigt das `<header>` die Schaltfläche `Back` und die Gruppe `Language`, die
-  Raumansicht zeigt die Zustandspille `Open` (Klasse `status-pill`), den Code `ABC234` und
-  die Schaltflächen `Start` und `End`; es gibt keine Schaltfläche `Zurück`, `Starten` oder
-  `Beenden` und keinen Text `Geöffnet`
+  Raumansicht zeigt die Zustandspille `Open` (Klasse `status-pill`), die Maske `••••••`,
+  einen Popover `Session code` mit dem Text `ABC234` und der Schaltfläche `Copy` sowie
+  die Schaltflächen `Start` und `End`; es gibt keine Schaltfläche `Zurück`, `Starten`,
+  `Beenden`, `Sitzungscode anzeigen` oder `Kopieren` und keinen Text `Geöffnet`
 
 ### Requirement: Stylesheet des Sprachschalters
 

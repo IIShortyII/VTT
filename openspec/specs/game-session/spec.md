@@ -425,8 +425,7 @@ Die Anwendung SHALL einem angemeldeten Nutzer seine Spielsitzungen mit Rolle und
 als Karten zeigen (`ui-start`, „Sitzungskarten") sowie das Erstellen (Name) und das
 Beitreten (Code) als Aktionen anbieten, deren Formulare erst auf Anforderung erscheinen
 (`ui-start`, „Erstellen und Beitreten auf Anforderung"); die Passwortänderung aus
-`user-auth` bleibt in der Startansicht erreichbar, das Abmelden liegt in der Top-Bar der
-App-Shell (`ui-shell`). Die Rückkehr aus Raum und Kartenbibliothek zur Sitzungsliste SHALL
+`user-auth` und das Abmelden liegen im Kontomenü der Top-Bar der App-Shell (`ui-shell`). Die Rückkehr aus Raum und Kartenbibliothek zur Sitzungsliste SHALL
 ausschließlich über die Top-Bar erfolgen; Raum und Bibliothek MUST NOT eine eigene
 Schaltfläche dafür zeigen. Nach Auswahl einer Spielsitzung SHALL die Raumansicht deren
 Namen als Überschrift der Ebene 1, den Zustand als Zustandspille nach der
@@ -442,11 +441,15 @@ Servers SHALL als Meldung sichtbar sein. Dem Spielleiter SHALL sie zusätzlich d
 Sitzungscode und die im aktuellen Zustand erlaubten Übergänge als Schaltflächen anbieten,
 beschriftet mit dem Verb der Aktion in der aktiven Sprache (`ui-text`: `Öffnen`, `Starten`,
 `Pausieren`, `Beenden`), nie mit dem Aktionsnamen des Vertrags (`oeffnen`, `starten`,
-`pausieren`, `beenden`). Neben dem Sitzungscode SHALL sie dem Spielleiter eine Schaltfläche
-`Kopieren` (Text der aktiven Sprache, `ui-text`) anbieten, die den Code in die Zwischenablage
-legt; gelingt das, SHALL die Anwendung den Toast `Sitzungscode kopiert` auslösen
-(`ui-feedback`), scheitert es, MUST NOT ein Toast erscheinen. Einem Spieler MUST NOT sie
-Code, Schaltfläche `Kopieren` oder Steuerung zeigen. Der angezeigte Zustand SHALL dem
+`pausieren`, `beenden`). Der Sitzungscode SHALL maskiert
+stehen — `Code:` gefolgt von so vielen `•` wie der Code Zeichen hat — mit einem Icon-only-
+Trigger `Sitzungscode anzeigen` (`ui-menu`, Icon `info`), der einen Popover `Sitzungscode`
+öffnet; der Popover zeigt den Code im Klartext und eine Schaltfläche `Kopieren` (Text der
+aktiven Sprache, `ui-text`), die den Code in die Zwischenablage legt; gelingt das, SHALL die
+Anwendung den Toast `Sitzungscode kopiert` auslösen (`ui-feedback`), scheitert es, MUST NOT
+ein Toast erscheinen; der Popover bleibt danach offen. Außerhalb des Popovers MUST NOT der
+Klartext des Codes stehen. Einem Spieler MUST NOT sie Maske, Trigger, Popover oder
+Steuerung zeigen. Der angezeigte Zustand SHALL dem
 zuletzt vom Server gemeldeten folgen (`constitution.md` §9.1), nicht der zuletzt geklickten
 Schaltfläche.
 
@@ -493,7 +496,8 @@ Sitzungsende-Dialog erscheinen.
   `role: "spielleiter"`, `status: "geoeffnet"`, `code: "ABC234"` und zwei Teilnehmer, einen
   mit `online: true`, einen mit `online: false`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** zeigt sie den Code `ABC234` mit einer Schaltfläche `Kopieren`, die Zustandspille `Geöffnet`
+- **THEN** zeigt sie die Maske `••••••` mit dem Trigger `Sitzungscode anzeigen`, keinen Textknoten
+  `ABC234`, die Zustandspille `Geöffnet`
   (Klasse `status-pill`), beide Teilnehmer mit unterscheidbarem Anwesenheitskennzeichen sowie
   die Schaltflächen `Starten` und `Beenden`, aber keine Schaltfläche `Öffnen` oder `Pausieren`; kein Textknoten lautet
   `geoeffnet`, `starten` oder `beenden`
@@ -504,24 +508,27 @@ Sitzungsende-Dialog erscheinen.
   `role: "spieler"`, `status: "gestartet"` und kein Feld `code`
 - **WHEN** die Raumansicht gerendert wird
 - **THEN** zeigt sie den Namen als Überschrift der Ebene 1, die Zustandspille `Läuft` mit der
-  Klasse `status-pill--active` und die Teilnehmerliste, aber keinen Sitzungscode und keine Schaltfläche `Kopieren`,
+  Klasse `status-pill--active` und die Teilnehmerliste, aber weder die Maske `••••••` noch einen Trigger `Sitzungscode anzeigen` noch eine
+  Schaltfläche `Kopieren`,
   `Öffnen`, `Starten`, `Pausieren` oder `Beenden`; kein Textknoten lautet `gestartet`
 
 #### Scenario: Sitzungscode wird kopiert
 
-- **GIVEN** die Raumansicht des Spielleiters zeigt den Code `ABC234`, und die Zwischenablage
-  des Browsers bestätigt das Schreiben
+- **GIVEN** die Raumansicht des Spielleiters (Code `ABC234`) ist gerendert, der Popover
+  `Sitzungscode` ist über den Trigger `Sitzungscode anzeigen` geöffnet und zeigt `ABC234`,
+  und die Zwischenablage des Browsers bestätigt das Schreiben
 - **WHEN** die Schaltfläche `Kopieren` ausgelöst wird
 - **THEN** wurde genau der Text `ABC234` in die Zwischenablage geschrieben, und der
-  Toast-Host (`ui-feedback`) zeigt einen Toast `Sitzungscode kopiert`
+  Toast-Host (`ui-feedback`) zeigt einen Toast `Sitzungscode kopiert`; der Popover ist
+  weiterhin geöffnet
 
 #### Scenario: Gescheitertes Kopieren zeigt keinen Toast
 
-- **GIVEN** die Raumansicht des Spielleiters zeigt den Code `ABC234`, und die Zwischenablage
-  des Browsers lehnt das Schreiben ab
+- **GIVEN** die Raumansicht des Spielleiters (Code `ABC234`) ist gerendert, der Popover
+  `Sitzungscode` ist über den Trigger `Sitzungscode anzeigen` geöffnet und zeigt `ABC234`,
+  und die Zwischenablage des Browsers lehnt das Schreiben ab
 - **WHEN** die Schaltfläche `Kopieren` ausgelöst wird
-- **THEN** zeigt der Toast-Host keinen Toast, und die Raumansicht bleibt mit dem Code
-  `ABC234` gerendert
+- **THEN** zeigt der Toast-Host keinen Toast, und der Popover zeigt weiterhin `ABC234`
 
 #### Scenario: Zustand folgt dem Server
 
@@ -632,6 +639,15 @@ Sitzungsende-Dialog erscheinen.
   Millisekunden vergehen
 - **THEN** zeigt sie die Sitzungsliste (Schaltfläche `Sitzung leiten`) mit genau einem
   Element der Rolle `alert`, dessen Text `Die Spielsitzung wurde beendet.` lautet
+
+#### Scenario: Sitzungscode-Popover zeigt den Klartext
+
+- **GIVEN** die Raumansicht des Spielleiters (Code `ABC234`) ist gerendert
+- **WHEN** er den Trigger `Sitzungscode anzeigen` auslöst
+- **THEN** existiert ein Element der Rolle `dialog` mit dem Namen `Sitzungscode`, das den
+  Text `ABC234` und eine Schaltfläche `Kopieren` enthält und den Fokus hat; der Trigger
+  trägt `aria-expanded="true"`; nach `Escape` auf dem Popover existiert kein Element der
+  Rolle `dialog` mehr, und der Trigger hat den Fokus
 
 ### Requirement: Alias pro Mitgliedschaft
 

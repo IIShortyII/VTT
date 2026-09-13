@@ -52,11 +52,16 @@ Dokument ist und beim Erscheinen den Fokus erhält; ihr Auslösen SHALL zur Sitz
 führen. Das Chevron der Schaltfläche SHALL ein dekoratives Icon aus `ui-icons`
 (`<svg aria-hidden="true">`) sein, ihr zugänglicher Name bleibt `Zurück`. In der
 Startansicht MUST NOT eine Schaltfläche `Zurück` vorhanden sein. Für einen angemeldeten
-Nutzer SHALL die Top-Bar rechts den Nutzernamen und die Schaltfläche `Abmelden` zeigen;
-für einen nicht angemeldeten Besucher MUST NOT sie ein Konto zeigen. In jeder Ansicht —
+Nutzer SHALL die Top-Bar rechts das Kontomenü zeigen: eine Menü-Schaltfläche (`ui-menu`,
+Variante `text`) mit dem Nutzernamen als Namen, deren Menü die Einträge `Passwort ändern`
+(Icon `lock`) und `Abmelden` (Icon `logout`) enthält; `Passwort ändern` öffnet das Modal der
+Passwortänderung (`user-auth`). Außerhalb eines geöffneten Kontomenüs MUST NOT eine
+Schaltfläche oder ein Menüeintrag `Abmelden` existieren; für einen nicht angemeldeten
+Besucher MUST NOT sie ein Konto zeigen. In jeder Ansicht —
 auch für einen nicht angemeldeten Besucher — SHALL die Top-Bar rechts, neben dem Konto,
 den Sprachschalter aus `ui-text` zeigen (Gruppe `Sprache`, Schaltflächen `Deutsch` und
-`English`); `Zurück` und `Abmelden` SHALL Texte der aktiven Sprache sein. `Abmelden` SHALL die
+`English`); `Zurück`, `Passwort ändern` und `Abmelden` SHALL Texte der
+aktiven Sprache sein. `Abmelden` SHALL die
 Abmeldung aus `user-auth` auslösen; der Wechsel in den anonymen Zustand folgt der
 Bestätigung des Servers (`constitution.md` §9.1), nicht dem Klick. Die angemeldete
 Startansicht ist an der Schaltfläche `Sitzung leiten` erkennbar (`ui-start`).
@@ -66,8 +71,9 @@ Startansicht ist an der Schaltfläche `Sitzung leiten` erkennbar (`ui-start`).
 - **GIVEN** der Server meldet einen angemeldeten Nutzer mit dem Nutzernamen `Gandalf`, und
   `GET /api/sessions` liefert eine leere Liste
 - **WHEN** die Anwendung gerendert wird und die Schaltfläche `Sitzung leiten` erschienen ist
-- **THEN** enthält das `<header>` den Text `VTT`, den Text `Gandalf` und eine Schaltfläche
-  `Abmelden`, und es gibt im Dokument keine Schaltfläche `Zurück`
+- **THEN** enthält das `<header>` den Text `VTT` und eine Schaltfläche `Gandalf` mit
+  `aria-haspopup="menu"`, es gibt im Dokument keine Schaltfläche `Abmelden` und keine
+  Schaltfläche `Zurück`
 
 #### Scenario: Anonyme Ansicht zeigt nur die Marke
 
@@ -105,9 +111,19 @@ Startansicht ist an der Schaltfläche `Sitzung leiten` erkennbar (`ui-start`).
 
 - **GIVEN** der Server meldet einen angemeldeten Nutzer, und `POST /api/auth/logout` wird
   vom Server bestätigt; die Sitzungsliste ist erschienen (Schaltfläche `Sitzung leiten`)
-- **WHEN** der Nutzer die Schaltfläche `Abmelden` in der Top-Bar auslöst
+- **WHEN** der Nutzer die Menü-Schaltfläche mit seinem Nutzernamen in der Top-Bar auslöst und
+  den Menüeintrag `Abmelden` wählt
 - **THEN** zeigt die Anwendung das Anmeldeformular, und das `<header>` enthält weder den
   Nutzernamen noch eine Schaltfläche `Abmelden`
+
+#### Scenario: Kontomenü bietet Passwortänderung und Abmelden
+
+- **GIVEN** der Server meldet einen angemeldeten Nutzer mit dem Nutzernamen `Gandalf`, und
+  die Sitzungsliste ist erschienen (Schaltfläche `Sitzung leiten`)
+- **WHEN** der Nutzer die Schaltfläche `Gandalf` im `<header>` auslöst
+- **THEN** existiert ein Element der Rolle `menu` mit dem Namen `Gandalf` und darin genau
+  zwei Elemente der Rolle `menuitem` mit den Namen `Passwort ändern` und `Abmelden` in
+  dieser Reihenfolge, keines gesperrt, und `Passwort ändern` hat den Fokus
 
 ### Requirement: Inhaltsbereich und Footer
 

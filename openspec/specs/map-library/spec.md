@@ -411,7 +411,15 @@ Ladefehler weder Liste noch Leerzustand), das
 Anlegen einer Karte mit Namen und Bilddatei in einem Schritt erlauben (Karte anlegen, dann
 Bild hochladen), und eine Karte zur Bearbeitung öffnen: Kartenansicht mit Bild und Raster,
 Formular für Name und Raster, Bild ersetzen, Löschen nach Bestätigung, Zurück zur Liste.
-Die Bestätigung SHALL über den Bestätigungsdialog von `ui-dialog` laufen: `Löschen` öffnet
+Jede Karte der
+Liste SHALL neben der Schaltfläche mit ihrem Namen einen ⋮-Trigger `Aktionen für <Name>`
+(`ui-menu`) tragen, der — wie ein Rechtsklick auf die Zeile — das Menü
+`Aktionen für <Name>` mit `Öffnen` (Icon `map`) und `Löschen` (Icon `delete`, gefährlich)
+öffnet; `Öffnen` öffnet die Karte zur Bearbeitung, `Löschen` läuft über denselben
+Bestätigungsdialog wie in der Detailansicht und sendet nach Bestätigung
+`DELETE /api/maps/<id>`, danach wird die Liste neu geladen; eine Ablehnung SHALL in der
+Liste als Meldung sichtbar sein. Die Bestätigung SHALL über den Bestätigungsdialog von
+`ui-dialog` laufen: `Löschen` öffnet
 einen `alertdialog` mit dem Titel `Karte „<Name>" löschen?` (`ui-text`, `map.delete.title`),
 der Beschreibung `Die Karte wird aus der Bibliothek entfernt und kann nicht wiederhergestellt
 werden.` und der bestätigenden Schaltfläche `Löschen` (Klasse `danger`); erst dessen
@@ -516,3 +524,30 @@ Verlassen der Kartenansicht SHALL die Anwendung die Canvas-Ressourcen genau einm
   `empty-state` mit dem Titel `Noch keine Karten` und dem Hinweis
   `Lege eine Karte mit Namen und Bild an.`, kein Element der Rolle `listitem`, und weiterhin
   das Formular „Neue Karte"
+
+#### Scenario: Öffnen aus dem Menü der Liste
+
+- **GIVEN** die Bibliothek zeigt die Karte „Taverne" mit Bild und dem Raster `quadrat`, 70,
+  0, 0
+- **WHEN** der Nutzer das Menü `Aktionen für Taverne` über den Trigger öffnet und `Öffnen`
+  wählt
+- **THEN** erzeugt die Anwendung die Kartenansicht mit der Bild-URL `/api/maps/<id>/image`
+  und diesem Raster
+
+#### Scenario: Löschen aus der Liste nach Bestätigung
+
+- **GIVEN** die Bibliothek zeigt die Karte „Taverne", und `DELETE /api/maps/<id>` antwortet
+  mit `204`
+- **WHEN** der Nutzer im Menü `Aktionen für Taverne` den Eintrag `Löschen` wählt und im
+  `alertdialog` `Karte „Taverne" löschen?` die Schaltfläche `Löschen` auslöst
+- **THEN** hatte die Anwendung vor der Bestätigung kein `DELETE` gesendet, sendet danach
+  `DELETE /api/maps/<id>` und fragt die Kartenliste erneut ab; die Bibliothek zeigt weiterhin
+  die Liste, nicht die Detailansicht
+
+#### Scenario: Abgebrochenes Löschen aus der Liste sendet nichts
+
+- **GIVEN** die Bibliothek zeigt die Karte „Taverne"
+- **WHEN** der Nutzer im Menü `Aktionen für Taverne` den Eintrag `Löschen` wählt und im
+  `alertdialog` `Abbrechen` auslöst
+- **THEN** wurde kein `DELETE` gesendet, der Dialog ist geschlossen, und der Trigger
+  `Aktionen für Taverne` hat den Fokus

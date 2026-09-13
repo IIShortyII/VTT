@@ -404,7 +404,10 @@ oder übertragen.
 ### Requirement: Bibliotheksoberfläche
 
 Die angemeldete Ansicht SHALL aus der Sitzungsliste einen Wechsel zur Kartenbibliothek
-anbieten. Die Bibliothek SHALL die eigenen Karten mit Namen und Bildstatus auflisten, das
+anbieten. Die Bibliothek SHALL die eigenen Karten mit Namen und Bildstatus auflisten (ohne Karten
+statt der Liste den Leerzustand von `ui-status` mit dem Titel `Noch keine Karten` und dem
+Hinweis `Lege eine Karte mit Namen und Bild an.`; vor der ersten Antwort und bei einem
+Ladefehler weder Liste noch Leerzustand), das
 Anlegen einer Karte mit Namen und Bilddatei in einem Schritt erlauben (Karte anlegen, dann
 Bild hochladen), und eine Karte zur Bearbeitung öffnen: Kartenansicht mit Bild und Raster,
 Formular für Name und Raster, Bild ersetzen, Löschen nach Bestätigung, Zurück zur Liste.
@@ -504,3 +507,12 @@ Verlassen der Kartenansicht SHALL die Anwendung die Canvas-Ressourcen genau einm
 - **GIVEN** die Karte „Taverne" ist geöffnet
 - **WHEN** der Nutzer zur Liste zurückkehrt
 - **THEN** hat die Anwendung die Canvas-Ressourcen der Kartenansicht genau einmal freigegeben
+
+#### Scenario: Leere Bibliothek zeigt den Leerzustand
+
+- **GIVEN** der Server liefert eine leere Kartenliste
+- **WHEN** die Bibliothek gerendert wird und die Kartenliste geantwortet hat
+- **THEN** zeigt sie unter der Überschrift `Kartenbibliothek` einen Absatz der Klasse
+  `empty-state` mit dem Titel `Noch keine Karten` und dem Hinweis
+  `Lege eine Karte mit Namen und Bild an.`, kein Element der Rolle `listitem`, und weiterhin
+  das Formular „Neue Karte"

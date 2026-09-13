@@ -365,7 +365,9 @@ Der Spielleiter SHALL zusätzlich eine Token-Verwaltung sehen: ein Formular zum 
 `CreateTokenInputSchema` ohne `sessionId` den Zustand nicht akzeptiert oder das
 Acknowledgement aussteht; ein bestätigendes Acknowledgement leert das Feld `Name`, ein
 ablehnendes lässt es stehen) und
-eine Liste der Tokens mit „Entfernen", je Token einem Auswahlfeld `<Tokenname> zuweisen`,
+eine Liste der Tokens (ohne Tokens statt der Liste der Leerzustand von `ui-status` mit dem
+Titel `Noch keine Tokens` und dem Hinweis `Lege ein Token an, um es auf der Karte zu sehen.`)
+mit „Entfernen", je Token einem Auswahlfeld `<Tokenname> zuweisen`,
 dessen Einträge `Spielleiter` (kein Besitzer) und jedes Mitglied mit Rolle `spieler` unter
 seinem Anzeigenamen (Alias, sonst Nutzername) sind und dessen Wert der aktuellen Zuweisung
 folgt (eine Auswahl sendet `session:token-assign`), sowie je Token: fünf Zahlenfelder
@@ -390,7 +392,9 @@ Jede Rolle SHALL je Token die sichtbaren Werte als Text sehen: `HP <hp>/<hpMax>`
 <tempHp>`, `RK <ac>`, `Ini <initiative>` — jeweils nur, wenn der Wert nicht `null` ist —
 und die Markierungen als Text in gespeicherter Reihenfolge. Der Spielleiter sieht das in
 der Token-Verwaltung; ein Spieler sieht dafür eine Tokenliste mit der Überschrift
-`Tokenwerte`, die je Token den Namen und diese Texte zeigt. Spieler MUST NOT die Verwaltung
+`Tokenwerte`, die je Token den Namen und diese Texte zeigt — ohne Tokens statt der Liste
+den Leerzustand (`ui-status`) mit dem Titel `Noch keine Tokens` und dem Hinweis
+`Sobald die Spielleitung Tokens auf die Karte setzt, erscheinen sie hier.`. Spieler MUST NOT die Verwaltung
 sehen — weder Formular, Entfernen, Zuweisen, Wertefelder, Schaden/Heilung noch
 Markierungsbedienung. Ein abgelehntes Acknowledgement einer Token-Aktion (Anlegen, Bewegen,
 Entfernen, Zuweisen, Werte, Markierungen, Teilen) SHALL in der Raumansicht als Meldung
@@ -697,6 +701,25 @@ gerendert werden.
 - **WHEN** die Schaltfläche `Anlegen` angeklickt und das Formular abgeschickt wird
 - **THEN** ist die Schaltfläche `Anlegen` gesperrt, und die Socket-Fassade hat kein
   `createToken` gesendet
+
+#### Scenario: Leere Token-Verwaltung zeigt den Leerzustand
+
+- **GIVEN** ein Spielleiter im Raum mit aktiver Karte, und das Acknowledgement nennt
+  `tokens: []`
+- **WHEN** die Raumansicht gerendert ist
+- **THEN** zeigt die Token-Verwaltung (unter der Überschrift `Tokens`) einen Absatz der Klasse
+  `empty-state` mit dem Titel `Noch keine Tokens` und dem Hinweis
+  `Lege ein Token an, um es auf der Karte zu sehen.`, kein Element der Rolle `listitem`, und
+  weiterhin das Formular mit der Schaltfläche `Anlegen`
+
+#### Scenario: Leere Tokenwerte zeigen den Leerzustand
+
+- **GIVEN** ein Spieler im Raum mit aktiver Karte, und das Acknowledgement nennt `tokens: []`
+- **WHEN** die Raumansicht gerendert ist
+- **THEN** zeigt die Liste `Tokenwerte` (unter der Überschrift `Tokenwerte`) einen Absatz
+  der Klasse `empty-state` mit dem Titel `Noch keine Tokens` und dem Hinweis
+  `Sobald die Spielleitung Tokens auf die Karte setzt, erscheinen sie hier.`, und kein
+  Element der Rolle `listitem`
 
 ### Requirement: Token zuweisen
 

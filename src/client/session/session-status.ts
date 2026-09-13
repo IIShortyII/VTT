@@ -16,6 +16,9 @@ import type { IconName } from '../ui/icons.js'
 // nicht handeln soll, Titel und Subline des Karten-Overlays zu - nur `pausiert` und
 // `geoeffnet` tragen einen Eintrag, `gestartet` und `geschlossen` bleiben ohne (kein Overlay).
 // Das Icon kommt aus `SESSION_STATUS_PRESENTATION`, keine zweite Zuordnung.
+// session-bar (#93, design.md D4): `TRANSITION_ICONS` ordnet jeder Uebergangsaktion das Icon
+// ihrer Schaltflaeche in der Steuerung der Session-Bar zu - eine Tabelle wie `TRANSITION_LABELS`,
+// kein `if`.
 
 export interface StatusPresentation {
   label: TextKey
@@ -40,6 +43,13 @@ export const TRANSITION_LABELS: Record<TransitionAction, TextKey> = {
   starten: 'session.action.start',
   pausieren: 'session.action.pause',
   beenden: 'session.action.end',
+}
+
+export const TRANSITION_ICONS: Record<TransitionAction, IconName> = {
+  oeffnen: 'players',
+  starten: 'start',
+  pausieren: 'pause',
+  beenden: 'end',
 }
 
 export interface OverlayPresentation {

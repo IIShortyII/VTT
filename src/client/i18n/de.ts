@@ -12,6 +12,11 @@
 // Shell-Schluesseln, `session.showCode`, `session.code` bei den Sitzungsschluesseln,
 // `menu.*` und `token.*` als neue Gruppen vor `form.stillWorking`; `start.account.password`
 // entfaellt (das Kontomenue traegt den Nutzernamen als Namen, `ui-shell` "Top-Bar").
+//
+// session-bar (#93, design.md D8): `bar.*` als neue Gruppe nach `session.*`;
+// `menu.rename`/`menu.library`/`menu.leave` am Ende von `menu.*`; `session.rename.*`/
+// `session.end.*` bei den Sitzungsschluesseln; `toast.sessionRenamed` bei den Toasts;
+// `session.copyCode` entfaellt (die Session-Bar kopiert ueber `bar.copyCode`).
 
 export const de = {
   'shell.back': 'Zurück',
@@ -80,7 +85,6 @@ export const de = {
   'session.action.start': 'Starten',
   'session.action.pause': 'Pausieren',
   'session.action.end': 'Beenden',
-  'session.copyCode': 'Kopieren',
   'session.toList': 'Zur Übersicht',
   'session.ended.title': 'Sitzung beendet',
   'session.ended.message': 'Die Spielleitung hat die Sitzung beendet. Du wirst zur Übersicht geleitet.',
@@ -90,6 +94,19 @@ export const de = {
   'session.replaced.continue': 'Hier weiterspielen',
   'session.showCode': 'Sitzungscode anzeigen',
   'session.code': 'Sitzungscode',
+  'session.rename.title': 'Sitzung umbenennen',
+  'session.rename.name': 'Name',
+  'session.rename.submit': 'Umbenennen',
+  'session.rename.failed': 'Die Sitzung konnte nicht umbenannt werden. Bitte versuche es erneut.',
+  'session.end.title': 'Sitzung beenden?',
+  'session.end.message': 'Alle Spieler werden aus dem Raum entfernt.',
+  'session.end.confirm': 'Beenden',
+
+  'bar.label': 'Sitzung',
+  'bar.rename': 'Umbenennen',
+  'bar.copyCode': 'Sitzungscode kopieren',
+  'bar.transport': 'Steuerung',
+  'bar.settings': 'Sitzungsverwaltung',
 
   'toast.codeCopied': 'Sitzungscode kopiert',
   'toast.tokenCreated': 'Token angelegt',
@@ -97,6 +114,7 @@ export const de = {
   'toast.annotationRemoved': 'Anmerkung entfernt',
   'toast.annotationsRemoved': 'Anmerkungen entfernt',
   'toast.reconnected': 'Verbindung wiederhergestellt',
+  'toast.sessionRenamed': 'Sitzung umbenannt',
 
   'dialog.close': 'Schließen',
   'dialog.cancel': 'Abbrechen',
@@ -133,6 +151,9 @@ export const de = {
   'menu.unmount': 'Aushängen',
   'menu.open': 'Öffnen',
   'menu.delete': 'Löschen',
+  'menu.rename': 'Umbenennen…',
+  'menu.library': 'Kartenbibliothek',
+  'menu.leave': 'Verlassen',
 
   'token.assign.title': '{name} zuweisen',
   'token.assign.player': 'Spieler',

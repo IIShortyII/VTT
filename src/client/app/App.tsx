@@ -40,6 +40,8 @@ import { Hero } from './Hero.js'
 // ueber das Kontomenue der Shell (`AppShellProps.onChangePassword`) statt eines `<details>` in
 // der Sitzungsliste; `passwordOpen` steuert das Modal, `ChangePasswordForm.onSuccess` schliesst
 // es nach einem Erfolg.
+// session-bar (#93, design.md D6): `SessionRoom` bekommt `onOpenLibrary` - denselben Setter
+// wie `onOpenLibrary` der Sitzungsliste - fuer den Menueeintrag `Kartenbibliothek` der Bar.
 type AuthState = { status: 'unbekannt' } | { status: 'anonym' } | { status: 'angemeldet'; user: UserOutput }
 
 type AuthView = 'login' | 'register'
@@ -152,6 +154,7 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
             setSessionView({ view: 'liste' })
           }}
           onLeave={() => setSessionView({ view: 'liste' })}
+          onOpenLibrary={() => setSessionView({ view: 'bibliothek' })}
         />
       )
     } else if (sessionView.view === 'bibliothek') {

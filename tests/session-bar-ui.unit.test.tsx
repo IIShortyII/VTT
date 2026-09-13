@@ -133,10 +133,16 @@ async function betreten(): Promise<void> {
 }
 
 function meAndSessions(session: Record<string, unknown>): Array<{ pfad: string; antwort: Response }> {
+  // Reihenfolge zaehlt: `mockFetch` nimmt den ERSTEN Treffer (`url.includes`). Die
+  // Kartenverwaltung des Raums ruft `GET /api/sessions/<id>/maps` — diese spezifischere Route
+  // (und `/api/maps` der Bibliothek) stehen vor der allgemeinen `/api/sessions`, damit die
+  // Karten-Route eine leere Instanzliste liefert und keine Fehlermeldung entsteht (Muster wie
+  // in tests/session-ui.unit.test.tsx).
   return [
     { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
-    { pfad: '/api/sessions', antwort: antwort(200, [session]) },
+    { pfad: `/api/sessions/${String(session.id)}/maps`, antwort: antwort(200, []) },
     { pfad: '/api/maps', antwort: antwort(200, []) },
+    { pfad: '/api/sessions', antwort: antwort(200, [session]) },
   ]
 }
 
@@ -329,9 +335,14 @@ describe('Übergänge', () => {
     await raumBetreten({ id: 's1', name: 'Freitagsrunde', status: 'gestartet', role: 'spielleiter', code: 'ABC234' }, [SELBST])
     const steuerung = await screen.findByRole('group', { name: 'Steuerung' })
 
-    // GIVEN: der Dialog `Sitzung beenden?` ist ueber die Steuerung geoeffnet.
+    // GIVEN: der Dialog `Sitzung beenden?` ist ueber die Steuerung geoeffnet. Der Auslöser
+    // erhaelt zuvor den Fokus (jsdom fokussiert bei `click` nicht von selbst — Muster wie
+    // tests/map-library-ui.unit.test.tsx und tests/ui-dialog.unit.test.tsx), damit der Modal
+    // ihn als Rueckgabeziel merkt.
+    const beenden = within(steuerung).getByRole('button', { name: 'Beenden' })
+    beenden.focus()
     await act(async () => {
-      fireEvent.click(within(steuerung).getByRole('button', { name: 'Beenden' }))
+      fireEvent.click(beenden)
     })
     const dialog = await screen.findByRole('alertdialog', { name: 'Sitzung beenden?' })
 
@@ -355,18 +366,21 @@ describe('Übergänge', () => {
       fireEvent.click(within(steuerung).getByRole('button', { name: 'Starten' }))
     })
 
-    // THEN: Bar-Meldung (`role="alert"`, Klasse `session-bar-error`), Pille weiterhin `Geöffnet`.
-    const alert = await screen.findByRole('alert')
-    expect(alert.classList.contains('session-bar-error')).toBe(true)
-    expect(alert.textContent).toContain('Dafür fehlt die Berechtigung.')
+    // THEN: die Bar-Meldung — das Element der Rolle `alert` mit der Klasse `session-bar-error`
+    // (design.md D10) — traegt den Text; Pille weiterhin `Geöffnet`.
+    const meldungen = await screen.findAllByRole('alert')
+    const barMeldung = meldungen.find((el) => el.classList.contains('session-bar-error'))
+    expect(barMeldung?.textContent).toContain('Dafür fehlt die Berechtigung.')
     expect(screen.getByText('Geöffnet').closest('.status-pill')).not.toBeNull()
 
-    // Nach `session:status` mit `gestartet` verschwindet die Bar-Meldung.
+    // Nach `session:status` mit `gestartet` existiert kein Element mit der Klasse
+    // `session-bar-error` mehr.
     await act(async () => {
       socketMock.__emit('status', { sessionId: 's1', status: 'gestartet' })
     })
-    await waitFor(() => expect(screen.queryByText('Dafür fehlt die Berechtigung.')).toBeNull())
-    expect(screen.queryByRole('alert')).toBeNull()
+    await waitFor(() =>
+      expect(screen.queryAllByRole('alert').some((el) => el.classList.contains('session-bar-error'))).toBe(false),
+    )
   })
 })
 

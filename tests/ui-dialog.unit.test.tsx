@@ -172,7 +172,6 @@ test('Ohne autoFocus erhält die Schließen-Schaltfläche den Fokus', () => {
 test('Ein Kind mit autoFocus behält den Fokus', () => {
   render(
     <Modal title="Beispiel" onClose={jest.fn()}>
-      {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
       <button type="button" autoFocus>
         Weiter
       </button>

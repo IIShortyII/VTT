@@ -44,8 +44,13 @@ import { MapPanel } from './MapPanel.js'
 import { createSessionSocket, type SessionSocketFacade } from './socket.js'
 import { SESSION_OVERLAY, SESSION_STATUS_PRESENTATION, TRANSITION_LABELS } from './session-status.js'
 import { PlayerTokenList } from './TokenStats.js'
+import { tokenMenuEntries, type TokenMenuAction } from './token-menu.js'
+import { TokenShareControls } from './TokenShare.js'
+import { useConfirm } from '../ui/confirm.js'
+import { Field, SubmitButton } from '../ui/form.js'
 import { Icon } from '../ui/Icon.js'
 import { Modal } from '../ui/Modal.js'
+import { ActionMenu, MenuTrigger, Popover, useFloating, type Anchor, type MenuEntry } from '../ui/menu.js'
 import { MapOverlay, StatusBanner } from '../ui/status.js'
 import { useToasts } from '../ui/toast.js'
 import { TokenPanel } from './TokenPanel.js'
@@ -83,6 +88,14 @@ import { TokenPanel } from './TokenPanel.js'
 // Karten-Overlay (D5) folgt ausschliesslich `state.sessionStatus`. `onEnded`/`onLeave`
 // wandern in Refs, damit `wireSocket` ohne sie als Abhaengigkeit auskommt (Goal "keine neue
 // Fassade bei einem Rendern von `App`").
+//
+// ui-menu (#92, design.md D5/D9): das Token-Menue (Bearbeiten/Zuweisen…/Freigeben…/Entfernen)
+// ersetzt Schaltflaeche, Auswahlfeld und Freigabe-Kaestchen der Zeile; `handleTokenAction`
+// baut die Verzweigung, `tokenMenuEntries` (`token-menu.ts`) die vier Eintraege je Rolle und
+// Freigabestand. Zuweisen und Freigeben oeffnen je ein Modal (`assignTokenId`/`shareTokenId`),
+// Entfernen laeuft ueber den Bestaetigungsdialog. `mapMenu`/`mapMenuTokenId` tragen dasselbe
+// Menue fuer einen Rechtsklick auf ein Token der Karte (`onTokenContextMenu`). Der
+// Sitzungscode ist maskiert; `codeFloating` traegt den Popover mit dem Klartext.
 
 export interface SessionRoomProps {
   sessionId: string
@@ -98,6 +111,10 @@ const MAP_CANVAS_HEIGHT = 480
 // Liste weiter - Schaltflaeche, Schliessen (Esc/`Schließen`) und der Ablauf des Timers fuehren
 // alle zu `onEnded`, genau einmal (der Timer wird beim Verlassen geraeumt).
 const ENDED_REDIRECT_MS = 4000
+// ui-menu (#92, design.md D9): der Punkt `•` (U+2022) maskiert den Sitzungscode, einmal je
+// Zeichen des Codes.
+const CODE_MASK_CHAR = '•'
+const NO_OWNER_VALUE = ''
 
 type RoomState =
   | { status: 'lädt' }
@@ -141,9 +158,51 @@ function readStoredUnit(): DistanceUnit {
   }
 }
 
+interface AssignTokenDialogProps {
+  token: Token
+  players: Participant[]
+  onAssign: (ownerId: string | null) => void
+  onClose: () => void
+}
+
+/** Zuweisen-Modal (design.md D5, "Zuweisen-Modal"): eigene Komponente mit `key={token.id}`
+ * (Aufrufer) - `owner` ist lokaler Formularzustand, vorbelegt mit der aktuellen Zuweisung. */
+function AssignTokenDialog({ token, players, onAssign, onClose }: AssignTokenDialogProps) {
+  const t = useT()
+  const [owner, setOwner] = useState(token.ownerId ?? NO_OWNER_VALUE)
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    onAssign(owner === NO_OWNER_VALUE ? null : owner)
+  }
+
+  return (
+    <Modal title={t('token.assign.title', { name: token.name })} onClose={onClose}>
+      <form className="form-grid" onSubmit={handleSubmit}>
+        <Field id="token-assign-owner" label={t('token.assign.player')}>
+          {(control) => (
+            <select {...control} name="owner" value={owner} onChange={(event) => setOwner(event.target.value)}>
+              <option value={NO_OWNER_VALUE}>{t('session.role.gm')}</option>
+              {players.map((player) => (
+                <option key={player.userId} value={player.userId}>
+                  {displayName(player)}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
+        <div className="form-actions">
+          <SubmitButton pending={false}>{t('token.assign.submit')}</SubmitButton>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
 export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: SessionRoomProps) {
   const t = useT()
   const { push } = useToasts()
+  const { confirm } = useConfirm()
   const socketRef = useRef<SessionSocketFacade | null>(null)
   const [state, setState] = useState<RoomState>({ status: 'lädt' })
   const [replaced, setReplaced] = useState(false)
@@ -182,6 +241,14 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
   // DOM, sobald auch ein Spieler eine abgelehnte Bewegung sieht. add-token-sharing (#62,
   // design.md D6): dieselbe Meldung auch fuer eine abgelehnte Freigabe.
   const [tokenError, setTokenError] = useState<string | null>(null)
+  // ui-menu (#92, design.md D5/D9): `assignTokenId`/`shareTokenId` steuern die beiden Modals
+  // des Token-Menues; `mapMenu`/`mapMenuTokenId` dasselbe Menue am Rechtsklick-Punkt eines
+  // Tokens der Karte; `codeFloating` den Sitzungscode-Popover.
+  const [assignTokenId, setAssignTokenId] = useState<string | null>(null)
+  const [shareTokenId, setShareTokenId] = useState<string | null>(null)
+  const mapMenu = useFloating()
+  const [mapMenuTokenId, setMapMenuTokenId] = useState<string | null>(null)
+  const codeFloating = useFloating()
   // add-fog-of-war (#16, design.md D7): lokale Ad-hoc-Auswahl fuer "Bereich markieren" und
   // die Fehlermeldung einer abgelehnten Fog-Aktion. add-measure-draw (#11, design.md D5):
   // `fogTool` wird zu `tool: CanvasTool` - EIN Werkzeugzustand fuer Fog- und
@@ -387,6 +454,21 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
     return () => clearTimeout(timer)
   }, [ended])
 
+  // ui-menu (#92, design.md D5): verschwindet das Token eines offenen Zuweisen-/Freigaben-
+  // Modals aus `state.tokens` (etwa durch "Entfernen" an anderer Stelle), schliesst das
+  // jeweilige Modal.
+  useEffect(() => {
+    if (state.status !== 'bereit') {
+      return
+    }
+    if (assignTokenId !== null && !state.tokens.some((token) => token.id === assignTokenId)) {
+      setAssignTokenId(null)
+    }
+    if (shareTokenId !== null && !state.tokens.some((token) => token.id === shareTokenId)) {
+      setShareTokenId(null)
+    }
+  }, [state, assignTokenId, shareTokenId])
+
   // add-fog-of-war (#16, design.md D7): Fog-Ebene fuer die Canvas-Fassade - nur bei Aenderung
   // von `fog`/`role` neu gebaut, damit der `setFog`-Effekt in `MapCanvas` nicht bei jedem
   // Render feuert (etwa bei einer Teilnehmerliste-Aktualisierung).
@@ -492,6 +574,15 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
       })
   }
 
+  // ui-menu (#92, design.md D5, "Karte"): Rechtsklick auf ein Token der Karte - der
+  // Rueckruf wird der Canvas-Fassade nur beim Erzeugen uebergeben (`MapCanvas`/`canvas.ts`);
+  // `mapMenu.openAt` und `setMapMenuTokenId` sind stabil, der beim Erzeugen uebergebene
+  // Rueckruf bleibt also gueltig (design.md Goal "Stabile Rückrufe").
+  const handleTokenContextMenu = (tokenId: string, anchor: Anchor) => {
+    setMapMenuTokenId(tokenId)
+    mapMenu.openAt(anchor)
+  }
+
   // ui-form (#90, design.md D7): das Formular `Tokens` wartet auf das Acknowledgement -
   // ohne Socket `Promise.resolve(false)`, sonst wird `ack.ok` (bestaetigend/ablehnend)
   // durchgereicht, damit das Panel `Name` nur nach einem bestaetigenden Acknowledgement
@@ -593,6 +684,45 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
       .shareToken(sessionId, tokenId, stat, audience)
       .then((ack) => {
         setTokenError(ack.ok ? null : ack.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
+  // ui-menu (#92, design.md D5, "Token-Menü"): die Verzweigung der vier Eintraege. Vom
+  // Karten-Menue aus ist `document.getElementById` der einzige Weg zur Zeile der
+  // Token-Verwaltung - `scrollIntoView` nur, wenn die Methode existiert (jsdom hat sie nicht).
+  const handleTokenAction = (token: Token, action: TokenMenuAction) => {
+    if (action === 'bearbeiten') {
+      const field = document.getElementById(`token-panel-hp-${token.id}`)
+      if (field) {
+        if (typeof field.scrollIntoView === 'function') {
+          field.scrollIntoView()
+        }
+        field.focus()
+      }
+      return
+    }
+    if (action === 'zuweisen') {
+      setAssignTokenId(token.id)
+      return
+    }
+    if (action === 'freigeben') {
+      setShareTokenId(token.id)
+      return
+    }
+    // 'entfernen'
+    confirm({
+      title: t('token.remove.title', { name: token.name }),
+      message: t('token.remove.message'),
+      confirmLabel: t('token.remove.confirm'),
+      danger: true,
+    })
+      .then((ok) => {
+        if (ok) {
+          handleTokenRemove(token.id)
+        }
       })
       .catch((error: unknown) => {
         console.error(error)
@@ -768,6 +898,12 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
       <StatusBanner>{t(disconnected === 'unterbrochen' ? 'status.disconnected' : 'status.disconnectedByServer')}</StatusBanner>
     ) : null
 
+  // ui-menu (#92, design.md D5/D9): Ableitungen fuer die beiden Token-Modals und die
+  // Zielgruppe des Zuweisen-Modals - nur gueltig, wenn der Raum bereit ist, sonst `null`/`[]`.
+  const assignToken = state.status === 'bereit' ? (state.tokens.find((token) => token.id === assignTokenId) ?? null) : null
+  const shareToken = state.status === 'bereit' ? (state.tokens.find((token) => token.id === shareTokenId) ?? null) : null
+  const players = state.status === 'bereit' ? state.participants.filter((participant) => participant.role === 'spieler') : []
+
   let content: ReactNode
   if (state.status === 'lädt') {
     content = <p>Lädt …</p>
@@ -789,6 +925,10 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
     // ui-status (#91, design.md D5): das Overlay folgt ausschliesslich `state.sessionStatus`
     // (Enter-Acknowledgement, danach `session:status`) - kein eigener State.
     const overlay = SESSION_OVERLAY[state.sessionStatus]
+    // ui-menu (#92, design.md D5): eine Funktion statt einer Liste - jede Zeile und das
+    // Karten-Menue rufen sie mit ihrem eigenen Token auf (`tokenMenuEntries`, `token-menu.ts`).
+    const menuEntries = (token: Token): MenuEntry[] => tokenMenuEntries(token, state.role === 'spielleiter', t, handleTokenAction)
+    const mapMenuToken = state.tokens.find((token) => token.id === mapMenuTokenId) ?? null
 
     content = (
       <>
@@ -799,12 +939,17 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
           </span>
         </p>
         {state.code !== undefined && (
-          <p>
-            Code: {state.code}{' '}
-            <button type="button" onClick={handleCopyCode}>
-              {t('session.copyCode')}
-            </button>
-          </p>
+          <div className="session-room-code">
+            <span>Code: </span>
+            <span className="session-code-mask">{CODE_MASK_CHAR.repeat(state.code.length)}</span>
+            <MenuTrigger floating={codeFloating} variant="icon" icon="info" haspopup="dialog" label={t('session.showCode')} />
+            <Popover floating={codeFloating} label={t('session.code')}>
+              <code className="session-code">{state.code}</code>
+              <button type="button" onClick={handleCopyCode}>
+                {t('session.copyCode')}
+              </button>
+            </Popover>
+          </div>
         )}
         <ul>
           {state.participants.map((participant) => (
@@ -849,6 +994,7 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
               tokens={state.tokens}
               onTokenMove={handleTokenMove}
               canMoveToken={(token) => canMoveToken(token, { role: state.role, userId: currentUserId })}
+              onTokenContextMenu={handleTokenContextMenu}
               fog={fogLayer}
               tool={tool}
               selection={fogSelection}
@@ -862,6 +1008,10 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
             )}
           </div>
         )}
+
+        {/* ui-menu (#92, design.md D5, "Karte"): dasselbe Token-Menue wie in der Zeile, jetzt
+            am Rechtsklick-Punkt auf der Karte - gerendert, solange das Token noch existiert. */}
+        {mapMenuToken && <ActionMenu floating={mapMenu} label={t('menu.rowActions', { name: mapMenuToken.name })} entries={menuEntries(mapMenuToken)} />}
 
         {/* add-token-assignment (#15, design.md D6): fuer jede Rolle, damit auch ein Spieler
             eine abgelehnte eigene Bewegung sieht. add-token-sharing (#62): auch eine
@@ -926,23 +1076,16 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
           <TokenPanel
             sessionId={sessionId}
             tokens={state.tokens}
-            participants={state.participants}
             onCreate={handleTokenCreate}
-            onRemove={handleTokenRemove}
-            onAssign={handleTokenAssign}
             onSetStats={handleTokenStats}
             onSetConditions={handleTokenConditions}
-            onShare={handleTokenShare}
+            menuEntries={menuEntries}
           />
         )}
 
         {/* add-token-stats (#61, design.md D10, Requirement "Tokenansicht im Raum"): ein
-            Spieler sieht statt der Verwaltung die eigene Werteliste. add-token-sharing (#62,
-            design.md D6): `participants` und `onShare` fuer die Freigabe-Schalter der eigenen
-            Tokens. */}
-        {state.role === 'spieler' && (
-          <PlayerTokenList tokens={state.tokens} participants={state.participants} onShare={handleTokenShare} />
-        )}
+            Spieler sieht statt der Verwaltung die eigene Werteliste. */}
+        {state.role === 'spieler' && <PlayerTokenList tokens={state.tokens} menuEntries={menuEntries} />}
       </>
     )
   }
@@ -971,6 +1114,26 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
               {t('session.replaced.continue')}
             </button>
           </div>
+        </Modal>
+      )}
+      {/* ui-menu (#92, design.md D5): Zuweisen- und Freigaben-Modal des Token-Menues - der
+          Auslöser ist der Trigger des jeweiligen Menues (Fokusrueckgabe vor `onSelect`,
+          `ui-menu` D2), unabhaengig davon, ob es die Zeile oder das Karten-Menue war. */}
+      {assignToken && (
+        <AssignTokenDialog
+          key={assignToken.id}
+          token={assignToken}
+          players={players}
+          onAssign={(ownerId) => {
+            handleTokenAssign(assignToken.id, ownerId)
+            setAssignTokenId(null)
+          }}
+          onClose={() => setAssignTokenId(null)}
+        />
+      )}
+      {shareToken && state.status === 'bereit' && (
+        <Modal title={t('token.share.title', { name: shareToken.name })} wide onClose={() => setShareTokenId(null)}>
+          <TokenShareControls token={shareToken} participants={state.participants} onShare={handleTokenShare} />
         </Modal>
       )}
     </>

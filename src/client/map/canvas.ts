@@ -20,6 +20,7 @@ import type { Token } from '../../shared/token.js'
 import { conditionAbbreviation, conditionIcon } from '../session/conditions.js'
 import { iconSvg } from '../ui/icon-svg.js'
 import type { IconName } from '../ui/icons.js'
+import type { Anchor } from '../ui/menu.js'
 import { panBy, zoomAt, type View } from './viewport.js'
 
 // Die einzige Datei, die `pixi.js` importiert (design.md D8) - die Mock-Grenze der
@@ -59,6 +60,11 @@ export interface MapCanvasOptions {
   tokens: Token[]
   onTokenMove?: (tokenId: string, cell: Cell) => void
   canMoveToken?: (token: Token) => boolean
+  // ui-menu (#92, design.md D5, "Karte"): Rechtsklick auf ein Token - fuer JEDE Rolle beim
+  // Erzeugen uebergeben (Muster `onTokenMove`), nur dort gelesen. Die Fassade unterdrueckt
+  // `contextmenu` des Canvas immer und ruft diesen Rueckruf bei einem Rechtsklick auf einen
+  // Token-Container mit der `id` des Tokens und dem Zeigerpunkt in Viewport-Koordinaten auf.
+  onTokenContextMenu?: (tokenId: string, anchor: Anchor) => void
   // add-fog-of-war (#16, design.md D6): Fog-Ebene, aktuelles Werkzeug und gespeicherte
   // Auswahl beim Erzeugen; `onCellsSelected` wie `onTokenMove` nur beim Erzeugen gelesen.
   // add-measure-draw (#11, design.md D4): `tool` ist jetzt `CanvasTool` (Obermenge von
@@ -274,6 +280,7 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     let tokenContainers: Container[] = []
     const onTokenMove = options.onTokenMove
     const canMoveTokenOption = options.canMoveToken
+    const onTokenContextMenu = options.onTokenContextMenu
     let currentFog: FogLayer | null = options.fog ?? null
     let currentTool: CanvasTool = options.tool ?? 'schwenken'
     let currentSelection: Cell[] = options.selection ?? []
@@ -765,13 +772,20 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       // Zieh-Interaktion und Kennzeichnung.
       const movable = Boolean(onTokenMove) && (canMoveTokenOption ? canMoveTokenOption(token) : true)
 
+      // ui-menu (#92, design.md D5, "Karte"): `eventMode = 'static'` auch fuer nicht
+      // greifbare Tokens, sobald `onTokenContextMenu` gesetzt ist - ein Rechtsklick auf ein
+      // fremdes Token (z. B. ein Spieler auf ein Token eines anderen Spielers) soll das
+      // Menue trotzdem oeffnen (gesperrte Eintraege zeigen die fehlende Berechtigung).
+      if (movable || onTokenContextMenu) {
+        tokenContainer.eventMode = 'static'
+      }
+
       if (movable) {
         const ring = new Graphics()
         ring.circle(0, 0, radius + TOKEN_MOVABLE_RING_GAP)
         ring.stroke({ width: TOKEN_MOVABLE_RING_WIDTH, color: TOKEN_MOVABLE_RING_COLOR })
         tokenContainer.addChild(ring)
 
-        tokenContainer.eventMode = 'static'
         tokenContainer.cursor = 'grab'
         tokenContainer.on('pointerdown', (event: FederatedPointerEvent) => {
           // add-fog-of-war (#16, design.md D6): bei jedem Werkzeug ausser "schwenken" weder
@@ -784,6 +798,16 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
           dragTokenId = token.id
           dragContainer = tokenContainer
           dragOrigin = { x: tokenContainer.position.x, y: tokenContainer.position.y }
+        })
+      }
+
+      // ui-menu (#92, design.md D5, "Karte"): Rechtsklick auf ein Token oeffnet dessen
+      // Token-Menue am Zeigerpunkt - `stopPropagation`, damit die Buehne (die `contextmenu`
+      // ohnehin global unterdrueckt) das Ereignis nicht zusaetzlich sieht.
+      if (onTokenContextMenu) {
+        tokenContainer.on('rightdown', (event: FederatedPointerEvent) => {
+          event.stopPropagation()
+          onTokenContextMenu(token.id, { x: event.client.x, y: event.client.y })
         })
       }
 
@@ -860,6 +884,12 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     let lastPoint = { x: 0, y: 0 }
 
     function onPointerDown(event: FederatedPointerEvent): void {
+      // ui-menu (#92, design.md D5, "Karte"): ein Rechtsklick startet kein Schwenken und
+      // keine Geste - er oeffnet hoechstens (ueber `rightdown` eines Token-Containers) das
+      // Token-Menue.
+      if (event.button === 2) {
+        return
+      }
       // add-measure-draw (#11, design.md D4): bei einem Anmerkungswerkzeug beginnt das
       // Ziehen bzw. der Klick eine Mess-/Zeichengeste statt einer Zellauswahl oder eines
       // Schwenkens.
@@ -950,6 +980,12 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       applyView()
     }
 
+    // ui-menu (#92, design.md D5, "Karte"): das Canvas unterdrueckt `contextmenu` immer -
+    // sonst oeffnet ein Rechtsklick ins Leere das Browser-Menue.
+    function onContextMenu(event: MouseEvent): void {
+      event.preventDefault()
+    }
+
     function onResize(): void {
       app.stage.hitArea = app.screen
     }
@@ -959,6 +995,7 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
     app.stage.on('pointerup', onPointerUp)
     app.stage.on('pointerupoutside', onPointerUp)
     app.canvas.addEventListener('wheel', onWheel, { passive: false })
+    app.canvas.addEventListener('contextmenu', onContextMenu)
     app.renderer.on('resize', onResize)
 
     drawGrid()
@@ -1022,6 +1059,7 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
         app.stage.off('pointerup', onPointerUp)
         app.stage.off('pointerupoutside', onPointerUp)
         app.canvas.removeEventListener('wheel', onWheel)
+        app.canvas.removeEventListener('contextmenu', onContextMenu)
         app.renderer.off('resize', onResize)
         // App-Test Runde 5 (#14): erst das Sprite aus dem Szenengraph nehmen und OHNE
         // Textur-Option zerstoeren (die Textur selbst bleibt am Leben) - erst danach die von

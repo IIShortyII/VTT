@@ -305,7 +305,10 @@ und Raster der neuen Karte umstellen; ein Wechsel auf `null` SHALL die Kartenans
 einmal freigeben.
 
 Dem Spielleiter SHALL die Raumansicht zusätzlich eine Kartenverwaltung anbieten: die
-eingehängten Karten mit je einer Schaltfläche zum Aktivieren und zum Aushängen (solange keine
+eingehängten Karten mit je einem ⋮-Trigger `Aktionen für <Name>` (`ui-menu`), der — ebenso
+wie ein Rechtsklick auf die Zeile — das Menü `Aktionen für <Name>` mit den Einträgen
+`Aktivieren` (Icon `map`) und `Aushängen` (Icon `close`) öffnet; die Zeile MUST NOT eigene
+Schaltflächen dafür tragen (solange keine
 Karte eingehängt ist, statt der Liste den Leerzustand von `ui-status` mit dem Titel
 `Noch keine Karten eingehängt` und dem Hinweis `Hänge eine Karte aus deiner Bibliothek ein.`;
 solange die Instanzliste noch nicht geantwortet hat, weder Liste noch Leerzustand), eine
@@ -365,8 +368,8 @@ Kartenverwaltung zeigen und MUST NOT für ihn Instanzliste oder Kartenliste abfr
   "spielleiter"` und `map: null`, die Instanzliste liefert „Taverne", und die eigene
   Kartenliste liefert „Taverne" und „Wald"
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** zeigt sie „Taverne" als eingehängte Karte mit Schaltflächen zum Aktivieren und
-  Aushängen, bietet in der Auswahl zum Einhängen „Wald", aber nicht „Taverne" an, und zeigt
+- **THEN** zeigt sie „Taverne" als eingehängte Karte mit dem Trigger `Aktionen für Taverne`, dessen
+  Menü nach dem Öffnen die Einträge `Aktivieren` und `Aushängen` enthält, bietet in der Auswahl zum Einhängen „Wald", aber nicht „Taverne" an, und zeigt
   eine Schaltfläche zum Einhängen
 
 #### Scenario: Einhängen sendet die Absicht und lädt die Liste neu
@@ -382,7 +385,7 @@ Kartenverwaltung zeigen und MUST NOT für ihn Instanzliste oder Kartenliste abfr
 
 - **GIVEN** die Raumansicht des Spielleiters zeigt „Taverne" als eingehängte Karte, keine
   Karte ist aktiv
-- **WHEN** er die Schaltfläche zum Aktivieren von „Taverne" betätigt
+- **WHEN** er im Menü `Aktionen für Taverne` den Eintrag `Aktivieren` wählt
 - **THEN** sendet die Anwendung `session:activate-map` mit `{ sessionId, instanceId: "<id
   der Instanz>" }`, zeigt weiterhin den Hinweis, dass keine Karte aktiv ist, bis sie
   `session:map` mit „Taverne" erhält, und zeigt danach „Taverne" als aktive Karte
@@ -390,7 +393,7 @@ Kartenverwaltung zeigen und MUST NOT für ihn Instanzliste oder Kartenliste abfr
 #### Scenario: Aushängen sendet die Absicht und lädt die Liste neu
 
 - **GIVEN** die Raumansicht des Spielleiters zeigt „Taverne" als eingehängte Karte
-- **WHEN** er die Schaltfläche zum Aushängen von „Taverne" betätigt, und der Server mit
+- **WHEN** er im Menü `Aktionen für Taverne` den Eintrag `Aushängen` wählt, und der Server mit
   `204` antwortet
 - **THEN** hat die Anwendung `DELETE /api/sessions/<sessionId>/maps/<id der Instanz>`
   gesendet und danach die Instanzliste erneut abgefragt

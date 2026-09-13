@@ -1,7 +1,6 @@
-import type { Participant } from '../../shared/session.js'
 import { useT } from '../i18n/locale.js'
-import type { Token, TokenAudience, TokenStat } from '../../shared/token.js'
-import { TokenShareControls } from './TokenShare.js'
+import type { Token } from '../../shared/token.js'
+import { ActionMenu, MenuTrigger, useFloating, type MenuEntry } from '../ui/menu.js'
 import { EmptyState } from '../ui/status.js'
 
 // add-token-stats (#61, design.md D8, spec.md Requirement "Tokenansicht im Raum"): die
@@ -35,17 +34,37 @@ export function TokenStatsText({ token }: TokenStatsTextProps) {
 
 export interface PlayerTokenListProps {
   tokens: Token[]
-  // add-token-sharing (#62, design.md D6): fuer die Freigabe-Schalter der eigenen Tokens -
-  // `TokenShareControls` rendert selbst nichts, wenn `token.shares` `null` ist (fremdes
-  // Token aus Sicht dieses Spielers).
-  participants: Participant[]
-  onShare: (tokenId: string, stat: TokenStat, audience: TokenAudience) => void
+  // ui-menu (#92, design.md D5): je Zeile ein eigenes ⋮-Menue statt eingebetteter
+  // Freigabe-Kaestchen - dieselben Eintraege wie in der Token-Verwaltung, gebaut vom
+  // Aufrufer (`SessionRoom`, `token-menu.ts`).
+  menuEntries: (token: Token) => MenuEntry[]
+}
+
+interface PlayerTokenRowProps {
+  token: Token
+  menuEntries: (token: Token) => MenuEntry[]
+}
+
+/** Eigene Komponente statt eines einfachen `<li>` (design.md D5) - sie braucht einen eigenen
+ * Schwebezustand (`useFloating`) fuer das ⋮-Menue und den Rechtsklick auf die Zeile. */
+function PlayerTokenRow({ token, menuEntries }: PlayerTokenRowProps) {
+  const t = useT()
+  const floating = useFloating()
+  const rowLabel = t('menu.rowActions', { name: token.name })
+  return (
+    <li onContextMenu={floating.onContextMenu}>
+      <span>{token.name}</span>
+      <MenuTrigger floating={floating} label={rowLabel} />
+      <TokenStatsText token={token} />
+      <ActionMenu floating={floating} label={rowLabel} entries={menuEntries(token)} />
+    </li>
+  )
 }
 
 /** Tokenliste fuer Spieler (design.md D8, spec.md Requirement "Tokenansicht im Raum"): die
  * Ueberschrift ist bewusst NICHT "Tokens" - das Szenario "Spieler sieht keine
  * Token-Verwaltung" verbietet diese Ueberschrift beim Spieler. */
-export function PlayerTokenList({ tokens, participants, onShare }: PlayerTokenListProps) {
+export function PlayerTokenList({ tokens, menuEntries }: PlayerTokenListProps) {
   const t = useT()
   return (
     <div>
@@ -55,11 +74,7 @@ export function PlayerTokenList({ tokens, participants, onShare }: PlayerTokenLi
       ) : (
         <ul>
           {tokens.map((token) => (
-            <li key={token.id}>
-              <span>{token.name}</span>
-              <TokenStatsText token={token} />
-              <TokenShareControls token={token} participants={participants} onShare={onShare} />
-            </li>
+            <PlayerTokenRow key={token.id} token={token} menuEntries={menuEntries} />
           ))}
         </ul>
       )}

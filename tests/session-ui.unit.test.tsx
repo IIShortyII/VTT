@@ -250,9 +250,12 @@ test('Sitzungsliste mit Erstellen und Beitreten', async () => {
   })
   expect(codeFeld(container)).not.toBeNull()
 
-  // Abmeldung in der Top-Bar (ui-shell), nicht mehr in der Liste; Startansicht ohne Zurueck.
+  // Abmeldung liegt im Kontomenue der Top-Bar (ui-shell, „Top-Bar“): aussen nur die
+  // Menue-Schaltflaeche mit dem Nutzernamen, keine Schaltflaeche `Abmelden`; Startansicht ohne Zurueck.
   const header = screen.getByRole('banner')
-  expect(within(header).getByRole('button', { name: /abmelden/i })).toBeTruthy()
+  const konto = within(header).getByRole('button', { name: 'ich' })
+  expect(konto.getAttribute('aria-haspopup')).toBe('menu')
+  expect(within(header).queryByRole('button', { name: /abmelden/i })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Zurück' })).toBeNull()
 })
 
@@ -283,10 +286,13 @@ test('Raumansicht des Spielleiters', async () => {
   // Zustandspille `Geöffnet` (Klasse `status-pill`) statt des Rohwerts.
   const pille = screen.getByText('Geöffnet').closest('.status-pill')
   expect(pille).not.toBeNull()
-  // Sitzungscode fuer den Spielleiter.
-  expect(screen.getByText(/ABC234/)).toBeTruthy()
-  // MODIFIED (add-toast-feedback #88): eine Schaltfläche `Kopieren` neben dem Sitzungscode.
-  expect(screen.getByRole('button', { name: 'Kopieren' })).toBeTruthy()
+  // MODIFIED (#92): der Sitzungscode steht maskiert (`••••••`, sechs Zeichen) mit dem Trigger
+  // `Sitzungscode anzeigen`; der Klartext `ABC234` steht nicht in der Ansicht, und `Kopieren`
+  // liegt im noch geschlossenen Popover.
+  expect(screen.getByText('••••••')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Sitzungscode anzeigen' })).toBeTruthy()
+  expect(screen.queryByText(/ABC234/)).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Kopieren' })).toBeNull()
   // Beide Teilnehmer werden mit ihrem Nutzernamen benannt (keiner traegt einen Alias).
   expect(screen.getByText(/alrik/)).toBeTruthy()
   expect(screen.getByText(/borgil/)).toBeTruthy()
@@ -337,7 +343,10 @@ test('Raumansicht des Spielers', async () => {
   expect(within(main).getByText(/\bich\b/)).toBeTruthy()
   // Kein Sitzungscode und keine Uebergangs-Schaltflaeche.
   expect(screen.queryByText(/code/i)).toBeNull()
-  // MODIFIED (add-toast-feedback #88): einem Spieler wird keine Schaltfläche `Kopieren` gezeigt.
+  // MODIFIED (#92): einem Spieler wird weder die Maske `••••••` noch der Trigger
+  // `Sitzungscode anzeigen` noch die Schaltfläche `Kopieren` gezeigt.
+  expect(screen.queryByText('••••••')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Sitzungscode anzeigen' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Kopieren' })).toBeNull()
   expect(screen.queryByRole('button', { name: /starten|beenden|öffnen|pausieren/i })).toBeNull()
   // Kein Textknoten traegt den Rohwert des Zustands.
@@ -369,15 +378,21 @@ test('Sitzungscode wird kopiert', async () => {
     await betreten()
     await screen.findByRole('heading', { level: 1, name: 'Freitagsrunde' })
 
+    // MODIFIED (#92): erst den Popover `Sitzungscode` ueber den Trigger oeffnen.
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Kopieren' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Sitzungscode anzeigen' }))
+    })
+    const popover = screen.getByRole('dialog', { name: 'Sitzungscode' })
+    await act(async () => {
+      fireEvent.click(within(popover).getByRole('button', { name: 'Kopieren' }))
     })
 
     // Genau der Sitzungscode wurde in die Zwischenablage geschrieben …
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('ABC234'))
-    // … und der Toast-Host zeigt den Toast `Sitzungscode kopiert`.
-    const host = await screen.findByRole('status')
+    // … der Toast-Host zeigt den Toast `Sitzungscode kopiert`, und der Popover bleibt offen.
+    const host = toastHost()
     await waitFor(() => expect(within(host).getByText('Sitzungscode kopiert')).toBeTruthy())
+    expect(screen.getByRole('dialog', { name: 'Sitzungscode' })).toBeTruthy()
   } finally {
     Object.defineProperty(globalThis.navigator, 'clipboard', original ?? { value: undefined, configurable: true })
   }
@@ -407,8 +422,13 @@ test('Gescheitertes Kopieren zeigt keinen Toast', async () => {
     await betreten()
     await screen.findByRole('heading', { level: 1, name: 'Freitagsrunde' })
 
+    // MODIFIED (#92): den Popover `Sitzungscode` oeffnen und darin `Kopieren` ausloesen.
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Kopieren' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Sitzungscode anzeigen' }))
+    })
+    const popover = screen.getByRole('dialog', { name: 'Sitzungscode' })
+    await act(async () => {
+      fireEvent.click(within(popover).getByRole('button', { name: 'Kopieren' }))
     })
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('ABC234'))
     // Mikrotasks des abgelehnten Schreibens abfliessen lassen, damit ein faelschlicher Toast
@@ -417,13 +437,52 @@ test('Gescheitertes Kopieren zeigt keinen Toast', async () => {
       await Promise.resolve()
     })
 
-    // Kein Toast, und die Raumansicht bleibt mit dem Code `ABC234` gerendert.
-    const host = screen.queryByRole('status')
-    expect(host === null || host.children.length === 0).toBe(true)
-    expect(screen.getByText(/ABC234/)).toBeTruthy()
+    // Kein Toast im Toast-Host, und der Popover zeigt weiterhin den Klartext `ABC234`.
+    const host = toastHost()
+    expect(host.children.length === 0).toBe(true)
+    expect(within(screen.getByRole('dialog', { name: 'Sitzungscode' })).getByText('ABC234')).toBeTruthy()
   } finally {
     Object.defineProperty(globalThis.navigator, 'clipboard', original ?? { value: undefined, configurable: true })
   }
+})
+
+test('Sitzungscode-Popover zeigt den Klartext', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spielleiter', code: 'ABC234' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spielleiter', code: 'ABC234' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spielleiter', online: true }],
+  })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await screen.findByRole('heading', { level: 1, name: 'Freitagsrunde' })
+
+  const trigger = screen.getByRole('button', { name: 'Sitzungscode anzeigen' })
+  await act(async () => {
+    fireEvent.click(trigger)
+  })
+
+  // Popover `Sitzungscode` mit Klartext und `Kopieren`, fokussiert; Trigger `aria-expanded="true"`.
+  const popover = screen.getByRole('dialog', { name: 'Sitzungscode' })
+  expect(within(popover).getByText('ABC234')).toBeTruthy()
+  expect(within(popover).getByRole('button', { name: 'Kopieren' })).toBeTruthy()
+  expect(document.activeElement).toBe(popover)
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+  // Escape auf dem Popover schliesst ihn und gibt den Fokus an den Trigger zurueck.
+  await act(async () => {
+    fireEvent.keyDown(popover, { key: 'Escape' })
+  })
+  expect(screen.queryByRole('dialog', { name: 'Sitzungscode' })).toBeNull()
+  expect(document.activeElement).toBe(trigger)
 })
 
 test('Zustand folgt dem Server', async () => {

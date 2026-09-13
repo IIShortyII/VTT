@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 
 import { CreateSessionInputSchema, JoinSessionInputSchema, type SessionSummary } from '../../shared/session.js'
-import { ChangePasswordForm } from '../auth/ChangePasswordForm.js'
 import { Hero } from '../app/Hero.js'
 import { useT } from '../i18n/locale.js'
 import { Icon } from '../ui/Icon.js'
@@ -11,21 +10,22 @@ import { EmptyState } from '../ui/status.js'
 import { createSession, joinSession, listSessions } from './api.js'
 import { ROLE_LABELS, SESSION_STATUS_PRESENTATION } from './session-status.js'
 
-// Sitzungsliste der angemeldeten Ansicht (add-start-view #86, design.md D4). `panel` haelt,
-// welches Formular (falls ueberhaupt eines) offen ist. ChangePasswordForm bleibt hier, aber
-// zugeklappt in einem `<details>` (proposal.md, user-auth "Passwortänderung in der
-// Oberfläche"). Abmeldung und der globale Hinweis liegen in der App-Shell (ui-shell #84) -
-// diese Ansicht kennt beides nicht mehr. Prop `user` entfaellt (design.md D4, Nachlese aus
-// #84) - die angemeldete Ansicht braucht ihn nirgends.
+// Sitzungsliste der angemeldeten Ansicht (add-start-view #86, design.md D4). panel haelt,
+// welches Formular (falls ueberhaupt eines) offen ist. Abmeldung und der globale Hinweis
+// liegen in der App-Shell (ui-shell #84) - diese Ansicht kennt beides nicht mehr. Prop user
+// entfaellt (design.md D4, Nachlese aus #84) - die angemeldete Ansicht braucht ihn nirgends.
 // ui-text (#87, design.md D6): Hero-Texte, die drei Aktionen, beide Formulare, Leerzustand,
-// `aria-label` der Liste, `Betreten`, die Summary "Passwort ändern" und die frueher als
-// Modulkonstanten gehaltenen Fehlermeldungen laufen jetzt ueber `t('start.*')`; Pillentext und
-// Rolle der Karten ueber `t(status.label)`/`t(ROLE_LABELS[session.role])`.
+// aria-label der Liste, Betreten und die frueher als Modulkonstanten gehaltenen
+// Fehlermeldungen laufen jetzt ueber t(start.*); Pillentext und Rolle der Karten ueber
+// t(status.label)/t(ROLE_LABELS[session.role]).
 // ui-dialog (#89, design.md D7): die Erstellen- und Beitreten-Formulare stehen jetzt in einem
 // `Modal` statt als Aufklapp-Panel; die Hero-Aktionen tragen `aria-haspopup="dialog"` statt
 // `aria-expanded`. `toggle` entfaellt zugunsten von `open` (setzt `panel` direkt, statt zu
 // schalten) - hoechstens ein Dialog ist ueberhaupt erreichbar, weil ein offener Dialog den
 // Hintergrund per Backdrop verdeckt.
+// ui-menu (#92, design.md D8): das details-Element mit der Passwortaenderung entfaellt -
+// das Formular liegt jetzt in einem Modal, erreichbar ueber das Kontomenue der Shell
+// (ui-shell, AppShell); diese Ansicht importiert ChangePasswordForm nicht mehr.
 // ui-form (#90, design.md D5): beide Formulare folgen dem Formularmuster -
 // `createError`/`joinError` weichen je einem Paar `createFieldErrors`/`createFormError` bzw.
 // `joinFieldErrors`/`joinFormError`; `open`/`close` leeren alle vier. `panel-actions` weicht
@@ -261,11 +261,6 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
           })}
         </ul>
       )}
-
-      <details className="start-account">
-        <summary>{t('start.account.password')}</summary>
-        <ChangePasswordForm />
-      </details>
     </>
   )
 }

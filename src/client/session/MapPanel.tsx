@@ -5,6 +5,7 @@ import type { MapInstance } from '../../shared/session-map.js'
 import { useT } from '../i18n/locale.js'
 import { EmptyState } from '../ui/status.js'
 import { listMaps } from '../map/api.js'
+import { ActionMenu, MenuTrigger, useFloating } from '../ui/menu.js'
 import { useToasts } from '../ui/toast.js'
 import { listSessionMaps, mountMap, unmountMap } from './maps-api.js'
 
@@ -15,6 +16,9 @@ import { listSessionMaps, mountMap, unmountMap } from './maps-api.js'
 // ui-feedback (#88, design.md D4): nach erfolgreichem Einhaengen loest `handleMount` einen
 // Toast `Karte eingehängt` aus - Aushaengen und Aktivieren bleiben ohne Toast. Die uebrigen
 // Texte dieser Ansicht bleiben Rohstrings (Epic C).
+// ui-menu (#92, design.md D6): die Schaltflaechen `<Name> aktivieren`/`<Name> aushängen`
+// entfallen zugunsten eines ⋮-Menues `Aktionen für <Name>` (`MapInstanceRow`), das auch ein
+// Rechtsklick auf die Zeile oeffnet.
 
 export interface MapPanelProps {
   sessionId: string
@@ -26,6 +30,33 @@ export interface MapPanelProps {
 const LOAD_FAILURE_MESSAGE = 'Die Karten konnten nicht geladen werden.'
 const GENERIC_MOUNT_ERROR_MESSAGE = 'Die Karte konnte nicht eingehängt werden. Bitte versuche es erneut.'
 const GENERIC_UNMOUNT_ERROR_MESSAGE = 'Die Karte konnte nicht ausgehängt werden. Bitte versuche es erneut.'
+
+interface MapInstanceRowProps {
+  instance: MapInstance
+  active: boolean
+  onActivate: (instanceId: string) => void
+  onUnmount: (instanceId: string) => void
+}
+
+function MapInstanceRow({ instance, active, onActivate, onUnmount }: MapInstanceRowProps) {
+  const t = useT()
+  const floating = useFloating()
+  const rowLabel = t('menu.rowActions', { name: instance.name })
+  return (
+    <li aria-current={active ? 'true' : undefined} onContextMenu={floating.onContextMenu}>
+      <span>{instance.name}</span>
+      <MenuTrigger floating={floating} label={rowLabel} />
+      <ActionMenu
+        floating={floating}
+        label={rowLabel}
+        entries={[
+          { id: 'activate', label: t('menu.activate'), icon: 'map', onSelect: () => onActivate(instance.id) },
+          { id: 'unmount', label: t('menu.unmount'), icon: 'close', onSelect: () => onUnmount(instance.id) },
+        ]}
+      />
+    </li>
+  )
+}
 
 export function MapPanel({ sessionId, activeInstanceId, onActivate, activateError }: MapPanelProps) {
   const t = useT()
@@ -138,15 +169,13 @@ export function MapPanel({ sessionId, activeInstanceId, onActivate, activateErro
       {instances !== null && instances.length > 0 && (
         <ul>
           {instances.map((instance) => (
-            <li key={instance.id} aria-current={instance.id === activeInstanceId ? 'true' : undefined}>
-              <span>{instance.name}</span>
-              <button type="button" aria-label={`${instance.name} aktivieren`} onClick={() => onActivate(instance.id)}>
-                Aktivieren
-              </button>
-              <button type="button" aria-label={`${instance.name} aushängen`} onClick={() => handleUnmount(instance.id)}>
-                Aushängen
-              </button>
-            </li>
+            <MapInstanceRow
+              key={instance.id}
+              instance={instance}
+              active={instance.id === activeInstanceId}
+              onActivate={onActivate}
+              onUnmount={handleUnmount}
+            />
           ))}
         </ul>
       )}

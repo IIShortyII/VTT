@@ -322,9 +322,17 @@ test('Spielleiter sieht die Kartenverwaltung', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
-  // Taverne als eingehängte Karte mit Schaltflaechen (aria-label eindeutig je Instanz, D7).
-  expect(await screen.findByRole('button', { name: 'Taverne aktivieren' })).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Taverne aushängen' })).toBeTruthy()
+  // MODIFIED (#92): die eingehängte Karte trägt einen Trigger `Aktionen für Taverne`, dessen
+  // Menü nach dem Öffnen `Aktivieren` und `Aushängen` zeigt — keine eigenen Zeilen-Schaltflächen.
+  const triggerTav = await screen.findByRole('button', { name: 'Aktionen für Taverne' })
+  expect(screen.queryByRole('button', { name: 'Taverne aktivieren' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Taverne aushängen' })).toBeNull()
+  await act(async () => {
+    fireEvent.click(triggerTav)
+  })
+  const menuTav = screen.getByRole('menu', { name: 'Aktionen für Taverne' })
+  expect(within(menuTav).getByRole('menuitem', { name: 'Aktivieren' })).toBeTruthy()
+  expect(within(menuTav).getByRole('menuitem', { name: 'Aushängen' })).toBeTruthy()
   // Auswahl zum Einhängen bietet Wald, aber nicht Taverne.
   const auswahl = screen.getByLabelText('Karte aus der Bibliothek')
   expect(within(auswahl).getByRole('option', { name: 'Wald' })).toBeTruthy()
@@ -381,8 +389,12 @@ test('Aktivieren sendet die Absicht und folgt dem Server', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
+  // MODIFIED (#92): Aktivieren über das Menü `Aktionen für Taverne`.
   await act(async () => {
-    fireEvent.click(await screen.findByRole('button', { name: 'Taverne aktivieren' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Taverne' }))
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Aktivieren' }))
   })
 
   await waitFor(() => expect(socketMock.__facade.activateMap).toHaveBeenCalledWith('s1', 'i-tav'))
@@ -414,8 +426,12 @@ test('Aushängen sendet die Absicht und lädt die Liste neu', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
+  // MODIFIED (#92): Aushängen über das Menü `Aktionen für Taverne`.
   await act(async () => {
-    fireEvent.click(await screen.findByRole('button', { name: 'Taverne aushängen' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Taverne' }))
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Aushängen' }))
   })
 
   await waitFor(() => expect(gefragt('/api/sessions/s1/maps/i-tav', 'DELETE')).toBe(true))
@@ -469,8 +485,12 @@ test('Abgelehntes Aktivieren wird angezeigt', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
+  // MODIFIED (#92): Aktivieren über das Menü `Aktionen für Taverne`.
   await act(async () => {
-    fireEvent.click(await screen.findByRole('button', { name: 'Taverne aktivieren' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Taverne' }))
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Aktivieren' }))
   })
 
   await waitFor(() => expect(screen.getAllByText(ABLEHNUNG).length).toBeGreaterThan(0))

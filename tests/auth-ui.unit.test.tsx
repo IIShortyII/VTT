@@ -15,16 +15,21 @@
 // auf ein `role="alert"`-Element mit der Meldung); eine Ablehnung ohne `field` und ein
 // Netzfehler als Formularfehler (`role="alert"`, Klasse `form-error`) unter dem letzten Feld;
 // die Absende-Schaltflaeche ist gesperrt, solange das gemeinsame Schema den Zustand nicht
-// akzeptiert. Die Szenarien „Fehlgeschlagene Anmeldung wird angezeigt", „Vergebener Nutzername
-// wird angezeigt" und „Abgelehnte Passwortänderung wird angezeigt" aendern ihre Erwartung
-// (Namen bleiben); neu sind „Abgelehntes Feld zeigt den Fehler am Feld", die drei
-// „bleibt gesperrt bei …"-Szenarien und „Anmelden zeigt den Ladezustand und die
-// Rückversicherung".
+// akzeptiert.
 //
-// Rote Phase (constitution.md §3.1): die Formulare tragen noch keinen Feld-/Formularfehler
-// nach dem Formularmuster und keine gesperrte/ladende Absende-Schaltflaeche mit
-// Rueckversicherung. Die Szenarien scheitern an der erwarteten Assertion (fehlendes
-// `aria-invalid`/`form-error`/`aria-busy`), nicht an einem Setup-Fehler.
+// add-ui-menu (#92, MODIFIED user-auth + ui-shell): Die Passwortaenderung liegt jetzt in einem
+// Modal (`ui-dialog`) mit dem Titel `Passwort ändern`, das der Eintrag `Passwort ändern` des
+// Kontomenues (Menue-Schaltflaeche mit dem Nutzernamen in der Top-Bar) oeffnet. Solange das
+// Modal nicht offen ist, ist kein Passwortfeld gerendert; beim Oeffnen erhaelt `Bisheriges
+// Passwort` den Fokus, nach einem Erfolg schliesst das Modal und der Fokus kehrt zur
+// Menue-Schaltflaeche des Kontos zurueck. Das Abmelden ist ebenfalls ein Menueeintrag. Die vier
+// Passwort-Szenarien und „Fehlgeschlagene Abmeldung wird angezeigt" aendern ihre Erwartung
+// (Testnamen bleiben).
+//
+// Rote Phase (constitution.md §3.1): Kontomenue und Passwort-Modal existieren noch nicht; die
+// betroffenen Szenarien scheitern daran, dass weder die Menue-Schaltflaeche des Kontos noch der
+// Menueeintrag noch der Dialog `Passwort ändern` gefunden werden — fehlende Implementierung,
+// kein Setup-Fehler.
 
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react'
 import { App } from '../src/client/app/App.js'
@@ -296,21 +301,28 @@ test('Fehlgeschlagene Abmeldung wird angezeigt', async () => {
   // Servers (Anfrage verworfen).
   mockFetchMitFehler('/api/auth/logout', [
     { pfad: '/api/auth/me', antwort: antwort(200, user) },
+    { pfad: '/api/sessions', antwort: antwort(200, []) },
   ])
 
   render(<App />)
 
-  // In der angemeldeten Ansicht auf "Abmelden" gehen.
-  const abmelden = await screen.findByRole('button', { name: /abmelden/i })
-  fireEvent.click(abmelden)
+  // MODIFIED (#92): `Abmelden` liegt im Kontomenue der Top-Bar. Erst die Menue-Schaltflaeche
+  // mit dem Nutzernamen oeffnen, dann den Menueeintrag `Abmelden` waehlen.
+  const konto = await screen.findByRole('button', { name: 'Gandalf' })
+  await act(async () => {
+    fireEvent.click(konto)
+  })
+  const abmelden = await screen.findByRole('menuitem', { name: 'Abmelden' })
+  await act(async () => {
+    fireEvent.click(abmelden)
+  })
 
   // Der Fehlschlag wird sichtbar gemacht, statt lautlos zu verpuffen …
   await waitFor(() => expect(screen.getByText(/abmelden fehlgeschlagen/i)).toBeTruthy())
-  // … und die Ansicht bleibt angemeldet: der Server hat die Abmeldung nicht bestaetigt
+  // … und die Ansicht bleibt angemeldet: das Konto ist weiterhin als Menue-Schaltflaeche da
   // (constitution.md §9.1).
   const header = screen.getByRole('banner')
-  expect(within(header).getByText('Gandalf')).toBeTruthy()
-  expect(within(header).getByRole('button', { name: 'Abmelden' })).toBeTruthy()
+  expect(within(header).getByRole('button', { name: 'Gandalf' })).toBeTruthy()
 })
 
 // --- Registrierungsoberfläche (#45) ---------------------------------------------------------
@@ -398,50 +410,50 @@ test('Registrieren bleibt gesperrt bei leerem Pflichtfeld', async () => {
 
 // --- Passwortänderung in der Oberfläche -----------------------------------------------------
 // Requirement "Passwortänderung in der Oberfläche" aus
-// openspec/changes/add-account-security/specs/user-auth/spec.md, MODIFIED in
-// openspec/changes/add-start-view/specs/user-auth/spec.md (#86),
-// openspec/changes/add-toast-feedback/specs/user-auth/spec.md (#88) und
-// openspec/changes/add-ui-form/specs/user-auth/spec.md (#90). Das Formular liegt in einem
-// zugeklappten `<details class="start-account">` (design.md D4/D5); der Erfolg erscheint als
-// Toast im Toast-Host (#88), eine Ablehnung mit `field` als Feldfehler (#90).
+// openspec/changes/add-account-security/specs/user-auth/spec.md, MODIFIED zuletzt in
+// openspec/changes/add-ui-menu/specs/user-auth/spec.md (#92): das Formular liegt in einem Modal
+// `Passwort ändern`, das der Eintrag `Passwort ändern` des Kontomenues oeffnet; ein Erfolg
+// schliesst das Modal und der Fokus kehrt zur Menue-Schaltflaeche des Kontos zurueck.
 
 const ANGEMELDETER_NUTZER = { id: 'nutzer-1', email: 'spieler@example.com', username: 'Gandalf' }
 
-// Die beiden Passwortfelder werden über ihre Bedeutung gesucht (autoComplete bzw. name aus
-// design.md D5), nicht über eine bestimmte Beschriftung.
-function bisherigesPasswortFeld(container: HTMLElement): HTMLElement | null {
-  return container.querySelector('input[autocomplete="current-password"], input[name="currentPassword"]')
-}
-
-function neuesPasswortFeld(container: HTMLElement): HTMLElement | null {
-  return container.querySelector('input[autocomplete="new-password"], input[name="newPassword"]')
+/** Oeffnet das Passwort-Modal ueber das Kontomenue und liefert den Dialog. */
+async function oeffnePasswortModal(): Promise<HTMLElement> {
+  const konto = await screen.findByRole('button', { name: 'Gandalf' })
+  await act(async () => {
+    fireEvent.click(konto)
+  })
+  const eintrag = await screen.findByRole('menuitem', { name: 'Passwort ändern' })
+  await act(async () => {
+    fireEvent.click(eintrag)
+  })
+  return screen.getByRole('dialog', { name: 'Passwort ändern' })
 }
 
 test('Angemeldete Ansicht bietet die Passwortänderung an', async () => {
-  mockFetch([{ pfad: '/api/auth/me', antwort: antwort(200, ANGEMELDETER_NUTZER) }])
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, ANGEMELDETER_NUTZER) },
+    { pfad: '/api/sessions', antwort: antwort(200, []) },
+  ])
 
-  const { container } = render(<App />)
-  await screen.findByRole('button', { name: /ändern/i })
+  render(<App />)
+  // Vor dem Oeffnen gibt es kein Feld `Bisheriges Passwort` im Dokument.
+  await screen.findByRole('button', { name: 'Gandalf' })
+  expect(screen.queryByLabelText('Bisheriges Passwort')).toBeNull()
 
-  // Die Passwortänderung liegt am Ende der Startansicht in einem zugeklappten Aufklappbereich
-  // (`<details class="start-account">` ohne `open`), dessen Summary `Passwort ändern` traegt.
-  const details = container.querySelector('details.start-account') as HTMLDetailsElement | null
-  expect(details).not.toBeNull()
-  expect((details as HTMLDetailsElement).hasAttribute('open')).toBe(false)
-  const bereich = details as HTMLElement
-  const summary = must(bereich.querySelector('summary'), 'eine <summary> des Aufklappbereichs')
-  expect(summary.textContent).toContain('Passwort ändern')
-
-  // Die Felder und die Schaltflaeche liegen darin (auch solange zugeklappt).
-  expect(bisherigesPasswortFeld(bereich)).not.toBeNull()
-  expect(neuesPasswortFeld(bereich)).not.toBeNull()
-  expect(within(bereich).getByRole('button', { name: /ändern/i })).toBeTruthy()
+  const dialog = await oeffnePasswortModal()
+  const bisher = within(dialog).getByLabelText('Bisheriges Passwort')
+  expect(within(dialog).getByLabelText('Neues Passwort')).toBeTruthy()
+  expect(within(dialog).getByRole('button', { name: 'Passwort ändern' })).toBeTruthy()
+  // `Bisheriges Passwort` hat beim Oeffnen den Fokus.
+  expect(document.activeElement).toBe(bisher)
 })
 
 test('Abgelehnte Passwortänderung wird angezeigt', async () => {
   const ABLEHNUNG = 'Das bisherige Passwort ist falsch.'
   mockFetch([
     { pfad: '/api/auth/me', antwort: antwort(200, ANGEMELDETER_NUTZER) },
+    { pfad: '/api/sessions', antwort: antwort(200, []) },
     {
       pfad: '/api/auth/password',
       antwort: antwort(403, { error: ABLEHNUNG, message: ABLEHNUNG, field: 'currentPassword' }),
@@ -449,9 +461,9 @@ test('Abgelehnte Passwortänderung wird angezeigt', async () => {
   ])
 
   render(<App />)
-  await screen.findByRole('button', { name: /ändern/i })
-  const bisher = screen.getByLabelText('Bisheriges Passwort')
-  const neu = screen.getByLabelText('Neues Passwort')
+  const dialog = await oeffnePasswortModal()
+  const bisher = within(dialog).getByLabelText('Bisheriges Passwort')
+  const neu = within(dialog).getByLabelText('Neues Passwort')
   fireEvent.change(bisher, { target: { value: GUELTIGES_PASSWORT } })
   fireEvent.change(neu, { target: { value: 'mein-neues-sicheres-passwort' } })
   const form = must(bisher.closest('form'), 'ein <form> um die Passwortfelder') as HTMLElement
@@ -460,7 +472,7 @@ test('Abgelehnte Passwortänderung wird angezeigt', async () => {
     fireEvent.submit(form)
   })
 
-  // MODIFIED (#90): der Fehler steht am Feld `Bisheriges Passwort`.
+  // Der Fehler steht am Feld `Bisheriges Passwort`, `Neues Passwort` traegt kein `aria-invalid`.
   await waitFor(() => expect(bisher.getAttribute('aria-invalid')).toBe('true'))
   const fehler = must(feldFehlerVon(bisher), 'ein Feldfehler am Feld „Bisheriges Passwort"')
   expect(fehler.getAttribute('role')).toBe('alert')
@@ -470,19 +482,20 @@ test('Abgelehnte Passwortänderung wird angezeigt', async () => {
   const host = screen.queryByRole('status')
   expect(host === null || host.children.length === 0).toBe(true)
   // … und die Ansicht bleibt angemeldet (constitution.md §9.1).
-  expect(screen.getByRole('button', { name: /ändern/i })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Gandalf' })).toBeTruthy()
 })
 
 test('Passwort ändern bleibt gesperrt bei zu kurzem neuen Passwort', async () => {
   mockFetch([
     { pfad: '/api/auth/me', antwort: antwort(200, ANGEMELDETER_NUTZER) },
+    { pfad: '/api/sessions', antwort: antwort(200, []) },
     { pfad: '/api/auth/password', antwort: antwort(200, { ok: true }) },
   ])
 
   render(<App />)
-  await screen.findByRole('button', { name: /ändern/i })
-  const bisher = screen.getByLabelText('Bisheriges Passwort')
-  const neu = screen.getByLabelText('Neues Passwort')
+  const dialog = await oeffnePasswortModal()
+  const bisher = within(dialog).getByLabelText('Bisheriges Passwort')
+  const neu = within(dialog).getByLabelText('Neues Passwort')
   fireEvent.change(bisher, { target: { value: GUELTIGES_PASSWORT } })
   fireEvent.change(neu, { target: { value: 'a'.repeat(14) } })
   const form = must(bisher.closest('form'), 'ein <form> um die Passwortfelder') as HTMLElement
@@ -500,13 +513,22 @@ test('Passwort ändern bleibt gesperrt bei zu kurzem neuen Passwort', async () =
 test('Erfolgreiche Passwortänderung wird bestätigt', async () => {
   mockFetch([
     { pfad: '/api/auth/me', antwort: antwort(200, ANGEMELDETER_NUTZER) },
+    { pfad: '/api/sessions', antwort: antwort(200, []) },
     { pfad: '/api/auth/password', antwort: antwort(200, { ok: true }) },
   ])
 
-  const { container } = render(<App />)
-  await screen.findByRole('button', { name: /ändern/i })
-  const bisher = screen.getByLabelText('Bisheriges Passwort')
-  const neu = screen.getByLabelText('Neues Passwort')
+  render(<App />)
+  const konto = await screen.findByRole('button', { name: 'Gandalf' })
+  await act(async () => {
+    fireEvent.click(konto)
+  })
+  const eintrag = await screen.findByRole('menuitem', { name: 'Passwort ändern' })
+  await act(async () => {
+    fireEvent.click(eintrag)
+  })
+  const dialog = screen.getByRole('dialog', { name: 'Passwort ändern' })
+  const bisher = within(dialog).getByLabelText('Bisheriges Passwort')
+  const neu = within(dialog).getByLabelText('Neues Passwort')
   fireEvent.change(bisher, { target: { value: GUELTIGES_PASSWORT } })
   fireEvent.change(neu, { target: { value: 'mein-neues-sicheres-passwort' } })
   const form = must(bisher.closest('form'), 'ein <form> um die Passwortfelder') as HTMLElement
@@ -515,14 +537,12 @@ test('Erfolgreiche Passwortänderung wird bestätigt', async () => {
     fireEvent.submit(form)
   })
 
-  // MODIFIED (#88): der Erfolg erscheint als Toast `Passwort geändert.` im Toast-Host
-  // (`role="status"`), nicht mehr als `role="alert"` im Formular.
+  // Der Erfolg erscheint als Toast `Passwort geändert.` im Toast-Host (`role="status"`).
   const host = await screen.findByRole('status')
   await waitFor(() => expect(within(host).getByText('Passwort geändert.')).toBeTruthy())
-  expect(within(form).queryByRole('alert')).toBeNull()
-  // … beide Passwortfelder sind geleert …
-  expect((must(bisherigesPasswortFeld(container), 'das bisherige Passwortfeld') as HTMLInputElement).value).toBe('')
-  expect((must(neuesPasswortFeld(container), 'das neue Passwortfeld') as HTMLInputElement).value).toBe('')
+  // Das Modal schliesst, der Fokus kehrt zur Menue-Schaltflaeche des Kontos zurueck …
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Passwort ändern' })).toBeNull())
+  expect(document.activeElement).toBe(konto)
   // … und die Ansicht bleibt angemeldet.
-  expect(screen.getByRole('button', { name: /ändern/i })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Gandalf' })).toBeTruthy()
 })

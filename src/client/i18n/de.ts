@@ -7,10 +7,17 @@
 // ui-status (#91, design.md D7): `status.*`, `overlay.*`, `session.ended.*`,
 // `session.replaced.*`, `session.toList` und `empty.*` sind neu; `toast.reconnected` steht bei
 // den uebrigen Toasts.
+//
+// ui-menu (#92, design.md D10): `shell.account`, `shell.changePassword` bei den
+// Shell-Schluesseln, `session.showCode`, `session.code` bei den Sitzungsschluesseln,
+// `menu.*` und `token.*` als neue Gruppen vor `form.stillWorking`; `start.account.password`
+// entfaellt (das Kontomenue traegt den Nutzernamen als Namen, `ui-shell` "Top-Bar").
 
 export const de = {
   'shell.back': 'Zurück',
   'shell.logout': 'Abmelden',
+  'shell.account': 'Konto',
+  'shell.changePassword': 'Passwort ändern',
   'shell.language': 'Sprache',
   'shell.footer': 'Version {version} · Build {sha}',
 
@@ -59,7 +66,6 @@ export const de = {
   'start.enter': 'Betreten',
   'start.empty.title': 'Noch keine Sitzungen',
   'start.empty.hint': 'Erstelle eine Sitzung oder tritt mit einem Code bei.',
-  'start.account.password': 'Passwort ändern',
   'start.loadFailed': 'Die Spielsitzungen konnten nicht geladen werden.',
   'start.createFailed': 'Die Spielsitzung konnte nicht erstellt werden. Bitte versuche es erneut.',
   'start.joinFailed': 'Der Beitritt ist fehlgeschlagen. Bitte versuche es erneut.',
@@ -82,6 +88,8 @@ export const de = {
   'session.replaced.title': 'An anderer Stelle geöffnet',
   'session.replaced.message': 'Diese Spielsitzung wurde an anderer Stelle geöffnet.',
   'session.replaced.continue': 'Hier weiterspielen',
+  'session.showCode': 'Sitzungscode anzeigen',
+  'session.code': 'Sitzungscode',
 
   'toast.codeCopied': 'Sitzungscode kopiert',
   'toast.tokenCreated': 'Token angelegt',
@@ -115,6 +123,24 @@ export const de = {
   'empty.mapInstances.hint': 'Hänge eine Karte aus deiner Bibliothek ein.',
   'empty.library.title': 'Noch keine Karten',
   'empty.library.hint': 'Lege eine Karte mit Namen und Bild an.',
+
+  'menu.rowActions': 'Aktionen für {name}',
+  'menu.edit': 'Bearbeiten',
+  'menu.assign': 'Zuweisen…',
+  'menu.share': 'Freigeben…',
+  'menu.remove': 'Entfernen',
+  'menu.activate': 'Aktivieren',
+  'menu.unmount': 'Aushängen',
+  'menu.open': 'Öffnen',
+  'menu.delete': 'Löschen',
+
+  'token.assign.title': '{name} zuweisen',
+  'token.assign.player': 'Spieler',
+  'token.assign.submit': 'Zuweisen',
+  'token.share.title': 'Freigaben für {name}',
+  'token.remove.title': 'Token „{name}" entfernen?',
+  'token.remove.message': 'Das Token wird von der Karte entfernt.',
+  'token.remove.confirm': 'Entfernen',
 
   'form.stillWorking': 'Verbinde noch… das kann einen Moment dauern.',
 } as const

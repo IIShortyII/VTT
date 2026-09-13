@@ -77,6 +77,12 @@ export const de = {
   'toast.mapMounted': 'Karte eingehängt',
   'toast.annotationRemoved': 'Anmerkung entfernt',
   'toast.annotationsRemoved': 'Anmerkungen entfernt',
+
+  'dialog.close': 'Schließen',
+  'dialog.cancel': 'Abbrechen',
+  'map.delete.title': 'Karte „{name}" löschen?',
+  'map.delete.message': 'Die Karte wird aus der Bibliothek entfernt und kann nicht wiederhergestellt werden.',
+  'map.delete.confirm': 'Löschen',
 } as const
 
 export type TextKey = keyof typeof de

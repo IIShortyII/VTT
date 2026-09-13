@@ -5,20 +5,25 @@ import { ChangePasswordForm } from '../auth/ChangePasswordForm.js'
 import { Hero } from '../app/Hero.js'
 import { useT } from '../i18n/locale.js'
 import { Icon } from '../ui/Icon.js'
+import { Modal } from '../ui/Modal.js'
 import { createSession, joinSession, listSessions } from './api.js'
 import { ROLE_LABELS, SESSION_STATUS_PRESENTATION } from './session-status.js'
 
-// Sitzungsliste der angemeldeten Ansicht (add-start-view #86, design.md D4). Erstellen- und
-// Beitreten-Formular sind Aufklapp-Panels statt dauerhaft offener Formulare (proposal.md
-// "Aufklapp-Panels statt Modal") - `panel` haelt, welches (falls ueberhaupt eines) offen ist.
-// ChangePasswordForm bleibt hier, aber zugeklappt in einem `<details>` (proposal.md,
-// user-auth "Passwortänderung in der Oberfläche"). Abmeldung und der globale Hinweis liegen
-// in der App-Shell (ui-shell #84) - diese Ansicht kennt beides nicht mehr. Prop `user` entfaellt
-// (design.md D4, Nachlese aus #84) - die angemeldete Ansicht braucht ihn nirgends.
+// Sitzungsliste der angemeldeten Ansicht (add-start-view #86, design.md D4). `panel` haelt,
+// welches Formular (falls ueberhaupt eines) offen ist. ChangePasswordForm bleibt hier, aber
+// zugeklappt in einem `<details>` (proposal.md, user-auth "Passwortänderung in der
+// Oberfläche"). Abmeldung und der globale Hinweis liegen in der App-Shell (ui-shell #84) -
+// diese Ansicht kennt beides nicht mehr. Prop `user` entfaellt (design.md D4, Nachlese aus
+// #84) - die angemeldete Ansicht braucht ihn nirgends.
 // ui-text (#87, design.md D6): Hero-Texte, die drei Aktionen, beide Formulare, Leerzustand,
 // `aria-label` der Liste, `Betreten`, die Summary "Passwort ändern" und die frueher als
 // Modulkonstanten gehaltenen Fehlermeldungen laufen jetzt ueber `t('start.*')`; Pillentext und
 // Rolle der Karten ueber `t(status.label)`/`t(ROLE_LABELS[session.role])`.
+// ui-dialog (#89, design.md D7): die Erstellen- und Beitreten-Formulare stehen jetzt in einem
+// `Modal` statt als Aufklapp-Panel; die Hero-Aktionen tragen `aria-haspopup="dialog"` statt
+// `aria-expanded`. `toggle` entfaellt zugunsten von `open` (setzt `panel` direkt, statt zu
+// schalten) - hoechstens ein Dialog ist ueberhaupt erreichbar, weil ein offener Dialog den
+// Hintergrund per Backdrop verdeckt.
 
 export interface SessionListProps {
   onEnter: (sessionId: string) => void
@@ -60,10 +65,10 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
     })
   }, [t])
 
-  const toggle = (target: Panel) => () => {
+  const open = (target: Panel) => () => {
     setCreateError(null)
     setJoinError(null)
-    setPanel((current) => (current === target ? 'none' : target))
+    setPanel(target)
   }
 
   const close = () => {
@@ -121,10 +126,10 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
         subline={t('start.subline')}
         actions={
           <>
-            <button type="button" className="primary" aria-expanded={panel === 'erstellen'} onClick={toggle('erstellen')}>
+            <button type="button" className="primary" aria-haspopup="dialog" onClick={open('erstellen')}>
               <Icon name="add" /> {t('start.actions.lead')}
             </button>
-            <button type="button" aria-expanded={panel === 'beitreten'} onClick={toggle('beitreten')}>
+            <button type="button" aria-haspopup="dialog" onClick={open('beitreten')}>
               <Icon name="players" /> {t('start.actions.join')}
             </button>
             <button type="button" className="link" onClick={onOpenLibrary}>
@@ -135,65 +140,67 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
       />
 
       {panel === 'erstellen' && (
-        <form className="panel" aria-labelledby="create-session-heading" onSubmit={(event) => void handleCreate(event)}>
-          <h2 id="create-session-heading">{t('start.create.title')}</h2>
-          <label className="field-label" htmlFor="session-name">
-            {t('start.create.name')}
-          </label>
-          <input
-            id="session-name"
-            name="name"
-            type="text"
-            autoFocus
-            required
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-          {createError !== null && (
-            <p role="alert" className="field-error">
-              {createError}
-            </p>
-          )}
-          <div className="panel-actions">
-            <button type="submit" className="primary" disabled={creating}>
-              {t('start.create.submit')}
-            </button>
-            <button type="button" onClick={close}>
-              {t('start.cancel')}
-            </button>
-          </div>
-        </form>
+        <Modal title={t('start.create.title')} onClose={close}>
+          <form aria-label={t('start.create.title')} onSubmit={(event) => void handleCreate(event)}>
+            <label className="field-label" htmlFor="session-name">
+              {t('start.create.name')}
+            </label>
+            <input
+              id="session-name"
+              name="name"
+              type="text"
+              autoFocus
+              required
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+            {createError !== null && (
+              <p role="alert" className="field-error">
+                {createError}
+              </p>
+            )}
+            <div className="panel-actions">
+              <button type="submit" className="primary" disabled={creating}>
+                {t('start.create.submit')}
+              </button>
+              <button type="button" onClick={close}>
+                {t('start.cancel')}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {panel === 'beitreten' && (
-        <form className="panel" aria-labelledby="join-session-heading" onSubmit={(event) => void handleJoin(event)}>
-          <h2 id="join-session-heading">{t('start.join.title')}</h2>
-          <label className="field-label" htmlFor="session-code">
-            {t('start.join.code')}
-          </label>
-          <input
-            id="session-code"
-            name="code"
-            type="text"
-            autoFocus
-            required
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-          />
-          {joinError !== null && (
-            <p role="alert" className="field-error">
-              {joinError}
-            </p>
-          )}
-          <div className="panel-actions">
-            <button type="submit" className="primary" disabled={joining}>
-              {t('start.join.submit')}
-            </button>
-            <button type="button" onClick={close}>
-              {t('start.cancel')}
-            </button>
-          </div>
-        </form>
+        <Modal title={t('start.join.title')} onClose={close}>
+          <form aria-label={t('start.join.title')} onSubmit={(event) => void handleJoin(event)}>
+            <label className="field-label" htmlFor="session-code">
+              {t('start.join.code')}
+            </label>
+            <input
+              id="session-code"
+              name="code"
+              type="text"
+              autoFocus
+              required
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+            />
+            {joinError !== null && (
+              <p role="alert" className="field-error">
+                {joinError}
+              </p>
+            )}
+            <div className="panel-actions">
+              <button type="submit" className="primary" disabled={joining}>
+                {t('start.join.submit')}
+              </button>
+              <button type="button" onClick={close}>
+                {t('start.cancel')}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {loadError !== null && <p role="alert">{loadError}</p>}

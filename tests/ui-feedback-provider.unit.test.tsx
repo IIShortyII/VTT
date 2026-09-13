@@ -9,11 +9,7 @@
 // Diese Szenarien rendern den Provider (bzw. bewusst keinen) um eine kleine Testkomponente, die
 // `useToasts()` holt und `push` bereitstellt (design.md D6). Sie importieren
 // `ToastProvider`/`useToasts`/`TOAST_TTL_MS`/`TOAST_MAX` aus `src/client/ui/toast.tsx` (Import
-// mit `.js`-Endung, TS-Konvention). Das Modul existiert vor der Implementierung noch nicht — der
-// Import laesst diese ganze Datei bis dahin nicht laden (der erwartete rote Grund: fehlende
-// Implementierung, design.md D6). Damit reisst dieser Import keine anderen Szenarien mit: die
-// Auslöser im Raum und das Stylesheet stehen in tests/ui-feedback.unit.test.tsx, das ohne dieses
-// Modul ladbar bleibt.
+// mit `.js`-Endung, TS-Konvention).
 //
 // Adressierung ausschliesslich ueber Testing-Library-Abfragen und den Toast-Host
 // `getByRole('status')` bzw. dessen `children` (design.md D6); Zeit ueber `jest.useFakeTimers()`
@@ -200,26 +196,48 @@ test('Dedupe trifft auch einen älteren Toast', () => {
 
 test('Unmount lässt keinen Timer zurück', () => {
   jest.useFakeTimers()
-  const { unmount } = render(
-    <ToastProvider>
-      <Fangen />
-    </ToastProvider>,
-  )
-  act(() => {
-    push('Erster')
-    push('Zweiter')
-  })
-  expect(screen.getByRole('status').children.length).toBe(2)
+  // Ein Waechter auf console.error faengt ein etwaiges setState nach dem Unmount ab (in
+  // React 19 sonst ein stiller No-Op) — er darf beim Vorruecken der Zeit nicht anschlagen.
+  const fehlerWaechter = jest.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    const { unmount } = render(
+      <ToastProvider>
+        <Fangen />
+      </ToastProvider>,
+    )
+    act(() => {
+      push('Erster')
+      push('Zweiter')
+    })
+    // GIVEN: zwei Toasts sind sichtbar, und fuer jeden steht genau ein Lebensdauer-Timer aus.
+    expect(screen.getByRole('status').children.length).toBe(2)
+    expect(jest.getTimerCount()).toBe(2)
 
-  act(() => {
-    unmount()
-  })
-  act(() => {
-    jest.advanceTimersByTime(3000)
-  })
+    // WHEN: der Teilbaum samt Provider wird entfernt …
+    act(() => {
+      unmount()
+    })
 
-  // Nach dem Entfernen steht kein Lebensdauer-Timer des Providers mehr aus.
-  expect(jest.getTimerCount()).toBe(0)
+    // THEN: unmittelbar nach dem Unmount — VOR jedem Vorruecken der Zeit — steht kein Timer
+    // mehr aus. Genau hier faellt ein leckender Provider durch: raeumt sein Cleanup die Timer
+    // nicht ab, stuenden hier noch zwei aus. (Ein erst nach dem Vorruecken geprueftes
+    // `getTimerCount()` waere zwangslaeufig 0 — beide Timer feuerten beim Vorruecken und
+    // verliessen die Queue — und wuerde den Defekt verdecken; deshalb wird hier zuerst
+    // geprueft.)
+    expect(jest.getTimerCount()).toBe(0)
+
+    // … und danach vergehen 3 s, ohne einen Fehler zu werfen und ohne ein setState nach dem
+    // Unmount zu melden.
+    expect(() => {
+      act(() => {
+        jest.advanceTimersByTime(3000)
+      })
+    }).not.toThrow()
+    expect(jest.getTimerCount()).toBe(0)
+    expect(fehlerWaechter).not.toHaveBeenCalled()
+  } finally {
+    fehlerWaechter.mockRestore()
+  }
 })
 
 // --- Requirement: Auslösen ohne Provider ----------------------------------------------------

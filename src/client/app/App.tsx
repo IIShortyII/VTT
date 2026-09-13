@@ -8,6 +8,7 @@ import { syncLocale, useT } from '../i18n/locale.js'
 import { MapLibrary } from '../map/MapLibrary.js'
 import { SessionList } from '../session/SessionList.js'
 import { SessionRoom } from '../session/SessionRoom.js'
+import { ToastProvider } from '../ui/toast.js'
 import { AppShell } from './AppShell.js'
 import { FALLBACK_BUILD, type BuildInfo } from './build-info.js'
 import { Hero } from './Hero.js'
@@ -23,6 +24,8 @@ import { Hero } from './Hero.js'
 // aktive Sprache zum Zeitpunkt des Fehlers traegt (design.md D1). Der gespeicherte Hinweis
 // (`hinweis`) wird beim Umschalten nicht neu uebersetzt (design.md "Risks") - hinnehmbar, die
 // naechste Aktion erzeugt ihn in der neuen Sprache.
+// ui-feedback (#88, design.md D2): `App` wird vom Toast-Provider umschlossen - der Host steht
+// als Geschwister nach dem `<footer>`, damit jede Ansicht auslösen kann.
 type AuthState = { status: 'unbekannt' } | { status: 'anonym' } | { status: 'angemeldet'; user: UserOutput }
 
 type AuthView = 'login' | 'register'
@@ -165,15 +168,17 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
   }
 
   return (
-    <AppShell
-      canGoBack={canGoBack}
-      onBack={onBack}
-      account={account}
-      onLogout={() => void handleLogout()}
-      hinweis={hinweis}
-      build={build}
-    >
-      {content}
-    </AppShell>
+    <ToastProvider>
+      <AppShell
+        canGoBack={canGoBack}
+        onBack={onBack}
+        account={account}
+        onLogout={() => void handleLogout()}
+        hinweis={hinweis}
+        build={build}
+      >
+        {content}
+      </AppShell>
+    </ToastProvider>
   )
 }

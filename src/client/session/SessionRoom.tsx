@@ -45,6 +45,7 @@ import { createSessionSocket, type SessionSocketFacade } from './socket.js'
 import { SESSION_STATUS_PRESENTATION, TRANSITION_LABELS } from './session-status.js'
 import { PlayerTokenList } from './TokenStats.js'
 import { Icon } from '../ui/Icon.js'
+import { useToasts } from '../ui/toast.js'
 import { TokenPanel } from './TokenPanel.js'
 
 // Raumansicht (design.md D10, Requirement "Sitzungsoberflaeche"; session-map #50, Requirement
@@ -128,6 +129,7 @@ function readStoredUnit(): DistanceUnit {
 
 export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomProps) {
   const t = useT()
+  const { push } = useToasts()
   const socketRef = useRef<SessionSocketFacade | null>(null)
   const [state, setState] = useState<RoomState>({ status: 'lädt' })
   const [replaced, setReplaced] = useState(false)
@@ -350,6 +352,28 @@ export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomPr
     })
   }
 
+  // ui-feedback (#88, design.md D4): der Sitzungscode wird ueber die Zwischenablage des
+  // Browsers kopiert; gelingt das, loest die Anwendung den Toast `Sitzungscode kopiert` aus,
+  // scheitert es (auch ohne `navigator.clipboard`, etwa ausserhalb eines sicheren Kontexts),
+  // bleibt es ohne Toast und ohne State.
+  const handleCopyCode = () => {
+    if (state.status !== 'bereit' || state.code === undefined) {
+      return
+    }
+    const code = state.code
+    const clipboard = navigator.clipboard
+    const writePromise = clipboard
+      ? clipboard.writeText(code)
+      : Promise.reject(new Error('Zwischenablage nicht verfügbar'))
+    writePromise
+      .then(() => {
+        push(t('toast.codeCopied'))
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
   const handleAliasSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const socket = socketRef.current
@@ -413,6 +437,9 @@ export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomPr
       .createToken(sessionId, input)
       .then((ack) => {
         setTokenError(ack.ok ? null : ack.message)
+        if (ack.ok) {
+          push(t('toast.tokenCreated'))
+        }
       })
       .catch((error: unknown) => {
         console.error(error)
@@ -611,6 +638,9 @@ export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomPr
       .deleteAnnotation(sessionId, target)
       .then((ack) => {
         setAnnotationError(ack.ok ? null : ack.message)
+        if (ack.ok) {
+          push(t(target.kind === 'eine' ? 'toast.annotationRemoved' : 'toast.annotationsRemoved'))
+        }
       })
       .catch((error: unknown) => {
         console.error(error)
@@ -692,7 +722,14 @@ export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomPr
           <Icon name={status.icon} /> {t(status.label)}
         </span>
       </p>
-      {state.code !== undefined && <p>Code: {state.code}</p>}
+      {state.code !== undefined && (
+        <p>
+          Code: {state.code}{' '}
+          <button type="button" onClick={handleCopyCode}>
+            {t('session.copyCode')}
+          </button>
+        </p>
+      )}
       <ul>
         {state.participants.map((participant) => (
           <li key={participant.userId}>

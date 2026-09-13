@@ -439,7 +439,11 @@ Servers SHALL als Meldung sichtbar sein. Dem Spielleiter SHALL sie zusätzlich d
 Sitzungscode und die im aktuellen Zustand erlaubten Übergänge als Schaltflächen anbieten,
 beschriftet mit dem Verb der Aktion in der aktiven Sprache (`ui-text`: `Öffnen`, `Starten`,
 `Pausieren`, `Beenden`), nie mit dem Aktionsnamen des Vertrags (`oeffnen`, `starten`,
-`pausieren`, `beenden`); einem Spieler MUST NOT sie Code oder Steuerung zeigen. Der angezeigte Zustand SHALL dem
+`pausieren`, `beenden`). Neben dem Sitzungscode SHALL sie dem Spielleiter eine Schaltfläche
+`Kopieren` (Text der aktiven Sprache, `ui-text`) anbieten, die den Code in die Zwischenablage
+legt; gelingt das, SHALL die Anwendung den Toast `Sitzungscode kopiert` auslösen
+(`ui-feedback`), scheitert es, MUST NOT ein Toast erscheinen. Einem Spieler MUST NOT sie
+Code, Schaltfläche `Kopieren` oder Steuerung zeigen. Der angezeigte Zustand SHALL dem
 zuletzt vom Server gemeldeten folgen (`constitution.md` §9.1), nicht der zuletzt geklickten
 Schaltfläche.
 
@@ -475,9 +479,9 @@ erneutes Betreten erfolgt nur durch eine bewusste Handlung des Nutzers. Erhält 
   `role: "spielleiter"`, `status: "geoeffnet"`, `code: "ABC234"` und zwei Teilnehmer, einen
   mit `online: true`, einen mit `online: false`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** zeigt sie den Code `ABC234`, die Zustandspille `Geöffnet` (Klasse `status-pill`), beide
-  Teilnehmer mit unterscheidbarem Anwesenheitskennzeichen sowie die Schaltflächen `Starten`
-  und `Beenden`, aber keine Schaltfläche `Öffnen` oder `Pausieren`; kein Textknoten lautet
+- **THEN** zeigt sie den Code `ABC234` mit einer Schaltfläche `Kopieren`, die Zustandspille `Geöffnet`
+  (Klasse `status-pill`), beide Teilnehmer mit unterscheidbarem Anwesenheitskennzeichen sowie
+  die Schaltflächen `Starten` und `Beenden`, aber keine Schaltfläche `Öffnen` oder `Pausieren`; kein Textknoten lautet
   `geoeffnet`, `starten` oder `beenden`
 
 #### Scenario: Raumansicht des Spielers
@@ -486,9 +490,24 @@ erneutes Betreten erfolgt nur durch eine bewusste Handlung des Nutzers. Erhält 
   `role: "spieler"`, `status: "gestartet"` und kein Feld `code`
 - **WHEN** die Raumansicht gerendert wird
 - **THEN** zeigt sie den Namen als Überschrift der Ebene 1, die Zustandspille `Läuft` mit der
-  Klasse `status-pill--active` und die Teilnehmerliste, aber keinen Sitzungscode und keine
-  Schaltfläche `Öffnen`, `Starten`, `Pausieren` oder `Beenden`; kein Textknoten lautet
-  `gestartet`
+  Klasse `status-pill--active` und die Teilnehmerliste, aber keinen Sitzungscode und keine Schaltfläche `Kopieren`,
+  `Öffnen`, `Starten`, `Pausieren` oder `Beenden`; kein Textknoten lautet `gestartet`
+
+#### Scenario: Sitzungscode wird kopiert
+
+- **GIVEN** die Raumansicht des Spielleiters zeigt den Code `ABC234`, und die Zwischenablage
+  des Browsers bestätigt das Schreiben
+- **WHEN** die Schaltfläche `Kopieren` ausgelöst wird
+- **THEN** wurde genau der Text `ABC234` in die Zwischenablage geschrieben, und der
+  Toast-Host (`ui-feedback`) zeigt einen Toast `Sitzungscode kopiert`
+
+#### Scenario: Gescheitertes Kopieren zeigt keinen Toast
+
+- **GIVEN** die Raumansicht des Spielleiters zeigt den Code `ABC234`, und die Zwischenablage
+  des Browsers lehnt das Schreiben ab
+- **WHEN** die Schaltfläche `Kopieren` ausgelöst wird
+- **THEN** zeigt der Toast-Host keinen Toast, und die Raumansicht bleibt mit dem Code
+  `ABC234` gerendert
 
 #### Scenario: Zustand folgt dem Server
 

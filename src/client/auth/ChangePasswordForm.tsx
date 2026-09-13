@@ -9,9 +9,6 @@ import { changePassword } from './api.js'
 // Formular zur Passwortaenderung in der angemeldeten Ansicht (account-security #13,
 // design.md D5). Kein Zustandswechsel in App - die Sitzung bleibt, der Server sagt nichts
 // anderes (constitution.md §9.1); eine Ablehnung zeigt nur eine Meldung, meldet niemanden ab.
-// add-start-view (#86, design.md D5): liegt jetzt in einem `<details>` mit der Summary
-// "Passwort ändern" (SessionList.tsx) - die Summary ist die Ueberschrift, eine eigene `<h2>`
-// stuende sonst zweimal untereinander.
 // ui-text (#87, design.md D6): Labels, Schaltflaeche und die frueher als Modulkonstanten
 // gehaltenen Meldungen laufen jetzt ueber `t('auth.password.*')`; die Aufrufe stehen im
 // Erfolgs- bzw. `catch`-Zweig, damit sie die aktive Sprache zum Zeitpunkt des Ereignisses
@@ -21,6 +18,10 @@ import { changePassword } from './api.js'
 // Formular keine Meldung mit `role="alert"` mehr.
 // ui-form (#90, design.md D2-D4): `message` weicht `fieldErrors`/`formError`/`pending`;
 // Gueltigkeit kommt aus `ChangePasswordInputSchema.safeParse` (design.md D3).
+// ui-menu (#92, design.md D8): das Formular liegt jetzt in einem Modal, erreichbar ueber das
+// Kontomenue der Shell - die optionale Prop `onSuccess` schliesst es nach einem Erfolg (nach
+// dem Toast und dem Leeren der Felder); `Bisheriges Passwort` bekommt `autoFocus`, das Modal
+// laesst es ihm (`ui-dialog`, "Ein Kind mit autoFocus behält den Fokus").
 
 type ChangePasswordField = 'currentPassword' | 'newPassword'
 
@@ -28,7 +29,11 @@ function isChangePasswordField(value: string | undefined): value is ChangePasswo
   return value === 'currentPassword' || value === 'newPassword'
 }
 
-export function ChangePasswordForm() {
+export interface ChangePasswordFormProps {
+  onSuccess?: () => void
+}
+
+export function ChangePasswordForm({ onSuccess }: ChangePasswordFormProps = {}) {
   const t = useT()
   const { push } = useToasts()
   const [currentPassword, setCurrentPassword] = useState('')
@@ -53,6 +58,7 @@ export function ChangePasswordForm() {
         push(t('auth.password.changed'))
         setCurrentPassword('')
         setNewPassword('')
+        onSuccess?.()
       } else if (isChangePasswordField(result.field)) {
         // Ablehnung (400/403) mit Feldbezug: Meldung am Feld, Felder bleiben erhalten
         // (design.md D2/D4).
@@ -78,6 +84,7 @@ export function ChangePasswordForm() {
             name="currentPassword"
             type="password"
             autoComplete="current-password"
+            autoFocus
             value={currentPassword}
             onChange={(event) => setCurrentPassword(event.target.value)}
             required

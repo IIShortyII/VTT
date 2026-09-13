@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { UserOutput } from '../../shared/auth.js'
 import { fetchCurrentUser, logout } from '../auth/api.js'
+import { ChangePasswordForm } from '../auth/ChangePasswordForm.js'
 import { LoginForm } from '../auth/LoginForm.js'
 import { RegisterForm } from '../auth/RegisterForm.js'
 import { syncLocale, useT } from '../i18n/locale.js'
@@ -9,6 +10,7 @@ import { MapLibrary } from '../map/MapLibrary.js'
 import { SessionList } from '../session/SessionList.js'
 import { SessionRoom } from '../session/SessionRoom.js'
 import { ConfirmProvider } from '../ui/confirm.js'
+import { Modal } from '../ui/Modal.js'
 import { ToastProvider } from '../ui/toast.js'
 import { AppShell } from './AppShell.js'
 import { FALLBACK_BUILD, type BuildInfo } from './build-info.js'
@@ -34,6 +36,10 @@ import { Hero } from './Hero.js'
 // - der Hinweis der Liste kommt aus `t('session.ended.hint')`, buchstabengleich dem bisherigen
 // Text. `onLeave` fuehrt (wie bisher nur `onEnded`) zur Sitzungsliste, ausgeloest durch den
 // Ersetzt-Dialog ("Zur Übersicht", Esc, `Schließen`).
+// ui-menu (#92, design.md D8): das Passwort-Formular liegt jetzt in einem Modal, erreichbar
+// ueber das Kontomenue der Shell (`AppShellProps.onChangePassword`) statt eines `<details>` in
+// der Sitzungsliste; `passwordOpen` steuert das Modal, `ChangePasswordForm.onSuccess` schliesst
+// es nach einem Erfolg.
 type AuthState = { status: 'unbekannt' } | { status: 'anonym' } | { status: 'angemeldet'; user: UserOutput }
 
 type AuthView = 'login' | 'register'
@@ -68,6 +74,9 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
   // Shell gezeigt (ui-shell #84, design.md D3), nicht mehr von einer einzelnen Ansicht.
   const [hinweis, setHinweis] = useState<string | null>(null)
   const [sessionView, setSessionView] = useState<SessionView>({ view: 'liste' })
+  // ui-menu (#92, design.md D8): Startwert `false` - das Modal steht ausserhalb jeder Ansicht,
+  // damit es aus jeder angemeldeten Ansicht ueber das Kontomenue erreichbar ist.
+  const [passwordOpen, setPasswordOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -184,10 +193,16 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
           onBack={onBack}
           account={account}
           onLogout={() => void handleLogout()}
+          onChangePassword={() => setPasswordOpen(true)}
           hinweis={hinweis}
           build={build}
         >
           {content}
+          {passwordOpen && (
+            <Modal title={t('shell.changePassword')} onClose={() => setPasswordOpen(false)}>
+              <ChangePasswordForm onSuccess={() => setPasswordOpen(false)} />
+            </Modal>
+          )}
         </AppShell>
       </ConfirmProvider>
     </ToastProvider>

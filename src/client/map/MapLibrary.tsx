@@ -5,6 +5,7 @@ import { useT } from '../i18n/locale.js'
 import { useConfirm } from '../ui/confirm.js'
 import { EmptyState } from '../ui/status.js'
 import { Field, SubmitButton } from '../ui/form.js'
+import { ActionMenu, MenuTrigger, useFloating } from '../ui/menu.js'
 import { createMap, deleteMap, listMaps, mapImageUrl, updateMap, uploadMapImage } from './api.js'
 import { MapCanvas } from './MapCanvas.js'
 
@@ -25,6 +26,10 @@ import { MapCanvas } from './MapCanvas.js'
 // Ablehnung von `createMap` mit `field` `name` -> Feldfehler; Ablehnung von `uploadMapImage`
 // und `catch` -> Formularfehler (`GENERIC_CREATE_ERROR_MESSAGE` bleibt). Das Rasterformular der
 // Kartenansicht bleibt unveraendert (Epic C).
+// ui-menu (#92, design.md D7): je Bibliothekskarte zusaetzlich zur Namens-Schaltflaeche ein
+// ⋮-Menue `Aktionen für <Name>` (`LibraryRow`) mit `Öffnen`/`Löschen`; `Löschen` laeuft ueber
+// denselben Bestaetigungsdialog wie die Detailansicht (`handleDeleteFromList`), eine Ablehnung
+// erscheint als `listError` in der Listenansicht.
 
 type LibraryView = { view: 'liste' } | { view: 'detail'; mapId: string }
 
@@ -40,6 +45,35 @@ function gridsEqual(a: Grid, b: Grid): boolean {
   return a.type === b.type && a.size === b.size && a.offsetX === b.offsetX && a.offsetY === b.offsetY
 }
 
+interface LibraryRowProps {
+  map: MapSummary
+  onOpen: (map: MapSummary) => void
+  onDelete: (map: MapSummary) => void
+}
+
+function LibraryRow({ map, onOpen, onDelete }: LibraryRowProps) {
+  const t = useT()
+  const floating = useFloating()
+  const rowLabel = t('menu.rowActions', { name: map.name })
+  return (
+    <li onContextMenu={floating.onContextMenu}>
+      {!map.hasImage && <span>{`${map.name} (ohne Bild)`}</span>}
+      <button type="button" onClick={() => onOpen(map)}>
+        {map.name}
+      </button>
+      <MenuTrigger floating={floating} label={rowLabel} />
+      <ActionMenu
+        floating={floating}
+        label={rowLabel}
+        entries={[
+          { id: 'open', label: t('menu.open'), icon: 'map', onSelect: () => onOpen(map) },
+          { id: 'delete', label: t('menu.delete'), icon: 'delete', danger: true, onSelect: () => onDelete(map) },
+        ]}
+      />
+    </li>
+  )
+}
+
 export function MapLibrary() {
   const t = useT()
   const { confirm } = useConfirm()
@@ -48,6 +82,7 @@ export function MapLibrary() {
   // darf zwischen Leerzustand und Liste entschieden werden.
   const [maps, setMaps] = useState<MapSummary[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [listError, setListError] = useState<string | null>(null)
 
   const [name, setName] = useState('')
   const [file, setFile] = useState<File | null>(null)
@@ -226,6 +261,30 @@ export function MapLibrary() {
     }
   }
 
+  const handleDeleteFromList = async (map: MapSummary) => {
+    const ok = await confirm({
+      title: t('map.delete.title', { name: map.name }),
+      message: t('map.delete.message'),
+      confirmLabel: t('map.delete.confirm'),
+      danger: true,
+    })
+    if (!ok) {
+      return
+    }
+    setListError(null)
+    try {
+      const result = await deleteMap(map.id)
+      if (result.ok) {
+        await reload()
+      } else {
+        setListError(result.message)
+      }
+    } catch (error) {
+      console.error(error)
+      setListError(GENERIC_DELETE_ERROR_MESSAGE)
+    }
+  }
+
   if (view.view === 'detail' && current) {
     return (
       <div>
@@ -314,6 +373,7 @@ export function MapLibrary() {
     <div>
       <h1>Kartenbibliothek</h1>
       {loadError !== null && <p role="alert">{loadError}</p>}
+      {listError !== null && <p role="alert">{listError}</p>}
 
       {maps !== null && maps.length === 0 && loadError === null && (
         <EmptyState title={t('empty.library.title')} hint={t('empty.library.hint')} />
@@ -321,12 +381,7 @@ export function MapLibrary() {
       {maps !== null && maps.length > 0 && (
         <ul>
           {maps.map((map) => (
-            <li key={map.id}>
-              {!map.hasImage && <span>{`${map.name} (ohne Bild)`}</span>}
-              <button type="button" onClick={() => openMap(map)}>
-                {map.name}
-              </button>
-            </li>
+            <LibraryRow key={map.id} map={map} onOpen={openMap} onDelete={(target) => void handleDeleteFromList(target)} />
           ))}
         </ul>
       )}

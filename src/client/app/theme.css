@@ -515,16 +515,6 @@ main.app-shell {
   gap: var(--space-1);
 }
 
-.start-account {
-  margin-top: var(--space-7);
-  color: var(--color-text-muted);
-}
-
-.start-account > summary {
-  cursor: pointer;
-  font-size: var(--font-size-2);
-}
-
 /* Textschlüssel (ui-text, #87) */
 .app-shell-tools {
   grid-column: 3;
@@ -735,6 +725,81 @@ main.app-shell {
   color: var(--color-text-muted);
 }
 
+/* Menüs (ui-menu, #92) */
+.menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 12rem;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-5);
+  background: var(--panel-grad);
+  box-shadow: var(--shadow-panel);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--color-surface-hover);
+}
+
+.menu-item--danger {
+  color: var(--red);
+}
+
+.menu-item[aria-disabled="true"] {
+  color: var(--color-text-faint);
+  cursor: default;
+  background: none;
+}
+
+.menu-trigger {
+  min-height: 36px;
+  min-width: 36px;
+}
+
+.popover {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-5);
+  background: var(--panel-grad);
+  box-shadow: var(--shadow-panel);
+}
+
+.session-room-code {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+}
+
+.session-code-mask,
+.session-code {
+  font-family: var(--font-mono);
+  letter-spacing: 0.1em;
+}
+
+.session-code {
+  font-size: var(--font-size-4);
+}
+
 @media (prefers-reduced-motion: no-preference) {
   button,
   .chip {
@@ -771,6 +836,22 @@ main.app-shell {
 
   .modal {
     animation: modal-in 0.16s ease-out;
+  }
+
+  @keyframes menu-in {
+    from {
+      opacity: 0;
+      transform: translateY(var(--space-2));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .menu,
+  .popover {
+    animation: menu-in 0.12s ease-out;
   }
 
   @keyframes spin {

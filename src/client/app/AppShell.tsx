@@ -4,27 +4,32 @@ import type { BuildInfo } from './build-info.js'
 import { LocaleSwitch } from './LocaleSwitch.js'
 import { useT } from '../i18n/locale.js'
 import { Icon } from '../ui/Icon.js'
+import { ActionMenuButton } from '../ui/menu.js'
 
 // Gemeinsame Huelle um alle Ansichten (ui-shell #84, design.md D1/D7). Reine
 // Praesentationsschicht ohne eigenen Serverzustand oder Effekte - `App` entscheidet, was in
 // `children` steht, `AppShell` weiss nichts von Auth-Zustand oder `SessionView` (Goals "Eine
 // Komponente ist die Huelle"). Importiert absichtlich nur `react`, `build-info.ts`, `Icon`,
-// `LocaleSwitch` und `../i18n/locale.js` (design.md D7/D9) - keine Ansicht importiert diese
-// Datei.
+// `LocaleSwitch`, `../ui/menu.js` und `../i18n/locale.js` (design.md D7/D9, ui-menu #92
+// design.md D8) - keine Ansicht importiert diese Datei.
 // ui-text (#87, design.md D5): die rechte Zone ist jetzt ein Wrapper (`.app-shell-tools`), der
 // Konto und Sprachschalter traegt; der Schalter ist in jeder Ansicht gerendert, auch anonym.
+// ui-menu (#92, design.md D8): das Konto ist jetzt eine Menü-Schaltfläche (`ActionMenuButton`,
+// Variante `text`) mit dem Nutzernamen als Namen statt Nutzername-Text plus `Abmelden`-Knopf;
+// `Passwort ändern` öffnet das Modal aus `user-auth` über die neue Prop `onChangePassword`.
 
 export interface AppShellProps {
   canGoBack: boolean
   onBack: () => void
   account: { username: string } | null
   onLogout: () => void
+  onChangePassword: () => void
   hinweis: string | null
   build: BuildInfo
   children: ReactNode
 }
 
-export function AppShell({ canGoBack, onBack, account, onLogout, hinweis, build, children }: AppShellProps) {
+export function AppShell({ canGoBack, onBack, account, onLogout, onChangePassword, hinweis, build, children }: AppShellProps) {
   const t = useT()
   return (
     <>
@@ -46,10 +51,14 @@ export function AppShell({ canGoBack, onBack, account, onLogout, hinweis, build,
         <div className="app-shell-tools">
           {account && (
             <div className="app-shell-account">
-              <span>{account.username}</span>
-              <button type="button" className="link" onClick={onLogout}>
-                {t('shell.logout')}
-              </button>
+              <ActionMenuButton
+                variant="text"
+                label={account.username}
+                entries={[
+                  { id: 'password', label: t('shell.changePassword'), icon: 'lock', onSelect: onChangePassword },
+                  { id: 'logout', label: t('shell.logout'), icon: 'logout', onSelect: onLogout },
+                ]}
+              />
             </div>
           )}
           <LocaleSwitch />

@@ -8,6 +8,8 @@ import type { TextKey } from './de.js'
 export const en: Record<TextKey, string> = {
   'shell.back': 'Back',
   'shell.logout': 'Log out',
+  'shell.account': 'Account',
+  'shell.changePassword': 'Change password',
   'shell.language': 'Language',
   'shell.footer': 'Version {version} · Build {sha}',
 
@@ -56,7 +58,6 @@ export const en: Record<TextKey, string> = {
   'start.enter': 'Enter',
   'start.empty.title': 'No sessions yet',
   'start.empty.hint': 'Create a session or join one with a code.',
-  'start.account.password': 'Change password',
   'start.loadFailed': 'The game sessions could not be loaded.',
   'start.createFailed': 'The game session could not be created. Please try again.',
   'start.joinFailed': 'Joining failed. Please try again.',
@@ -79,6 +80,8 @@ export const en: Record<TextKey, string> = {
   'session.replaced.title': 'Opened elsewhere',
   'session.replaced.message': 'This game session was opened elsewhere.',
   'session.replaced.continue': 'Continue here',
+  'session.showCode': 'Show session code',
+  'session.code': 'Session code',
 
   'toast.codeCopied': 'Session code copied',
   'toast.tokenCreated': 'Token created',
@@ -112,6 +115,24 @@ export const en: Record<TextKey, string> = {
   'empty.mapInstances.hint': 'Mount a map from your library.',
   'empty.library.title': 'No maps yet',
   'empty.library.hint': 'Create a map with a name and an image.',
+
+  'menu.rowActions': 'Actions for {name}',
+  'menu.edit': 'Edit',
+  'menu.assign': 'Assign…',
+  'menu.share': 'Share…',
+  'menu.remove': 'Remove',
+  'menu.activate': 'Activate',
+  'menu.unmount': 'Unmount',
+  'menu.open': 'Open',
+  'menu.delete': 'Delete',
+
+  'token.assign.title': 'Assign {name}',
+  'token.assign.player': 'Player',
+  'token.assign.submit': 'Assign',
+  'token.share.title': 'Sharing for {name}',
+  'token.remove.title': 'Remove token "{name}"?',
+  'token.remove.message': 'The token is removed from the map.',
+  'token.remove.confirm': 'Remove',
 
   'form.stillWorking': 'Still connecting… this may take a moment.',
 }

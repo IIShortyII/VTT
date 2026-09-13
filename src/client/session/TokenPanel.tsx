@@ -1,23 +1,20 @@
 import { useState, type FormEvent } from 'react'
 
-import { displayName, type Participant } from '../../shared/session.js'
 import {
   CreateTokenInputSchema,
   TOKEN_ICONS,
   TokenIconSchema,
   type CreateTokenInput,
   type Token,
-  type TokenAudience,
   type TokenIcon,
-  type TokenStat,
   type TokenStatsPatch,
 } from '../../shared/token.js'
 import { useT } from '../i18n/locale.js'
 import { Field, SubmitButton } from '../ui/form.js'
 import { Icon, IconButton } from '../ui/Icon.js'
+import { ActionMenu, MenuTrigger, useFloating, type MenuEntry } from '../ui/menu.js'
 import { EmptyState } from '../ui/status.js'
 import { CONDITION_CATALOG, conditionIcon } from './conditions.js'
-import { TokenShareControls } from './TokenShare.js'
 import { TokenStatsText } from './TokenStats.js'
 import { TOKEN_ICON_LABELS } from './token-icons.js'
 
@@ -25,48 +22,41 @@ import { TOKEN_ICON_LABELS } from './token-icons.js'
 // "Tokenansicht im Raum"). Kein eigener Ladepfad - der Bestand kommt vom Raum
 // (`SessionRoom`, D5); nur der Spielleiter rendert diese Komponente.
 //
-// add-token-assignment (#15, design.md D7): je Token ein Auswahlfeld zur Zuweisung
-// (`aria-label` genau "<Name> zuweisen", spec.md "Schnittstelle"). Die Meldung abgelehnter
-// Aktionen ist von hier in die Raumansicht gewandert (D6) - diese Komponente rendert keine
-// mehr.
-//
 // add-token-stats (#61, design.md D9): je Token eine eigene `TokenRow` (lokaler
 // Formularzustand fuer die Wertefelder, die Aenderung und die freie Markierung). Die
 // angezeigte Markierungsliste kommt IMMER vom Server (`token.conditions`), nie aus einem
 // lokalen Zwischenstand.
 //
-// add-token-sharing (#62, design.md D6): `onShare` je Zeile durchgereicht, `TokenRow`
-// rendert `TokenShareControls` nach den Wertefeldern - fuer den Spielleiter hat jedes Token
-// `shares` (der Server sendet sie ihm immer), die Schalter erscheinen also an jedem Token.
-//
 // add-icon-registry (#85, design.md D6): die Symbolauswahl ist eine Optionsgruppe (Radio)
-// statt eines `<select>` - ein `<option>` kann kein SVG zeigen, jede Option zeigt Icon plus
-// Beschriftung. Die Markierungsliste zeigt je Eintrag das Icon des Katalogeintrags (sonst
-// keins) und eine Icon-only-Schaltflaeche `Entfernen`.
+// statt eines `<select>` - ein `<option>` kann kein SVG zeigen. Die Markierungsliste zeigt
+// je Eintrag das Icon des Katalogeintrags (sonst keins) und eine Icon-only-Schaltflaeche
+// `Entfernen`.
 //
 // ui-form (#90, design.md D7): das Formular `Tokens` folgt dem Formularmuster ohne
 // Feldfehler - `onCreate` liefert jetzt `Promise<boolean>` (bestaetigendes Acknowledgement),
 // die Schaltflaeche `Anlegen` ist eine `SubmitButton` und gesperrt, solange
 // `CreateTokenInputSchema` ohne `sessionId` den Zustand nicht akzeptiert oder das
 // Acknowledgement aussteht; nur ein bestaetigendes Acknowledgement leert `Name`.
+//
+// ui-menu (#92, design.md D5): `Entfernen`, das Auswahlfeld `<Name> zuweisen` und die
+// Freigabe-Kaestchen entfallen aus der Zeile - ein eigenes ⋮-Menue (`Aktionen für <Name>`)
+// deckt `Bearbeiten`/`Zuweisen…`/`Freigeben…`/`Entfernen` ab, gebaut vom Aufrufer
+// (`SessionRoom`, `token-menu.ts`) und hier nur ueber `menuEntries` durchgereicht. Ein
+// Rechtsklick auf die Zeile ausserhalb eines Formularfelds oeffnet dasselbe Menue
+// (`floating.onContextMenu`).
 
 export interface TokenPanelProps {
   sessionId: string
   tokens: Token[]
-  participants: Participant[]
   onCreate: (input: Omit<CreateTokenInput, 'sessionId'>) => Promise<boolean>
-  onRemove: (tokenId: string) => void
-  onAssign: (tokenId: string, ownerId: string | null) => void
   onSetStats: (tokenId: string, patch: TokenStatsPatch) => void
   onSetConditions: (tokenId: string, conditions: string[]) => void
-  onShare: (tokenId: string, stat: TokenStat, audience: TokenAudience) => void
+  menuEntries: (token: Token) => MenuEntry[]
 }
 
 const DEFAULT_COLOR = '#3366ff'
 const DEFAULT_SIZE = '1'
 const DEFAULT_CELL = '0'
-const NO_OWNER_VALUE = ''
-const NO_OWNER_LABEL = 'Spielleiter'
 const NO_CONDITION_PICK_VALUE = ''
 const NO_ICON_VALUE = ''
 
@@ -90,15 +80,14 @@ function isTokenIcon(value: string): value is TokenIcon {
 
 interface TokenRowProps {
   token: Token
-  players: Participant[]
-  onRemove: (tokenId: string) => void
-  onAssign: (tokenId: string, ownerId: string | null) => void
   onSetStats: (tokenId: string, patch: TokenStatsPatch) => void
   onSetConditions: (tokenId: string, conditions: string[]) => void
-  onShare: (tokenId: string, stat: TokenStat, audience: TokenAudience) => void
+  menuEntries: (token: Token) => MenuEntry[]
 }
 
-function TokenRow({ token, players, onRemove, onAssign, onSetStats, onSetConditions, onShare }: TokenRowProps) {
+function TokenRow({ token, onSetStats, onSetConditions, menuEntries }: TokenRowProps) {
+  const t = useT()
+  const floating = useFloating()
   const [hp, setHp] = useState(token.hp === null ? '' : String(token.hp))
   const [hpMax, setHpMax] = useState(token.hpMax === null ? '' : String(token.hpMax))
   const [tempHp, setTempHp] = useState(token.tempHp === null ? '' : String(token.tempHp))
@@ -107,6 +96,8 @@ function TokenRow({ token, players, onRemove, onAssign, onSetStats, onSetConditi
   const [delta, setDelta] = useState('')
   const [conditionInput, setConditionInput] = useState('')
   const [conditionPick, setConditionPick] = useState(NO_CONDITION_PICK_VALUE)
+
+  const rowLabel = t('menu.rowActions', { name: token.name })
 
   const handleSaveStats = () => {
     onSetStats(token.id, {
@@ -159,25 +150,9 @@ function TokenRow({ token, players, onRemove, onAssign, onSetStats, onSetConditi
   }
 
   return (
-    <li>
+    <li onContextMenu={floating.onContextMenu}>
       <span>{token.name}</span>
-      <button type="button" aria-label={`${token.name} entfernen`} onClick={() => onRemove(token.id)}>
-        Entfernen
-      </button>
-
-      <select
-        name="owner"
-        aria-label={`${token.name} zuweisen`}
-        value={token.ownerId ?? NO_OWNER_VALUE}
-        onChange={(event) => onAssign(token.id, event.target.value === NO_OWNER_VALUE ? null : event.target.value)}
-      >
-        <option value={NO_OWNER_VALUE}>{NO_OWNER_LABEL}</option>
-        {players.map((player) => (
-          <option key={player.userId} value={player.userId}>
-            {displayName(player)}
-          </option>
-        ))}
-      </select>
+      <MenuTrigger floating={floating} label={rowLabel} />
 
       <label htmlFor={`token-panel-hp-${token.id}`}>{`${token.name} HP`}</label>
       <input
@@ -232,10 +207,6 @@ function TokenRow({ token, players, onRemove, onAssign, onSetStats, onSetConditi
       <button type="button" aria-label={`${token.name} Werte speichern`} onClick={handleSaveStats}>
         Werte speichern
       </button>
-
-      {/* add-token-sharing (#62, design.md D6): nach den Wertefeldern, vor Aenderung/
-          Schaden/Heilung und Markierungen. */}
-      <TokenShareControls token={token} participants={players} onShare={onShare} />
 
       <label htmlFor={`token-panel-delta-${token.id}`}>{`${token.name} Änderung`}</label>
       <input
@@ -298,11 +269,13 @@ function TokenRow({ token, players, onRemove, onAssign, onSetStats, onSetConditi
       </ul>
 
       <TokenStatsText token={token} />
+
+      <ActionMenu floating={floating} label={rowLabel} entries={menuEntries(token)} />
     </li>
   )
 }
 
-export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign, onSetStats, onSetConditions, onShare }: TokenPanelProps) {
+export function TokenPanel({ tokens, onCreate, onSetStats, onSetConditions, menuEntries }: TokenPanelProps) {
   const t = useT()
   const [name, setName] = useState('')
   const [color, setColor] = useState(DEFAULT_COLOR)
@@ -336,11 +309,6 @@ export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign,
       })
       .finally(() => setPending(false))
   }
-
-  // add-token-assignment (#15, design.md D7): nur Mitglieder mit Rolle `spieler` sind
-  // waehlbar - der Spielleiter selbst erscheint nicht als Eintrag (er waere serverseitig
-  // ohnehin "Spieler nicht gefunden.").
-  const players = participants.filter((participant) => participant.role === 'spieler')
 
   return (
     <div>
@@ -409,12 +377,9 @@ export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign,
               // Felder) den Formularzustand verwirft.
               key={`${token.id}-${token.hp}-${token.hpMax}-${token.tempHp}-${token.ac}-${token.initiative}`}
               token={token}
-              players={players}
-              onRemove={onRemove}
-              onAssign={onAssign}
               onSetStats={onSetStats}
               onSetConditions={onSetConditions}
-              onShare={onShare}
+              menuEntries={menuEntries}
             />
           ))}
         </ul>

@@ -4,6 +4,7 @@ import type { Annotation, AnnotationKind, CanvasTool } from '../../shared/annota
 import type { Cell, Point } from '../../shared/grid.js'
 import type { Grid } from '../../shared/map.js'
 import type { Token } from '../../shared/token.js'
+import type { Anchor } from '../ui/menu.js'
 import type { AnnotationOptions, FogLayer, MapCanvasHandle } from './canvas.js'
 
 // Duenner React-Rahmen um die PixiJS-Fassade (design.md D9, D8): erzeugt den Canvas einmal
@@ -27,7 +28,8 @@ import type { AnnotationOptions, FogLayer, MapCanvasHandle } from './canvas.js'
 // design.md D6): `onCellsSelected` ebenso nur beim Erzeugen gelesen - Aufrufer, die das
 // aktuelle Werkzeug brauchen (`SessionRoom.tsx`), lesen es ueber eine Ref, nicht ueber diesen
 // Rueckruf. add-measure-draw (#11, design.md D4): `onAnnotationDrawn` ebenso nur beim
-// Erzeugen gelesen (Muster `onCellsSelected`).
+// Erzeugen gelesen (Muster `onCellsSelected`). ui-menu (#92, design.md D5, "Karte"):
+// `onTokenContextMenu` ebenso nur beim Erzeugen gelesen.
 
 const DEFAULT_ANNOTATION_OPTIONS: AnnotationOptions = { mode: 'gerastert', color: 'rot', unit: 'meter' }
 
@@ -37,6 +39,7 @@ export interface MapCanvasProps {
   tokens: Token[]
   onTokenMove?: (tokenId: string, cell: Cell) => void
   canMoveToken?: (token: Token) => boolean
+  onTokenContextMenu?: (tokenId: string, anchor: Anchor) => void
   fog?: FogLayer | null
   tool?: CanvasTool
   selection?: Cell[]
@@ -52,6 +55,7 @@ export function MapCanvas({
   tokens,
   onTokenMove,
   canMoveToken,
+  onTokenContextMenu,
   fog,
   tool,
   selection,
@@ -97,6 +101,7 @@ export function MapCanvas({
           tokens: initialTokens,
           onTokenMove,
           canMoveToken,
+          onTokenContextMenu,
           fog: initialFog,
           tool: initialTool,
           selection: initialSelection,

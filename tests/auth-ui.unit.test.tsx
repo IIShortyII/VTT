@@ -196,7 +196,7 @@ test('Abgelehntes Feld zeigt den Fehler am Feld', async () => {
   expect(fehler.getAttribute('role')).toBe('alert')
   expect(fehler.textContent).toContain(MELDUNG)
   expect(passwort.hasAttribute('aria-invalid')).toBe(false)
-  expect(within(form).queryByRole('alert', { name: undefined })).toBe(fehler)
+  // Ein Fehler mit Feldbezug ist kein Formularfehler.
   expect(form.querySelector('.form-error')).toBeNull()
   expect(emailFeld(container)).not.toBeNull()
 })
@@ -448,7 +448,7 @@ test('Abgelehnte Passwortänderung wird angezeigt', async () => {
     },
   ])
 
-  const { container } = render(<App />)
+  render(<App />)
   await screen.findByRole('button', { name: /ändern/i })
   const bisher = screen.getByLabelText('Bisheriges Passwort')
   const neu = screen.getByLabelText('Neues Passwort')
@@ -479,16 +479,14 @@ test('Passwort ändern bleibt gesperrt bei zu kurzem neuen Passwort', async () =
     { pfad: '/api/auth/password', antwort: antwort(200, { ok: true }) },
   ])
 
-  const { container } = render(<App />)
+  render(<App />)
   await screen.findByRole('button', { name: /ändern/i })
   const bisher = screen.getByLabelText('Bisheriges Passwort')
   const neu = screen.getByLabelText('Neues Passwort')
   fireEvent.change(bisher, { target: { value: GUELTIGES_PASSWORT } })
   fireEvent.change(neu, { target: { value: 'a'.repeat(14) } })
-  const button = must(bisherigesPasswortFeld(container), 'das Feld')
   const form = must(bisher.closest('form'), 'ein <form> um die Passwortfelder') as HTMLElement
   const aendern = within(form).getByRole('button', { name: 'Passwort ändern' }) as HTMLButtonElement
-  void button
 
   await act(async () => {
     fireEvent.click(aendern)

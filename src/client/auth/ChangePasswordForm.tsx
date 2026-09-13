@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../../shared/auth.js'
 import { useT } from '../i18n/locale.js'
+import { useToasts } from '../ui/toast.js'
 import { changePassword } from './api.js'
 
 // Formular zur Passwortaenderung in der angemeldeten Ansicht (account-security #13,
@@ -14,9 +15,13 @@ import { changePassword } from './api.js'
 // gehaltenen Meldungen laufen jetzt ueber `t('auth.password.*')`; die Aufrufe stehen im
 // Erfolgs- bzw. `catch`-Zweig, damit sie die aktive Sprache zum Zeitpunkt des Ereignisses
 // tragen (design.md D1).
+// ui-feedback (#88, design.md D4): der Erfolg laeuft jetzt als Toast - `message` traegt nur
+// noch die Ablehnung (Meldung des Servers) und den Netzfehler; nach einem Erfolg zeigt das
+// Formular keine Meldung mit `role="alert"` mehr.
 
 export function ChangePasswordForm() {
   const t = useT()
+  const { push } = useToasts()
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [message, setMessage] = useState<string | null>(null)
@@ -29,7 +34,8 @@ export function ChangePasswordForm() {
     try {
       const result = await changePassword({ currentPassword, newPassword })
       if (result.ok) {
-        setMessage(t('auth.password.changed'))
+        push(t('auth.password.changed'))
+        setMessage(null)
         setCurrentPassword('')
         setNewPassword('')
       } else {

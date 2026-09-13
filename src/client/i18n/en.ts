@@ -71,4 +71,11 @@ export const en: Record<TextKey, string> = {
   'session.action.start': 'Start',
   'session.action.pause': 'Pause',
   'session.action.end': 'End',
+  'session.copyCode': 'Copy',
+
+  'toast.codeCopied': 'Session code copied',
+  'toast.tokenCreated': 'Token created',
+  'toast.mapMounted': 'Map mounted',
+  'toast.annotationRemoved': 'Annotation removed',
+  'toast.annotationsRemoved': 'Annotations removed',
 }

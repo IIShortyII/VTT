@@ -70,6 +70,13 @@ export const de = {
   'session.action.start': 'Starten',
   'session.action.pause': 'Pausieren',
   'session.action.end': 'Beenden',
+  'session.copyCode': 'Kopieren',
+
+  'toast.codeCopied': 'Sitzungscode kopiert',
+  'toast.tokenCreated': 'Token angelegt',
+  'toast.mapMounted': 'Karte eingehängt',
+  'toast.annotationRemoved': 'Anmerkung entfernt',
+  'toast.annotationsRemoved': 'Anmerkungen entfernt',
 } as const
 
 export type TextKey = keyof typeof de

@@ -2,13 +2,18 @@ import { useEffect, useState, type FormEvent } from 'react'
 
 import type { MapSummary } from '../../shared/map.js'
 import type { MapInstance } from '../../shared/session-map.js'
+import { useT } from '../i18n/locale.js'
 import { listMaps } from '../map/api.js'
+import { useToasts } from '../ui/toast.js'
 import { listSessionMaps, mountMap, unmountMap } from './maps-api.js'
 
 // Kartenverwaltung des Spielleiters im Raum (design.md D7, spec.md Requirement
 // "Kartenansicht im Raum"). Nur der Spielleiter rendert diese Komponente - fuer Spieler gibt
 // es damit keinen Aufrufer der Instanz- und Kartenliste (constitution.md §9.2); dass der
 // Server sie ihm ohnehin verweigert, ist die eigentliche Grenze (`findLedSession`).
+// ui-feedback (#88, design.md D4): nach erfolgreichem Einhaengen loest `handleMount` einen
+// Toast `Karte eingehängt` aus - Aushaengen und Aktivieren bleiben ohne Toast. Die uebrigen
+// Texte dieser Ansicht bleiben Rohstrings (Epic C).
 
 export interface MapPanelProps {
   sessionId: string
@@ -22,6 +27,8 @@ const GENERIC_MOUNT_ERROR_MESSAGE = 'Die Karte konnte nicht eingehängt werden. 
 const GENERIC_UNMOUNT_ERROR_MESSAGE = 'Die Karte konnte nicht ausgehängt werden. Bitte versuche es erneut.'
 
 export function MapPanel({ sessionId, activeInstanceId, onActivate, activateError }: MapPanelProps) {
+  const t = useT()
+  const { push } = useToasts()
   const [instances, setInstances] = useState<MapInstance[]>([])
   const [libraryMaps, setLibraryMaps] = useState<MapSummary[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -83,6 +90,7 @@ export function MapPanel({ sessionId, activeInstanceId, onActivate, activateErro
       .then(async (result) => {
         if (result.ok) {
           await reloadInstances()
+          push(t('toast.mapMounted'))
         } else {
           setMountError(result.message)
         }

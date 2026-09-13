@@ -571,11 +571,52 @@ main.app-shell {
   margin: 0 0 var(--space-3);
 }
 
+/* Rückmeldungen (ui-feedback, #88) */
+.toast-host {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-5);
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: min(90vw, 30rem);
+  pointer-events: none;
+}
+
+.toast {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--gold-border);
+  border-radius: var(--radius-pill);
+  background: var(--panel-grad);
+  color: var(--color-text);
+  font-size: var(--font-size-2);
+  box-shadow: var(--shadow-panel);
+  text-align: center;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   button,
   .chip {
     transition:
       border-color 0.12s ease,
       background 0.12s ease;
+  }
+
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(var(--space-2));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .toast {
+    animation: toast-in 0.18s ease-out;
   }
 }

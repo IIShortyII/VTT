@@ -12,8 +12,10 @@ import {
   type TokenStat,
   type TokenStatsPatch,
 } from '../../shared/token.js'
+import { useT } from '../i18n/locale.js'
 import { Field, SubmitButton } from '../ui/form.js'
 import { Icon, IconButton } from '../ui/Icon.js'
+import { EmptyState } from '../ui/status.js'
 import { CONDITION_CATALOG, conditionIcon } from './conditions.js'
 import { TokenShareControls } from './TokenShare.js'
 import { TokenStatsText } from './TokenStats.js'
@@ -301,6 +303,7 @@ function TokenRow({ token, players, onRemove, onAssign, onSetStats, onSetConditi
 }
 
 export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign, onSetStats, onSetConditions, onShare }: TokenPanelProps) {
+  const t = useT()
   const [name, setName] = useState('')
   const [color, setColor] = useState(DEFAULT_COLOR)
   const [icon, setIcon] = useState(NO_ICON_VALUE)
@@ -395,23 +398,27 @@ export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign,
         </div>
       </form>
 
-      <ul>
-        {tokens.map((token) => (
-          <TokenRow
-            // add-token-stats (#61, design.md D9): `key` aus den fuenf Werten - ein
-            // geaenderter Bestand setzt die Zeile neu auf, ohne dass eine Bewegung (andere
-            // Felder) den Formularzustand verwirft.
-            key={`${token.id}-${token.hp}-${token.hpMax}-${token.tempHp}-${token.ac}-${token.initiative}`}
-            token={token}
-            players={players}
-            onRemove={onRemove}
-            onAssign={onAssign}
-            onSetStats={onSetStats}
-            onSetConditions={onSetConditions}
-            onShare={onShare}
-          />
-        ))}
-      </ul>
+      {tokens.length === 0 ? (
+        <EmptyState title={t('empty.tokens.title')} hint={t('empty.tokens.hint')} />
+      ) : (
+        <ul>
+          {tokens.map((token) => (
+            <TokenRow
+              // add-token-stats (#61, design.md D9): `key` aus den fuenf Werten - ein
+              // geaenderter Bestand setzt die Zeile neu auf, ohne dass eine Bewegung (andere
+              // Felder) den Formularzustand verwirft.
+              key={`${token.id}-${token.hp}-${token.hpMax}-${token.tempHp}-${token.ac}-${token.initiative}`}
+              token={token}
+              players={players}
+              onRemove={onRemove}
+              onAssign={onAssign}
+              onSetStats={onSetStats}
+              onSetConditions={onSetConditions}
+              onShare={onShare}
+            />
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

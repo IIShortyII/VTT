@@ -1,6 +1,8 @@
 import type { Participant } from '../../shared/session.js'
+import { useT } from '../i18n/locale.js'
 import type { Token, TokenAudience, TokenStat } from '../../shared/token.js'
 import { TokenShareControls } from './TokenShare.js'
+import { EmptyState } from '../ui/status.js'
 
 // add-token-stats (#61, design.md D8, spec.md Requirement "Tokenansicht im Raum"): die
 // sichtbaren Werte als Text - jede Rolle sieht dasselbe Format, nur die Menge der Werte
@@ -44,18 +46,23 @@ export interface PlayerTokenListProps {
  * Ueberschrift ist bewusst NICHT "Tokens" - das Szenario "Spieler sieht keine
  * Token-Verwaltung" verbietet diese Ueberschrift beim Spieler. */
 export function PlayerTokenList({ tokens, participants, onShare }: PlayerTokenListProps) {
+  const t = useT()
   return (
     <div>
       <h2>Tokenwerte</h2>
-      <ul>
-        {tokens.map((token) => (
-          <li key={token.id}>
-            <span>{token.name}</span>
-            <TokenStatsText token={token} />
-            <TokenShareControls token={token} participants={participants} onShare={onShare} />
-          </li>
-        ))}
-      </ul>
+      {tokens.length === 0 ? (
+        <EmptyState title={t('empty.tokens.title')} hint={t('empty.tokenValues.hint')} />
+      ) : (
+        <ul>
+          {tokens.map((token) => (
+            <li key={token.id}>
+              <span>{token.name}</span>
+              <TokenStatsText token={token} />
+              <TokenShareControls token={token} participants={participants} onShare={onShare} />
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

@@ -2,6 +2,8 @@ import { useState, type FormEvent } from 'react'
 
 import type { CanvasTool } from '../../shared/annotation.js'
 import { FOG_TOOLS, type FogState, type FogTool } from '../../shared/fog.js'
+import { useT } from '../i18n/locale.js'
+import { EmptyState } from '../ui/status.js'
 
 // Fog-Verwaltung des Spielleiters im Raum (add-fog-of-war #16, design.md D8, spec.md
 // Requirement "Fog-Ansicht im Raum"). Reine React-Komponente ohne Pixi-Import - ein lokaler
@@ -40,6 +42,7 @@ export function FogPanel({
   onAreaToggle,
   onAreaDelete,
 }: FogPanelProps) {
+  const t = useT()
   const [name, setName] = useState('')
 
   const handleAreaCreate = (event: FormEvent<HTMLFormElement>) => {
@@ -79,23 +82,27 @@ export function FogPanel({
         Auswahl leeren
       </button>
 
-      <ul>
-        {(fog.areas ?? []).map((area) => (
-          <li key={area.id}>
-            <span>{area.name}</span>
-            <input
-              type="checkbox"
-              name={`area-${area.id}`}
-              aria-label={`${area.name} aufgedeckt`}
-              checked={area.revealed}
-              onChange={(event) => onAreaToggle(area.id, event.target.checked)}
-            />
-            <button type="button" onClick={() => onAreaDelete(area.id)}>
-              {`${area.name} löschen`}
-            </button>
-          </li>
-        ))}
-      </ul>
+      {(fog.areas ?? []).length === 0 ? (
+        <EmptyState title={t('empty.fogAreas.title')} hint={t('empty.fogAreas.hint')} />
+      ) : (
+        <ul>
+          {(fog.areas ?? []).map((area) => (
+            <li key={area.id}>
+              <span>{area.name}</span>
+              <input
+                type="checkbox"
+                name={`area-${area.id}`}
+                aria-label={`${area.name} aufgedeckt`}
+                checked={area.revealed}
+                onChange={(event) => onAreaToggle(area.id, event.target.checked)}
+              />
+              <button type="button" onClick={() => onAreaDelete(area.id)}>
+                {`${area.name} löschen`}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </fieldset>
   )
 }

@@ -3,6 +3,7 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { CreateMapInputSchema, DEFAULT_GRID, GRID_TYPES, IMAGE_MIME_TYPES, type Grid, type GridType, type MapSummary } from '../../shared/map.js'
 import { useT } from '../i18n/locale.js'
 import { useConfirm } from '../ui/confirm.js'
+import { EmptyState } from '../ui/status.js'
 import { Field, SubmitButton } from '../ui/form.js'
 import { createMap, deleteMap, listMaps, mapImageUrl, updateMap, uploadMapImage } from './api.js'
 import { MapCanvas } from './MapCanvas.js'
@@ -43,7 +44,9 @@ export function MapLibrary() {
   const t = useT()
   const { confirm } = useConfirm()
   const [view, setView] = useState<LibraryView>({ view: 'liste' })
-  const [maps, setMaps] = useState<MapSummary[]>([])
+  // ui-status (#91, design.md D6): `null` bis die Kartenliste geantwortet hat - erst danach
+  // darf zwischen Leerzustand und Liste entschieden werden.
+  const [maps, setMaps] = useState<MapSummary[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [name, setName] = useState('')
@@ -312,16 +315,21 @@ export function MapLibrary() {
       <h1>Kartenbibliothek</h1>
       {loadError !== null && <p role="alert">{loadError}</p>}
 
-      <ul>
-        {maps.map((map) => (
-          <li key={map.id}>
-            {!map.hasImage && <span>{`${map.name} (ohne Bild)`}</span>}
-            <button type="button" onClick={() => openMap(map)}>
-              {map.name}
-            </button>
-          </li>
-        ))}
-      </ul>
+      {maps !== null && maps.length === 0 && loadError === null && (
+        <EmptyState title={t('empty.library.title')} hint={t('empty.library.hint')} />
+      )}
+      {maps !== null && maps.length > 0 && (
+        <ul>
+          {maps.map((map) => (
+            <li key={map.id}>
+              {!map.hasImage && <span>{`${map.name} (ohne Bild)`}</span>}
+              <button type="button" onClick={() => openMap(map)}>
+                {map.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <form className="form-grid" onSubmit={(event) => void handleCreate(event)}>
         <h2>Neue Karte</h2>

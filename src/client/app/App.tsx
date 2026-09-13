@@ -30,6 +30,10 @@ import { Hero } from './Hero.js'
 // ui-dialog (#89, design.md D4): `App` ist zusaetzlich vom `ConfirmProvider` umschlossen
 // (innerhalb des Toast-Providers) - der Bestaetigungsdialog steht damit als Geschwister nach
 // dem `<footer>` und vor dem Toast-Host, ausserhalb von `main`.
+// ui-status (#91, design.md D4): `SessionRoom` ruft `onEnded` nicht mehr mit einer Meldung auf
+// - der Hinweis der Liste kommt aus `t('session.ended.hint')`, buchstabengleich dem bisherigen
+// Text. `onLeave` fuehrt (wie bisher nur `onEnded`) zur Sitzungsliste, ausgeloest durch den
+// Ersetzt-Dialog ("Zur Übersicht", Esc, `Schließen`).
 type AuthState = { status: 'unbekannt' } | { status: 'anonym' } | { status: 'angemeldet'; user: UserOutput }
 
 type AuthView = 'login' | 'register'
@@ -134,10 +138,11 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
         <SessionRoom
           sessionId={sessionView.sessionId}
           currentUserId={state.user.id}
-          onEnded={(message) => {
-            setHinweis(message)
+          onEnded={() => {
+            setHinweis(t('session.ended.hint'))
             setSessionView({ view: 'liste' })
           }}
+          onLeave={() => setSessionView({ view: 'liste' })}
         />
       )
     } else if (sessionView.view === 'bibliothek') {

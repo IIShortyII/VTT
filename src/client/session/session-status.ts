@@ -12,6 +12,10 @@ import type { IconName } from '../ui/icons.js'
 // der Raumansicht. Diese Datei importiert nur Typen - kein Laufzeitimport, damit sie
 // weiterhin frei von Pixi und React bleibt (design.md D9). Aufrufer schlagen die Texte ueber
 // `t(...)` nach.
+// ui-status (#91, design.md D5): `SESSION_OVERLAY` ordnet den Zustaenden, in denen ein Spieler
+// nicht handeln soll, Titel und Subline des Karten-Overlays zu - nur `pausiert` und
+// `geoeffnet` tragen einen Eintrag, `gestartet` und `geschlossen` bleiben ohne (kein Overlay).
+// Das Icon kommt aus `SESSION_STATUS_PRESENTATION`, keine zweite Zuordnung.
 
 export interface StatusPresentation {
   label: TextKey
@@ -36,4 +40,14 @@ export const TRANSITION_LABELS: Record<TransitionAction, TextKey> = {
   starten: 'session.action.start',
   pausieren: 'session.action.pause',
   beenden: 'session.action.end',
+}
+
+export interface OverlayPresentation {
+  title: TextKey
+  subline: TextKey
+}
+
+export const SESSION_OVERLAY: Partial<Record<GameSessionStatus, OverlayPresentation>> = {
+  pausiert: { title: 'overlay.paused.title', subline: 'overlay.paused.subline' },
+  geoeffnet: { title: 'overlay.open.title', subline: 'overlay.open.subline' },
 }

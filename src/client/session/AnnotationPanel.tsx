@@ -13,6 +13,8 @@ import {
   type DistanceUnit,
 } from '../../shared/annotation.js'
 import type { Grid } from '../../shared/map.js'
+import { useT } from '../i18n/locale.js'
+import { EmptyState } from '../ui/status.js'
 import { displayName, type Participant } from '../../shared/session.js'
 
 // Panel "Messen & Zeichnen" (add-measure-draw #11, design.md D6, spec.md Requirement
@@ -107,6 +109,7 @@ export function AnnotationPanel({
   onUnitChange,
   onDelete,
 }: AnnotationPanelProps) {
+  const t = useT()
   // design.md D6: die Moduswahl ist nur bei den drei Messwerkzeugen aktiviert, die Farbwahl
   // nur beim Zeichenwerkzeug.
   const modeDisabled = tool !== 'strecke' && tool !== 'kreis' && tool !== 'winkel'
@@ -171,18 +174,22 @@ export function AnnotationPanel({
         </label>
       ))}
 
-      <ul>
-        {annotations.map((annotation) => (
-          <li key={annotation.id}>
-            <span>{entryText(annotation, grid, unit, participants)}</span>
-            {canDeleteAnnotation(annotation, viewer) && (
-              <button type="button" onClick={() => onDelete({ kind: 'eine', annotationId: annotation.id })}>
-                Entfernen
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
+      {annotations.length === 0 ? (
+        <EmptyState title={t('empty.annotations.title')} hint={t('empty.annotations.hint')} />
+      ) : (
+        <ul>
+          {annotations.map((annotation) => (
+            <li key={annotation.id}>
+              <span>{entryText(annotation, grid, unit, participants)}</span>
+              {canDeleteAnnotation(annotation, viewer) && (
+                <button type="button" onClick={() => onDelete({ kind: 'eine', annotationId: annotation.id })}>
+                  Entfernen
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <button type="button" onClick={() => onDelete({ kind: 'meine' })}>
         Meine entfernen

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 
 import {
   DISTANCE_UNIT_STORAGE_KEY,
@@ -42,9 +42,11 @@ import { FogPanel } from './FogPanel.js'
 import { sessionMapImageUrl } from './fog-api.js'
 import { MapPanel } from './MapPanel.js'
 import { createSessionSocket, type SessionSocketFacade } from './socket.js'
-import { SESSION_STATUS_PRESENTATION, TRANSITION_LABELS } from './session-status.js'
+import { SESSION_OVERLAY, SESSION_STATUS_PRESENTATION, TRANSITION_LABELS } from './session-status.js'
 import { PlayerTokenList } from './TokenStats.js'
 import { Icon } from '../ui/Icon.js'
+import { Modal } from '../ui/Modal.js'
+import { MapOverlay, StatusBanner } from '../ui/status.js'
 import { useToasts } from '../ui/toast.js'
 import { TokenPanel } from './TokenPanel.js'
 
@@ -53,10 +55,11 @@ import { TokenPanel } from './TokenPanel.js'
 // add-token-assignment #15, Requirement "Tokenansicht im Raum"/"Token bewegen"; add-token-stats
 // #61, Requirement "Tokenansicht im Raum"; add-token-sharing #62, Requirement "Zielgruppe
 // eines Tokenwerts setzen"/"Tokenansicht im Raum"; add-fog-of-war #16, Requirement
-// "Fog-Ansicht im Raum"; add-measure-draw #11, Requirement "Anmerkungsansicht im Raum").
-// Zustand und Teilnehmer kommen ausschliesslich aus dem Acknowledgement von `enter` und den
-// nachfolgenden Server-Ereignissen - der angezeigte Zustand folgt dem Server, nie dem
-// zuletzt geklickten Uebergang oder der zuletzt aktivierten Karte (constitution.md §9.1).
+// "Fog-Ansicht im Raum"; add-measure-draw #11, Requirement "Anmerkungsansicht im Raum";
+// ui-status #91, Requirement "Verbindungs- und Sitzungszustand im Raum"). Zustand und
+// Teilnehmer kommen ausschliesslich aus dem Acknowledgement von `enter` und den nachfolgenden
+// Server-Ereignissen - der angezeigte Zustand folgt dem Server, nie dem zuletzt geklickten
+// Uebergang oder der zuletzt aktivierten Karte (constitution.md §9.1).
 //
 // reenter-room-after-reconnect (#46, design.md D3): eine von der Fassade gemeldete
 // Wiederverbindung betritt denselben Raum ueber dieselbe Fassade erneut - ausser die
@@ -66,24 +69,35 @@ import { TokenPanel } from './TokenPanel.js'
 //
 // ui-shell (#84, design.md D4): die Rueckkehr zur Sitzungsliste liegt ausschliesslich in der
 // Top-Bar der App-Shell - diese Ansicht hat weder eine eigene Schaltflaeche "Zurück zur Liste"
-// noch die Prop `onLeave`. Der Fehlerzustand zeigt nur noch die Meldung.
+// noch die Prop `onLeave` fuer diesen Zweck. Der Fehlerzustand zeigt nur noch die Meldung.
 //
 // ui-text (#87, design.md D6): nur zwei Stellen dieser Ansicht laufen ueber Textschluessel -
 // die Zustandspille (statt des Rohwerts `state.sessionStatus`) und die Uebergangs-
 // Schaltflaechen (statt des Aktionsnamens); die uebrigen Texte dieser Ansicht bleiben
 // Rohstrings bis Epic C/D (proposal.md, Umfang).
+//
+// ui-status (#91, design.md D2-D5): `disconnected` verdrahtet `disconnect` der Fassade und
+// zeigt ein `StatusBanner`; `ended` ersetzt den direkten Aufruf von `onEnded` durch einen
+// `alertdialog` mit Timer (D4); `replaced` wird nicht mehr als eigene Ansicht gerendert,
+// sondern als `alertdialog` ueber dem unveraendert gerenderten Inhalt (D3); das
+// Karten-Overlay (D5) folgt ausschliesslich `state.sessionStatus`. `onEnded`/`onLeave`
+// wandern in Refs, damit `wireSocket` ohne sie als Abhaengigkeit auskommt (Goal "keine neue
+// Fassade bei einem Rendern von `App`").
 
 export interface SessionRoomProps {
   sessionId: string
   currentUserId: string
-  onEnded: (message: string) => void
+  onEnded: () => void
+  onLeave: () => void
 }
 
-const ENDED_MESSAGE = 'Die Spielsitzung wurde beendet.'
-const REPLACED_MESSAGE = 'Diese Spielsitzung wurde an anderer Stelle geöffnet.'
 const ENTER_FAILURE_MESSAGE = 'Der Raum konnte nicht betreten werden. Bitte versuche es erneut.'
 const NO_ACTIVE_MAP_MESSAGE = 'Keine Karte aktiv'
 const MAP_CANVAS_HEIGHT = 480
+// ui-status (#91, design.md D4): Sitzungsende leitet 4000 Millisekunden nach dem Dialog zur
+// Liste weiter - Schaltflaeche, Schliessen (Esc/`Schließen`) und der Ablauf des Timers fuehren
+// alle zu `onEnded`, genau einmal (der Timer wird beim Verlassen geraeumt).
+const ENDED_REDIRECT_MS = 4000
 
 type RoomState =
   | { status: 'lädt' }
@@ -127,7 +141,7 @@ function readStoredUnit(): DistanceUnit {
   }
 }
 
-export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomProps) {
+export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: SessionRoomProps) {
   const t = useT()
   const { push } = useToasts()
   const socketRef = useRef<SessionSocketFacade | null>(null)
@@ -139,6 +153,13 @@ export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomPr
   // den *aktuellen* Wert, ein `useState`-Wert in der Effekt-Closure waere veraltet
   // (design.md D3, "Achtung bei der Umsetzung").
   const replacedRef = useRef(false)
+  // ui-status (#91, design.md D2/D4): `disconnected` traegt den Verbindungszustand fuer das
+  // Banner, `ended`/`endedRef` den Sitzungsende-Dialog samt Timer - `endedRef` wird von
+  // `wireSocket` gelesen (Disconnect-/Reconnect-Handler duerfen nach Sitzungsende nichts mehr
+  // tun), `ended` steuert den Dialog und den Timer-Effekt.
+  const [disconnected, setDisconnected] = useState<'unterbrochen' | 'getrennt' | null>(null)
+  const [ended, setEnded] = useState(false)
+  const endedRef = useRef(false)
   // Reviewer-Finding #46 Runde 1: der Mount-Effekt trennt im Cleanup nur die Fassade, die er
   // selbst erzeugt hat - "Hier weiterspielen" ersetzt `socketRef.current` zwischenzeitlich
   // durch eine zweite Fassade, ohne dass der Effekt neu liefe. Diese Sperre gilt fuer *jede*
@@ -196,6 +217,19 @@ export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomPr
   const currentGrid = state.status === 'bereit' ? (state.map?.grid ?? null) : null
   const gridRef = useRef(currentGrid)
   gridRef.current = currentGrid
+
+  // ui-status (#91, design.md D2): `onEnded`/`onLeave` (und `push`/`t`, damit der
+  // Reconnect-Handler den Toast in der aktuellen Sprache auslösen kann) wandern in Refs, bei
+  // jedem Rendern nachgezogen - `wireSocket` liest sie darüber, ohne sie als Abhaengigkeit zu
+  // fuehren (Goal "keine neue Fassade bei einem Rendern von `App`").
+  const onEndedRef = useRef(onEnded)
+  onEndedRef.current = onEnded
+  const onLeaveRef = useRef(onLeave)
+  onLeaveRef.current = onLeave
+  const pushRef = useRef(push)
+  pushRef.current = push
+  const tRef = useRef(t)
+  tRef.current = t
 
   // Registriert die Server-Ereignisse und das erneute Betreten bei Wiederverbindung auf einer
   // gegebenen Fassade, und betritt den Raum ueber sie (design.md D3, D10). `isCancelled`
@@ -278,31 +312,48 @@ export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomPr
       socket.on('annotations', ({ annotations }) => {
         setState((prev) => (prev.status === 'bereit' ? { ...prev, annotations } : prev))
       })
+      // ui-status (#91, design.md D2, Requirement "Verbindungs- und Sitzungszustand im
+      // Raum"): jede Trennung, die kein Netzereignis ist ("io client disconnect" - die
+      // Anwendung selbst hat getrennt, etwa beim Unmount oder bei "Hier weiterspielen") oder
+      // die nach `replaced`/`ended` eintrifft, bleibt ohne Banner.
+      socket.on('disconnect', (reason) => {
+        if (isCancelled() || replacedRef.current || endedRef.current || reason === 'io client disconnect') {
+          return
+        }
+        setDisconnected(reason === 'io server disconnect' ? 'getrennt' : 'unterbrochen')
+      })
       // Nach `replaced` MUSS die Fassade sich nicht von selbst neu verbinden oder den Raum
-      // erneut betreten (Requirement "Sitzungsoberflaeche") - nur der Hinweis erscheint, ein
+      // erneut betreten (Requirement "Sitzungsoberflaeche") - nur der Dialog erscheint, ein
       // erneutes Betreten erfolgt ausschliesslich durch "Hier weiterspielen".
       socket.on('replaced', () => {
         replacedRef.current = true
         setReplaced(true)
       })
+      // ui-status (#91, design.md D4): kein direkter Aufruf von `onEnded` mehr - der Dialog
+      // (samt Timer) entscheidet, wann die Ansicht wechselt.
       socket.on('ended', () => {
-        onEnded(ENDED_MESSAGE)
+        endedRef.current = true
+        setEnded(true)
       })
       // reenter-room-after-reconnect (#46, design.md D2/D3): der Server kennt den Raum einer
       // Verbindung nach einer Trennung nicht mehr - eine gemeldete Wiederverbindung betritt ihn
-      // ueber dieselbe Fassade erneut, ausser die Verbindung wurde inzwischen ersetzt oder die
-      // Komponente ist inzwischen unmounted (Reviewer-Finding #46 Runde 1).
+      // ueber dieselbe Fassade erneut, ausser die Verbindung wurde inzwischen ersetzt, der Raum
+      // inzwischen verlassen (`ended`) oder die Komponente ist inzwischen unmounted
+      // (Reviewer-Finding #46 Runde 1). ui-status (#91, design.md D2): das Banner verschwindet
+      // und der Toast erscheint VOR dem erneuten Betreten, unabhaengig von dessen Ergebnis.
       socket.on('reconnect', () => {
-        if (replacedRef.current || isCancelled()) {
+        if (replacedRef.current || endedRef.current || isCancelled()) {
           return
         }
+        setDisconnected(null)
+        pushRef.current(tRef.current('toast.reconnected'))
         enter()
       })
 
       socket.connect()
       enter()
     },
-    [sessionId, currentUserId, onEnded],
+    [sessionId, currentUserId],
   )
 
   // Betritt den Raum beim Mounten und bei einem Wechsel der `sessionId` - eine neue Fassade
@@ -322,6 +373,19 @@ export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomPr
       socketRef.current?.disconnect()
     }
   }, [wireSocket])
+
+  // ui-status (#91, design.md D4): der Timer fuer den Sitzungsende-Dialog - beim Verlassen
+  // (Unmount, die Anwendung hat zur Liste gewechselt) raeumt das Cleanup ihn, ein zweiter
+  // Aufruf von `onEnded` bleibt aus.
+  useEffect(() => {
+    if (!ended) {
+      return
+    }
+    const timer = setTimeout(() => {
+      onEndedRef.current()
+    }, ENDED_REDIRECT_MS)
+    return () => clearTimeout(timer)
+  }, [ended])
 
   // add-fog-of-war (#16, design.md D7): Fog-Ebene fuer die Canvas-Fassade - nur bei Aenderung
   // von `fog`/`role` neu gebaut, damit der `setFog`-Effekt in `MapCanvas` nicht bei jedem
@@ -670,11 +734,13 @@ export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomPr
   // ohne Vorgeschichte (design.md D3). Die bisherige Fassade wird zusaetzlich explizit
   // getrennt (Reviewer-Finding #46 Runde 1) - der Server hat sie zwar bereits getrennt
   // (design.md D8, "io server disconnect"), aber keine lebende Fassade mit aktiven Handlern
-  // bleibt so in keinem Fall zurueck, bevor die neue erzeugt wird.
+  // bleibt so in keinem Fall zurueck, bevor die neue erzeugt wird. ui-status (#91, design.md
+  // D2): ein etwa noch sichtbares Banner verschwindet mit demselben Klick.
   const handleReconnect = () => {
     replacedRef.current = false
     cancelledRef.current = false
     setReplaced(false)
+    setDisconnected(null)
     setState({ status: 'lädt' })
 
     socketRef.current?.disconnect()
@@ -684,190 +750,237 @@ export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomPr
     wireSocket(socket, () => cancelledRef.current)
   }
 
-  if (replaced) {
-    return (
-      <div>
-        <p role="alert">{REPLACED_MESSAGE}</p>
-        <button type="button" onClick={handleReconnect}>
-          Hier weiterspielen
-        </button>
-      </div>
-    )
+  // ui-status (#91, design.md D3/D4): "Zur Übersicht", Esc und die Schaltflaeche `Schließen`
+  // des Ersetzt-Dialogs fuehren alle zu `leave`; die Schaltflaeche, Esc/`Schließen` und der
+  // Timer des Sitzungsende-Dialogs alle zu `finish`.
+  const leave = () => {
+    onLeaveRef.current()
+  }
+  const finish = () => {
+    onEndedRef.current()
   }
 
+  // ui-status (#91, design.md D2): das Banner erscheint genau dann, wenn eine Trennung
+  // gemeldet wurde und weder `replaced` noch `ended` gilt - nach `replaced`/`ended` uebernimmt
+  // der jeweilige Dialog die Anzeige (proposal.md "Solange ersetzt, erscheint kein Banner").
+  const banner =
+    disconnected !== null && !replaced && !ended ? (
+      <StatusBanner>{t(disconnected === 'unterbrochen' ? 'status.disconnected' : 'status.disconnectedByServer')}</StatusBanner>
+    ) : null
+
+  let content: ReactNode
   if (state.status === 'lädt') {
-    return <p>Lädt …</p>
-  }
+    content = <p>Lädt …</p>
+  } else if (state.status === 'fehler') {
+    content = <p role="alert">{state.message}</p>
+  } else {
+    // add-fog-of-war (#16, design.md D7): Bild-URL der Kartenansicht - der Spielleiter laedt
+    // das Original genau einmal je Karte, ein Spieler bei jeder Fog-Version neu (`MapCanvas`
+    // ruft `setImage` nur bei geaenderter URL-Zeichenkette auf).
+    const hasImage = state.map?.hasImage ?? false
+    const imageUrl = !hasImage
+      ? null
+      : state.role === 'spielleiter'
+        ? sessionMapImageUrl(sessionId, null)
+        : sessionMapImageUrl(sessionId, state.fog?.version ?? 0)
+    // ui-text (#87, design.md D6): die Zustandspille nach der Zuordnungstabelle aus
+    // `session-status.ts` (`ui-start`); kein Textknoten traegt den Rohwert des Zustands.
+    const status = SESSION_STATUS_PRESENTATION[state.sessionStatus]
+    // ui-status (#91, design.md D5): das Overlay folgt ausschliesslich `state.sessionStatus`
+    // (Enter-Acknowledgement, danach `session:status`) - kein eigener State.
+    const overlay = SESSION_OVERLAY[state.sessionStatus]
 
-  if (state.status === 'fehler') {
-    return (
-      <div>
-        <p role="alert">{state.message}</p>
-      </div>
+    content = (
+      <>
+        <h1>{state.name}</h1>
+        <p className="session-room-status">
+          <span className={status.modifier ? `status-pill ${status.modifier}` : 'status-pill'}>
+            <Icon name={status.icon} /> {t(status.label)}
+          </span>
+        </p>
+        {state.code !== undefined && (
+          <p>
+            Code: {state.code}{' '}
+            <button type="button" onClick={handleCopyCode}>
+              {t('session.copyCode')}
+            </button>
+          </p>
+        )}
+        <ul>
+          {state.participants.map((participant) => (
+            <li key={participant.userId}>
+              {/* Kein Rollen-Text pro Teilnehmer (Requirement "Sitzungsoberflaeche" nennt nur
+                  Alias-oder-Nutzername und Anwesenheitskennzeichen) - "spielleiter" als
+                  sichtbarer Text wuerde jeden Nutzernamen ueberdecken, der "leiter" als
+                  Teilstring enthaelt. */}
+              <span>{displayName(participant)}</span>
+              <span> – {participant.online ? 'anwesend' : 'abwesend'}</span>
+              {participant.userId === currentUserId && (
+                <form onSubmit={handleAliasSubmit}>
+                  <label htmlFor="alias-input">Alias</label>
+                  <input id="alias-input" value={aliasInput} onChange={(event) => setAliasInput(event.target.value)} />
+                  <button type="submit">Alias setzen</button>
+                </form>
+              )}
+            </li>
+          ))}
+        </ul>
+        {aliasError !== null && <p role="alert">{aliasError}</p>}
+        {state.role === 'spielleiter' && (
+          <div>
+            {allowedActions(state.sessionStatus).map((action) => (
+              <button key={action} type="button" onClick={() => handleTransition(action)}>
+                {t(TRANSITION_LABELS[action])}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* session-map (#50, Requirement "Kartenansicht im Raum"): der Name folgt genau dem
+            Text "Aktive Karte: <Name>" bzw. "Keine Karte aktiv" (design.md D7). */}
+        {state.map !== null ? <p>{`Aktive Karte: ${state.map.name}`}</p> : <p>{NO_ACTIVE_MAP_MESSAGE}</p>}
+        {state.map !== null && (
+          // ui-status (#91, design.md D5): die Buehne ersetzt den bisherigen einfachen
+          // Container - das Overlay liegt als letztes Kind darueber (Groesse unveraendert).
+          <div className="map-stage" style={{ width: '100%', height: MAP_CANVAS_HEIGHT }}>
+            <MapCanvas
+              imageUrl={imageUrl}
+              grid={state.map.grid}
+              tokens={state.tokens}
+              onTokenMove={handleTokenMove}
+              canMoveToken={(token) => canMoveToken(token, { role: state.role, userId: currentUserId })}
+              fog={fogLayer}
+              tool={tool}
+              selection={fogSelection}
+              onCellsSelected={handleFogCellsSelected}
+              annotations={state.annotations}
+              annotationOptions={annotationOptions}
+              onAnnotationDrawn={handleAnnotationDrawn}
+            />
+            {overlay !== undefined && state.role === 'spieler' && (
+              <MapOverlay title={t(overlay.title)} subline={t(overlay.subline)} icon={status.icon} />
+            )}
+          </div>
+        )}
+
+        {/* add-token-assignment (#15, design.md D6): fuer jede Rolle, damit auch ein Spieler
+            eine abgelehnte eigene Bewegung sieht. add-token-sharing (#62): auch eine
+            abgelehnte Freigabe. */}
+        {tokenError !== null && <p role="alert">{tokenError}</p>}
+
+        {/* add-fog-of-war (#16, design.md D7, D8): fuer jede Rolle, wie `tokenError`. */}
+        {fogError !== null && <p role="alert">{fogError}</p>}
+
+        {/* add-measure-draw (#11, design.md D6): fuer jede Rolle, wie `tokenError`/`fogError`. */}
+        {annotationError !== null && <p role="alert">{annotationError}</p>}
+
+        {state.role === 'spielleiter' && (
+          <MapPanel
+            sessionId={sessionId}
+            activeInstanceId={state.map?.instanceId ?? null}
+            onActivate={handleActivateMap}
+            activateError={activateError}
+          />
+        )}
+
+        {/* add-fog-of-war (#16, design.md D7): nur fuer den Spielleiter und bei vorhandenem Fog
+            (also bei aktiver Karte) - ein Spieler bekommt weder die Verwaltung noch deren
+            Abfragen (constitution.md §9.2). */}
+        {state.role === 'spielleiter' && state.fog !== null && (
+          <FogPanel
+            fog={state.fog}
+            tool={tool}
+            selectionCount={fogSelection.length}
+            onToolChange={setTool}
+            onRevealAll={() => sendFogSet(true, { kind: 'alle' })}
+            onHideAll={() => sendFogSet(false, { kind: 'alle' })}
+            onAreaCreate={handleFogAreaCreate}
+            onClearSelection={handleFogClearSelection}
+            onAreaToggle={(areaId, revealed) => sendFogSet(revealed, { kind: 'bereich', areaId })}
+            onAreaDelete={handleFogAreaDelete}
+          />
+        )}
+
+        {/* add-measure-draw (#11, design.md D6): jede Rolle, nur bei aktiver Karte. */}
+        {state.map !== null && (
+          <AnnotationPanel
+            annotations={state.annotations}
+            grid={state.map.grid}
+            participants={state.participants}
+            viewer={{ role: state.role, userId: currentUserId }}
+            tool={tool}
+            mode={annotationMode}
+            visibility={annotationVisibility}
+            color={annotationColor}
+            unit={distanceUnit}
+            onToolChange={setTool}
+            onModeChange={setAnnotationMode}
+            onVisibilityChange={setAnnotationVisibility}
+            onColorChange={setAnnotationColor}
+            onUnitChange={handleUnitChange}
+            onDelete={handleAnnotationDelete}
+          />
+        )}
+
+        {state.role === 'spielleiter' && (
+          <TokenPanel
+            sessionId={sessionId}
+            tokens={state.tokens}
+            participants={state.participants}
+            onCreate={handleTokenCreate}
+            onRemove={handleTokenRemove}
+            onAssign={handleTokenAssign}
+            onSetStats={handleTokenStats}
+            onSetConditions={handleTokenConditions}
+            onShare={handleTokenShare}
+          />
+        )}
+
+        {/* add-token-stats (#61, design.md D10, Requirement "Tokenansicht im Raum"): ein
+            Spieler sieht statt der Verwaltung die eigene Werteliste. add-token-sharing (#62,
+            design.md D6): `participants` und `onShare` fuer die Freigabe-Schalter der eigenen
+            Tokens. */}
+        {state.role === 'spieler' && (
+          <PlayerTokenList tokens={state.tokens} participants={state.participants} onShare={handleTokenShare} />
+        )}
+      </>
     )
   }
 
-  // add-fog-of-war (#16, design.md D7): Bild-URL der Kartenansicht - der Spielleiter laedt
-  // das Original genau einmal je Karte, ein Spieler bei jeder Fog-Version neu (`MapCanvas`
-  // ruft `setImage` nur bei geaenderter URL-Zeichenkette auf).
-  const hasImage = state.map?.hasImage ?? false
-  const imageUrl = !hasImage
-    ? null
-    : state.role === 'spielleiter'
-      ? sessionMapImageUrl(sessionId, null)
-      : sessionMapImageUrl(sessionId, state.fog?.version ?? 0)
-  // ui-text (#87, design.md D6): die Zustandspille nach der Zuordnungstabelle aus
-  // `session-status.ts` (`ui-start`); kein Textknoten traegt den Rohwert des Zustands.
-  const status = SESSION_STATUS_PRESENTATION[state.sessionStatus]
+  // ui-status (#91, design.md D3/D4): treffen `replaced` und `ended` zusammen, zeigt die
+  // Ansicht nur den Sitzungsende-Dialog (Requirement "Sitzungsoberflaeche") - ein erneutes
+  // Betreten waere sinnlos, die Sitzung ist vorbei.
+  const dialogs = (
+    <>
+      {ended && (
+        <Modal role="alertdialog" title={t('session.ended.title')} description={t('session.ended.message')} onClose={finish}>
+          <div className="modal-actions">
+            <button type="button" className="primary" autoFocus onClick={finish}>
+              {t('session.toList')}
+            </button>
+          </div>
+        </Modal>
+      )}
+      {replaced && !ended && (
+        <Modal role="alertdialog" title={t('session.replaced.title')} description={t('session.replaced.message')} onClose={leave}>
+          <div className="modal-actions">
+            <button type="button" onClick={leave}>
+              {t('session.toList')}
+            </button>
+            <button type="button" className="primary" autoFocus onClick={handleReconnect}>
+              {t('session.replaced.continue')}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </>
+  )
 
   return (
     <div>
-      <h1>{state.name}</h1>
-      <p className="session-room-status">
-        <span className={status.modifier ? `status-pill ${status.modifier}` : 'status-pill'}>
-          <Icon name={status.icon} /> {t(status.label)}
-        </span>
-      </p>
-      {state.code !== undefined && (
-        <p>
-          Code: {state.code}{' '}
-          <button type="button" onClick={handleCopyCode}>
-            {t('session.copyCode')}
-          </button>
-        </p>
-      )}
-      <ul>
-        {state.participants.map((participant) => (
-          <li key={participant.userId}>
-            {/* Kein Rollen-Text pro Teilnehmer (Requirement "Sitzungsoberflaeche" nennt nur
-                Alias-oder-Nutzername und Anwesenheitskennzeichen) - "spielleiter" als
-                sichtbarer Text wuerde jeden Nutzernamen ueberdecken, der "leiter" als
-                Teilstring enthaelt. */}
-            <span>{displayName(participant)}</span>
-            <span> – {participant.online ? 'anwesend' : 'abwesend'}</span>
-            {participant.userId === currentUserId && (
-              <form onSubmit={handleAliasSubmit}>
-                <label htmlFor="alias-input">Alias</label>
-                <input id="alias-input" value={aliasInput} onChange={(event) => setAliasInput(event.target.value)} />
-                <button type="submit">Alias setzen</button>
-              </form>
-            )}
-          </li>
-        ))}
-      </ul>
-      {aliasError !== null && <p role="alert">{aliasError}</p>}
-      {state.role === 'spielleiter' && (
-        <div>
-          {allowedActions(state.sessionStatus).map((action) => (
-            <button key={action} type="button" onClick={() => handleTransition(action)}>
-              {t(TRANSITION_LABELS[action])}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* session-map (#50, Requirement "Kartenansicht im Raum"): der Name folgt genau dem
-          Text "Aktive Karte: <Name>" bzw. "Keine Karte aktiv" (design.md D7). */}
-      {state.map !== null ? <p>{`Aktive Karte: ${state.map.name}`}</p> : <p>{NO_ACTIVE_MAP_MESSAGE}</p>}
-      {state.map !== null && (
-        <div style={{ width: '100%', height: MAP_CANVAS_HEIGHT }}>
-          <MapCanvas
-            imageUrl={imageUrl}
-            grid={state.map.grid}
-            tokens={state.tokens}
-            onTokenMove={handleTokenMove}
-            canMoveToken={(token) => canMoveToken(token, { role: state.role, userId: currentUserId })}
-            fog={fogLayer}
-            tool={tool}
-            selection={fogSelection}
-            onCellsSelected={handleFogCellsSelected}
-            annotations={state.annotations}
-            annotationOptions={annotationOptions}
-            onAnnotationDrawn={handleAnnotationDrawn}
-          />
-        </div>
-      )}
-
-      {/* add-token-assignment (#15, design.md D6): fuer jede Rolle, damit auch ein Spieler
-          eine abgelehnte eigene Bewegung sieht. add-token-sharing (#62): auch eine
-          abgelehnte Freigabe. */}
-      {tokenError !== null && <p role="alert">{tokenError}</p>}
-
-      {/* add-fog-of-war (#16, design.md D7, D8): fuer jede Rolle, wie `tokenError`. */}
-      {fogError !== null && <p role="alert">{fogError}</p>}
-
-      {/* add-measure-draw (#11, design.md D6): fuer jede Rolle, wie `tokenError`/`fogError`. */}
-      {annotationError !== null && <p role="alert">{annotationError}</p>}
-
-      {state.role === 'spielleiter' && (
-        <MapPanel
-          sessionId={sessionId}
-          activeInstanceId={state.map?.instanceId ?? null}
-          onActivate={handleActivateMap}
-          activateError={activateError}
-        />
-      )}
-
-      {/* add-fog-of-war (#16, design.md D7): nur fuer den Spielleiter und bei vorhandenem Fog
-          (also bei aktiver Karte) - ein Spieler bekommt weder die Verwaltung noch deren
-          Abfragen (constitution.md §9.2). */}
-      {state.role === 'spielleiter' && state.fog !== null && (
-        <FogPanel
-          fog={state.fog}
-          tool={tool}
-          selectionCount={fogSelection.length}
-          onToolChange={setTool}
-          onRevealAll={() => sendFogSet(true, { kind: 'alle' })}
-          onHideAll={() => sendFogSet(false, { kind: 'alle' })}
-          onAreaCreate={handleFogAreaCreate}
-          onClearSelection={handleFogClearSelection}
-          onAreaToggle={(areaId, revealed) => sendFogSet(revealed, { kind: 'bereich', areaId })}
-          onAreaDelete={handleFogAreaDelete}
-        />
-      )}
-
-      {/* add-measure-draw (#11, design.md D6): jede Rolle, nur bei aktiver Karte. */}
-      {state.map !== null && (
-        <AnnotationPanel
-          annotations={state.annotations}
-          grid={state.map.grid}
-          participants={state.participants}
-          viewer={{ role: state.role, userId: currentUserId }}
-          tool={tool}
-          mode={annotationMode}
-          visibility={annotationVisibility}
-          color={annotationColor}
-          unit={distanceUnit}
-          onToolChange={setTool}
-          onModeChange={setAnnotationMode}
-          onVisibilityChange={setAnnotationVisibility}
-          onColorChange={setAnnotationColor}
-          onUnitChange={handleUnitChange}
-          onDelete={handleAnnotationDelete}
-        />
-      )}
-
-      {state.role === 'spielleiter' && (
-        <TokenPanel
-          sessionId={sessionId}
-          tokens={state.tokens}
-          participants={state.participants}
-          onCreate={handleTokenCreate}
-          onRemove={handleTokenRemove}
-          onAssign={handleTokenAssign}
-          onSetStats={handleTokenStats}
-          onSetConditions={handleTokenConditions}
-          onShare={handleTokenShare}
-        />
-      )}
-
-      {/* add-token-stats (#61, design.md D10, Requirement "Tokenansicht im Raum"): ein
-          Spieler sieht statt der Verwaltung die eigene Werteliste. add-token-sharing (#62,
-          design.md D6): `participants` und `onShare` fuer die Freigabe-Schalter der eigenen
-          Tokens. */}
-      {state.role === 'spieler' && (
-        <PlayerTokenList tokens={state.tokens} participants={state.participants} onShare={handleTokenShare} />
-      )}
+      {banner}
+      {content}
+      {dialogs}
     </div>
   )
 }

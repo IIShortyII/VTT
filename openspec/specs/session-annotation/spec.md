@@ -406,7 +406,9 @@ teilen; die Moduswahl `Gerastert` (Standard) und `Frei`, nur bei `Strecke`, `Kre
 `Rot` (Standard), `Orange`, `Gelb`, `Grün`, `Blau`, `Weiß`, nur bei `Zeichnen` aktiviert;
 die Einheitenwahl `Meter` (Standard) und `Fuß`, die sofort auf jedes Etikett wirkt und im
 Browser gemerkt wird (beim nächsten Betreten vorbelegt); eine Liste der sichtbaren
-Anmerkungen in Bestandsreihenfolge, je Eintrag Art, Etikett (außer bei Zeichnung),
+Anmerkungen in Bestandsreihenfolge (ohne Anmerkungen statt der Liste der Leerzustand von
+`ui-status` mit dem Titel `Noch keine Anmerkungen` und dem Hinweis
+`Miss eine Strecke oder zeichne auf der Karte.`), je Eintrag Art, Etikett (außer bei Zeichnung),
 Sichtbarkeit und Urheber (Alias oder Nutzername aus der Teilnehmerliste, sonst
 `unbekannt`), mit einer Schaltfläche `Entfernen` genau dann, wenn der Betrachter die
 Anmerkung nach „Begriffe" entfernen darf; eine Schaltfläche `Meine entfernen`; und für
@@ -598,3 +600,13 @@ sichtbar sein.
   Acknowledgement `{ ok: false, message: "Keine Karte aktiv." }` lautet
 - **THEN** zeigt die Anwendung die Meldung `Keine Karte aktiv.` an, und der Bestand ist
   unverändert
+
+#### Scenario: Ohne Anmerkungen zeigt das Panel den Leerzustand
+
+- **GIVEN** die Anwendung hat den Raum betreten, und das Acknowledgement nennt
+  `role: "spieler"`, eine aktive Karte und `annotations: []`
+- **WHEN** die Raumansicht gerendert wird
+- **THEN** zeigt die Gruppe `Messen & Zeichnen` einen Absatz der Klasse `empty-state` mit
+  dem Titel `Noch keine Anmerkungen` und dem Hinweis
+  `Miss eine Strecke oder zeichne auf der Karte.`, kein Element der Rolle `listitem` und
+  weiterhin die Schaltfläche `Meine entfernen`

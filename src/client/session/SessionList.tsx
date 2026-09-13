@@ -7,6 +7,7 @@ import { useT } from '../i18n/locale.js'
 import { Icon } from '../ui/Icon.js'
 import { Field, SubmitButton } from '../ui/form.js'
 import { Modal } from '../ui/Modal.js'
+import { EmptyState } from '../ui/status.js'
 import { createSession, joinSession, listSessions } from './api.js'
 import { ROLE_LABELS, SESSION_STATUS_PRESENTATION } from './session-status.js'
 
@@ -234,10 +235,7 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
       {loadError !== null && <p role="alert">{loadError}</p>}
 
       {sessions !== null && sessions.length === 0 && loadError === null && (
-        <p className="empty-state">
-          <strong>{t('start.empty.title')}</strong>
-          <span>{t('start.empty.hint')}</span>
-        </p>
+        <EmptyState title={t('start.empty.title')} hint={t('start.empty.hint')} />
       )}
 
       {sessions !== null && sessions.length > 0 && (

@@ -442,9 +442,12 @@ Dem Spielleiter SHALL die Raumansicht bei aktiver Karte zusätzlich eine Fog-Ver
 anbieten: eine Werkzeugwahl `Schwenken` (Standard), `Aufdecken`, `Verdecken` und `Bereich
 markieren`, die sie der Canvas-Fassade per `setTool` übergibt; Schaltflächen `Alles
 aufdecken` und `Alles verdecken`; ein Feld `Bereichsname` mit einer Schaltfläche `Bereich
-speichern`, eine Anzeige `Auswahl: <n> Zellen` und eine Schaltfläche `Auswahl leeren`; sowie
-je Bereich ein Kontrollkästchen `<Name> aufgedeckt`, dessen Zustand `revealed` der
-Bereichsdarstellung folgt, und eine Schaltfläche `<Name> löschen`. Die Canvas-Fassade SHALL
+speichern`, eine Anzeige `Auswahl: <n> Zellen` und eine Schaltfläche `Auswahl leeren`; sowie — ohne
+Bereiche — statt der Bereichsliste den Leerzustand von `ui-status` mit dem Titel
+`Noch keine Bereiche` und dem Hinweis
+`Markiere Zellen auf der Karte und speichere sie als Bereich.`, sonst je Bereich ein
+Kontrollkästchen `<Name> aufgedeckt`, dessen Zustand `revealed` der Bereichsdarstellung
+folgt, und eine Schaltfläche `<Name> löschen`. Die Canvas-Fassade SHALL
 in den Werkzeugen `Aufdecken`, `Verdecken` und `Bereich markieren` statt zu schwenken beim
 Ziehen einen Zellbereich auswählen und die ausgewählten Zellen beim Loslassen per
 `onCellsSelected` melden (Aussehen und Ziehen im App-Test). Gemeldete Zellen SHALL im
@@ -601,3 +604,14 @@ message }`) SHALL als Meldung sichtbar sein.
   "Keine Karte aktiv." }` lautet
 - **THEN** zeigt die Anwendung diese Meldung an, und der Kartenansicht wurde kein geänderter
   Fog übergeben
+
+#### Scenario: Ohne Bereiche zeigt die Fog-Verwaltung den Leerzustand
+
+- **GIVEN** die Anwendung hat den Raum betreten, und das Acknowledgement nennt
+  `role: "spielleiter"`, eine aktive Karte und `fog` mit `areas` gleich `[]`
+- **WHEN** die Raumansicht gerendert wird
+- **THEN** zeigt die Gruppe `Fog of War` einen Absatz der Klasse `empty-state` mit dem Titel
+  `Noch keine Bereiche` und dem Hinweis
+  `Markiere Zellen auf der Karte und speichere sie als Bereich.`, kein Element der Rolle
+  `listitem` und kein Kontrollkästchen, dessen Name auf `aufgedeckt` endet, aber weiterhin
+  die Schaltflächen `Alles aufdecken` und `Alles verdecken`

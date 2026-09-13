@@ -35,6 +35,20 @@
 // aus; scheitert die Zwischenablage, erscheint kein Toast. Die beiden Raumansicht-Szenarien sind
 // um die An-/Abwesenheit der Schaltfläche ergaenzt; zwei neue Szenarien pruefen Kopieren und
 // Scheitern (Zwischenablage-Ersatz per `Object.defineProperty`, design.md D6).
+//
+// add-ui-status (#91, MODIFIED "Sitzungsoberfläche" + ADDED "Verbindungs- und Sitzungszustand
+// im Raum"): `session:replaced` und `session:ended` erscheinen als `alertdialog` (`ui-dialog`)
+// mit definierten Schliesswegen (Esc, `Schließen`, Timer 4 s); ein `disconnect`-Ereignis der
+// Fassade zeigt ein Zustandsbanner (`ui-status`, `role="status"`, Klasse `status-banner`), eine
+// gemeldete Wiederverbindung entfernt es und loest den Toast `Verbindung wiederhergestellt` aus;
+// ein Spieler sieht in `pausiert`/`geoeffnet` ein Karten-Overlay (`ui-status`, Rolle `region`).
+// Die Szenarien "Ersetzte Verbindung verbindet sich nicht neu" und "Beendete Spielsitzung führt
+// zur Liste zurück" aendern ihre Erwartung (Namen bleiben). Fuer die Overlay-Szenarien ist die
+// Canvas-Fassade gemockt (jsdom hat kein WebGL).
+//
+// Rote Phase (constitution.md §3.1): `SessionRoom` verdrahtet `disconnect` nicht, rendert weder
+// Banner noch Overlay, und `replaced`/`ended` sind kein `alertdialog`. Die neuen/geaenderten
+// Szenarien scheitern an ihrer Assertion (fehlendes Element/Verhalten), kein Setup-Fehler.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
@@ -64,6 +78,26 @@ jest.mock('../src/client/session/socket.js', () => {
   }
 })
 
+// --- Mock der Canvas-Fassade (add-ui-status #91) --------------------------------------------
+// Die Overlay-Szenarien rendern einen Raum mit aktiver Karte; `MapCanvas` laedt `./canvas.js`
+// dynamisch. Ohne Mock zoege das `pixi.js` in die Testumgebung (jsdom hat kein WebGL). Das
+// Handle traegt alle Setter der Fassade. Fuer alle uebrigen Szenarien (ohne Karte) ist der Mock
+// inert — `createMapCanvas` wird dort nie aufgerufen.
+jest.mock('../src/client/map/canvas.js', () => {
+  const handle = {
+    setGrid: jest.fn(),
+    setImage: jest.fn(),
+    setTokens: jest.fn(),
+    setFog: jest.fn(),
+    setTool: jest.fn(),
+    setSelection: jest.fn(),
+    setAnnotations: jest.fn(),
+    setAnnotationOptions: jest.fn(),
+    destroy: jest.fn(),
+  }
+  return { createMapCanvas: jest.fn(async () => handle), __handle: handle }
+})
+
 import * as sessionSocketModule from '../src/client/session/socket.js'
 
 type SocketTestApi = {
@@ -81,10 +115,17 @@ type SocketTestApi = {
 }
 const socketMock = sessionSocketModule as unknown as SocketTestApi
 
+type CanvasMock = { createMapCanvas: jest.Mock }
+const canvasMock = jest.requireMock('../src/client/map/canvas.js') as CanvasMock
+
 // --- fetch-Mock (wie tests/auth-ui.unit.test.tsx) -------------------------------------------
 
 const originalFetch = globalThis.fetch
 const NUTZER = { id: 'u-selbst', email: 'ich@example.com', username: 'ich' }
+// Eine aktive Karte fuer die Overlay-Szenarien (#91); die Canvas-Fassade ist gemockt.
+const QUADRAT = { type: 'quadrat', size: 70, offsetX: 0, offsetY: 0 }
+const AKTIVE_KARTE = { instanceId: 'i-tav', mapId: 'm-tav', name: 'Taverne', hasImage: true, grid: QUADRAT }
+const FOG_LEER = { instanceId: 'i-tav', version: 0, revealed: [], areas: [] }
 
 function must<T>(value: T | null | undefined, what: string): T {
   if (value === null || value === undefined) throw new Error(`Erwartet, aber nicht vorhanden: ${what}`)
@@ -140,6 +181,14 @@ function aliasFeld(container: HTMLElement): HTMLElement | null {
   )
 }
 
+// Der Toast-Host (`ui-feedback`) traegt `role="status"` UND die Klasse `toast-host`; das
+// Zustandsbanner (`ui-status`) traegt ebenfalls `role="status"`, aber die Klasse
+// `status-banner`. Unterschieden wird ueber die Klasse (design.md D9).
+function toastHost(): HTMLElement {
+  const host = screen.getAllByRole('status').find((el) => el.classList.contains('toast-host'))
+  return must(host, 'der Toast-Host (role=status, Klasse toast-host)')
+}
+
 async function betreten(): Promise<void> {
   const knopf = (await screen.findAllByRole('button', { name: /betreten/i }))[0]
   await act(async () => {
@@ -159,6 +208,7 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch
+  jest.useRealTimers()
   jest.restoreAllMocks()
 })
 
@@ -467,6 +517,11 @@ test('Wiederverbindung betritt den Raum erneut', async () => {
 })
 
 test('Ersetzte Verbindung verbindet sich nicht neu', async () => {
+  // MODIFIED (add-ui-status #91): `session:replaced` erscheint als `alertdialog` (`ui-dialog`)
+  // mit Titel `An anderer Stelle geöffnet`, Beschreibung und den Schaltflaechen `Hier
+  // weiterspielen`/`Zur Übersicht`; die Raumansicht bleibt dahinter gerendert; solange ersetzt,
+  // erscheint KEIN Zustandsbanner (der Server hat bewusst getrennt), und es wird weder neu
+  // verbunden noch neu betreten (§9.1, design.md D3).
   mockFetch([
     { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
     {
@@ -488,22 +543,32 @@ test('Ersetzte Verbindung verbindet sich nicht neu', async () => {
   const connectRufeVorher = socketMock.__facade.connect.mock.calls.length
 
   // Nach `replaced` und der Trennung meldet die Fassade zusaetzlich eine Wiederverbindung —
-  // die neue Automatik darf sie NICHT in ein erneutes Betreten uebersetzen (design.md D3,
-  // Requirement "Sitzungsoberflaeche").
+  // die neue Automatik darf sie NICHT in ein erneutes Betreten uebersetzen (design.md D3).
   await act(async () => {
     socketMock.__emit('replaced', { sessionId: 's1' })
     socketMock.__emit('disconnect', 'io server disconnect')
     socketMock.__emit('reconnect', undefined)
   })
 
-  await waitFor(() => expect(screen.getByText(/an anderer stelle/i)).toBeTruthy())
-  // Kein selbsttaetiger Wiederaufbau, kein erneutes Betreten (constitution.md §9.1, design.md D3):
-  // `enter` genau einmal, kein weiteres `connect`.
+  const dialog = await screen.findByRole('alertdialog', { name: 'An anderer Stelle geöffnet' })
+  expect(within(dialog).getByText('Diese Spielsitzung wurde an anderer Stelle geöffnet.')).toBeTruthy()
+  expect(within(dialog).getByRole('button', { name: 'Hier weiterspielen' })).toBeTruthy()
+  expect(within(dialog).getByRole('button', { name: 'Zur Übersicht' })).toBeTruthy()
+  // Die Raumansicht bleibt dahinter gerendert (Ueberschrift der Ebene 1 mit dem Namen).
+  expect(screen.getByRole('heading', { level: 1, name: 'Abendrunde' })).toBeTruthy()
+  // Kein Zustandsbanner, obwohl getrennt wurde.
+  expect(screen.queryByText('Verbindung vom Server getrennt.')).toBeNull()
+  expect(screen.queryByText('Verbindung unterbrochen — verbinde neu…')).toBeNull()
+  // Kein selbsttaetiger Wiederaufbau, kein erneutes Betreten (§9.1): `enter` genau einmal,
+  // kein weiteres `connect`.
   expect(socketMock.__facade.enter).toHaveBeenCalledTimes(1)
   expect(socketMock.__facade.connect.mock.calls.length).toBe(connectRufeVorher)
 })
 
 test('Beendete Spielsitzung führt zur Liste zurück', async () => {
+  // MODIFIED (add-ui-status #91): `session:ended` erscheint als `alertdialog` mit Titel
+  // `Sitzung beendet`, Beschreibung und der Schaltflaeche `Zur Übersicht`; erst deren Ausloesen
+  // fuehrt zur Liste mit dem Hinweis `Die Spielsitzung wurde beendet.` (design.md D4).
   mockFetch([
     { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
     {
@@ -526,10 +591,454 @@ test('Beendete Spielsitzung führt zur Liste zurück', async () => {
     socketMock.__emit('ended', { sessionId: 's1' })
   })
 
-  // Zurueck zur Sitzungsliste (Anker `Sitzung leiten`, `ui-start`) samt Hinweis.
-  await waitFor(() => expect(screen.getByText(/beendet/i)).toBeTruthy())
-  expect(screen.getByRole('button', { name: 'Sitzung leiten' })).toBeTruthy()
+  // Nach `session:ended` zuerst der Dialog `Sitzung beendet` …
+  const dialog = await screen.findByRole('alertdialog', { name: 'Sitzung beendet' })
+  expect(within(dialog).getByText('Die Spielleitung hat die Sitzung beendet. Du wirst zur Übersicht geleitet.')).toBeTruthy()
+  const knopf = within(dialog).getByRole('button', { name: 'Zur Übersicht' })
+
+  await act(async () => {
+    fireEvent.click(knopf)
+  })
+
+  // … danach die Sitzungsliste (Anker `Sitzung leiten`) samt Hinweis.
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Sitzung leiten' })).toBeTruthy())
+  expect(screen.getByText('Die Spielsitzung wurde beendet.')).toBeTruthy()
 })
+
+// --- Ersetzt- und Sitzungsende-Dialog: Schliesswege und Timer (add-ui-status #91) -----------
+
+test('Hier weiterspielen baut eine neue Verbindung auf', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
+  })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+  await waitFor(() => expect(socketMock.__facade.enter).toHaveBeenCalledTimes(1))
+
+  // GIVEN: nach `session:replaced` und der Trennung zeigt die Ansicht den Dialog.
+  await act(async () => {
+    socketMock.__emit('replaced', { sessionId: 's1' })
+    socketMock.__emit('disconnect', 'io server disconnect')
+  })
+  const dialog = await screen.findByRole('alertdialog', { name: 'An anderer Stelle geöffnet' })
+
+  // WHEN: `Hier weiterspielen`.
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Hier weiterspielen' }))
+  })
+
+  // THEN: kein Dialog mehr, eine zweite Fassade, ein zweites `connect`, `session:enter` ein
+  // zweites Mal mit der `sessionId`; die Ueberschrift der Ebene 1 ist wieder da.
+  await waitFor(() => expect(socketMock.__facade.enter).toHaveBeenCalledTimes(2))
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+  expect(socketMock.createSessionSocket).toHaveBeenCalledTimes(2)
+  expect(socketMock.__facade.connect).toHaveBeenCalledTimes(2)
+  expect(socketMock.__facade.enter).toHaveBeenNthCalledWith(1, 's1')
+  expect(socketMock.__facade.enter).toHaveBeenNthCalledWith(2, 's1')
+  expect(screen.getByRole('heading', { level: 1, name: 'Abendrunde' })).toBeTruthy()
+})
+
+test('Zur Übersicht verlässt den ersetzten Raum', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
+  })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+  await waitFor(() => expect(socketMock.__facade.enter).toHaveBeenCalledTimes(1))
+
+  await act(async () => {
+    socketMock.__emit('replaced', { sessionId: 's1' })
+    socketMock.__emit('disconnect', 'io server disconnect')
+  })
+  const dialog = await screen.findByRole('alertdialog', { name: 'An anderer Stelle geöffnet' })
+
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Zur Übersicht' }))
+  })
+
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Sitzung leiten' })).toBeTruthy())
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+  expect(socketMock.__facade.enter).toHaveBeenCalledTimes(1)
+})
+
+test('Esc verlässt den ersetzten Raum', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
+  })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+  await waitFor(() => expect(socketMock.__facade.enter).toHaveBeenCalledTimes(1))
+
+  await act(async () => {
+    socketMock.__emit('replaced', { sessionId: 's1' })
+    socketMock.__emit('disconnect', 'io server disconnect')
+  })
+  await screen.findByRole('alertdialog', { name: 'An anderer Stelle geöffnet' })
+
+  await act(async () => {
+    fireEvent.keyDown(document, { key: 'Escape' })
+  })
+
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Sitzung leiten' })).toBeTruthy())
+  expect(socketMock.__facade.enter).toHaveBeenCalledTimes(1)
+})
+
+test('Sitzungsende leitet nach vier Sekunden weiter', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'gestartet', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'gestartet', role: 'spieler' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
+  })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+  await waitFor(() => expect(socketMock.__facade.enter).toHaveBeenCalled())
+
+  // GIVEN: falsche Timer gelten ab jetzt (der Raum ist bereits betreten, echte Timer waren
+  // nur fuer `findBy` noetig).
+  jest.useFakeTimers()
+
+  // WHEN: `session:ended`.
+  await act(async () => {
+    socketMock.__emit('ended', { sessionId: 's1' })
+  })
+
+  // Vor Ablauf (3999 ms) bleibt der Dialog und die Ueberschrift der Ebene 1.
+  act(() => {
+    jest.advanceTimersByTime(3999)
+  })
+  expect(screen.getByRole('alertdialog', { name: 'Sitzung beendet' })).toBeTruthy()
+  expect(screen.getByRole('heading', { level: 1, name: 'Abendrunde' })).toBeTruthy()
+
+  // Eine weitere Millisekunde → Sitzungsliste samt Hinweis.
+  act(() => {
+    jest.advanceTimersByTime(1)
+  })
+  expect(screen.getByRole('button', { name: 'Sitzung leiten' })).toBeTruthy()
+  expect(screen.getByText('Die Spielsitzung wurde beendet.')).toBeTruthy()
+})
+
+test('Schließen des Sitzungsende-Dialogs führt zur Übersicht', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'gestartet', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'gestartet', role: 'spieler' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
+  })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+  await waitFor(() => expect(socketMock.__facade.enter).toHaveBeenCalled())
+
+  jest.useFakeTimers()
+  await act(async () => {
+    socketMock.__emit('ended', { sessionId: 's1' })
+  })
+  const dialog = screen.getByRole('alertdialog', { name: 'Sitzung beendet' })
+
+  // WHEN: `Schließen` (das X von `ui-dialog`) und danach 4000 ms.
+  act(() => {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Schließen' }))
+  })
+  act(() => {
+    jest.advanceTimersByTime(4000)
+  })
+
+  // THEN: die Sitzungsliste mit genau einem Element der Rolle `alert` und dem Hinweis.
+  expect(screen.getByRole('button', { name: 'Sitzung leiten' })).toBeTruthy()
+  const alerts = screen.getAllByRole('alert')
+  expect(alerts).toHaveLength(1)
+  expect(alerts[0].textContent).toContain('Die Spielsitzung wurde beendet.')
+})
+
+// --- ADDED: Verbindungs- und Sitzungszustand im Raum (add-ui-status #91) ---------------------
+
+test('Verbindungsabbruch zeigt das Zustandsbanner', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
+  })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+  await screen.findByRole('heading', { level: 1, name: 'Abendrunde' })
+
+  await act(async () => {
+    socketMock.__emit('disconnect', 'transport close')
+  })
+
+  const banner = screen.getByText('Verbindung unterbrochen — verbinde neu…')
+  const region = banner.closest('[role="status"]')
+  expect(region).not.toBeNull()
+  expect(region?.classList.contains('status-banner')).toBe(true)
+  expect(screen.getByRole('heading', { level: 1, name: 'Abendrunde' })).toBeTruthy()
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+})
+
+test('Wiederverbindung entfernt das Banner und zeigt den Toast', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
+  })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+  await screen.findByRole('heading', { level: 1, name: 'Abendrunde' })
+
+  // GIVEN: nach `disconnect` (`transport close`) zeigt die Ansicht das Banner.
+  await act(async () => {
+    socketMock.__emit('disconnect', 'transport close')
+  })
+  expect(screen.getByText('Verbindung unterbrochen — verbinde neu…')).toBeTruthy()
+
+  // WHEN: die Fassade meldet eine Wiederverbindung.
+  await act(async () => {
+    socketMock.__emit('reconnect', undefined)
+  })
+
+  // THEN: kein Banner mehr, der Toast `Verbindung wiederhergestellt`, `enter` genau zweimal.
+  await waitFor(() => expect(socketMock.__facade.enter).toHaveBeenCalledTimes(2))
+  expect(screen.queryByText('Verbindung unterbrochen — verbinde neu…')).toBeNull()
+  expect(screen.queryByText('Verbindung vom Server getrennt.')).toBeNull()
+  await waitFor(() => expect(within(toastHost()).getByText('Verbindung wiederhergestellt')).toBeTruthy())
+})
+
+test('Trennung durch den Server zeigt das Banner ohne Wiederverbindungsversprechen', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
+  })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+  await screen.findByRole('heading', { level: 1, name: 'Abendrunde' })
+
+  await act(async () => {
+    socketMock.__emit('disconnect', 'io server disconnect')
+  })
+
+  const banner = screen.getByText('Verbindung vom Server getrennt.')
+  const region = banner.closest('[role="status"]')
+  expect(region).not.toBeNull()
+  expect(region?.classList.contains('status-banner')).toBe(true)
+  expect(screen.queryByText('Verbindung unterbrochen — verbinde neu…')).toBeNull()
+})
+
+test('Trennung durch den Client zeigt kein Banner', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
+  })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+  await screen.findByRole('heading', { level: 1, name: 'Abendrunde' })
+
+  await act(async () => {
+    socketMock.__emit('disconnect', 'io client disconnect')
+  })
+
+  expect(screen.queryByText('Verbindung unterbrochen — verbinde neu…')).toBeNull()
+  expect(screen.queryByText('Verbindung vom Server getrennt.')).toBeNull()
+  expect(screen.getByRole('heading', { level: 1, name: 'Abendrunde' })).toBeTruthy()
+})
+
+test('Pausierte Sitzung zeigt dem Spieler das Overlay', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'pausiert', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'pausiert', role: 'spieler' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
+    map: AKTIVE_KARTE,
+    fog: FOG_LEER,
+  })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+
+  const region = await screen.findByRole('region', { name: 'Pausiert' })
+  expect(region.classList.contains('map-overlay')).toBe(true)
+  expect(within(region).getByText('Die Spielleitung hat die Sitzung angehalten.')).toBeTruthy()
+  expect(region.parentElement?.classList.contains('map-stage')).toBe(true)
+}, 15000)
+
+test('Nicht gestartete Sitzung zeigt dem Spieler das Overlay', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
+    map: AKTIVE_KARTE,
+    fog: FOG_LEER,
+  })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+
+  const region = await screen.findByRole('region', { name: 'Noch nicht gestartet' })
+  expect(within(region).getByText('Die Spielleitung hat die Sitzung noch nicht gestartet.')).toBeTruthy()
+  expect(screen.queryByRole('region', { name: 'Pausiert' })).toBeNull()
+}, 15000)
+
+test('Spielleiter sieht kein Overlay', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    { pfad: '/api/sessions/s1/maps', antwort: antwort(200, []) },
+    { pfad: '/api/maps', antwort: antwort(200, []) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'pausiert', role: 'spielleiter', code: 'ABC234' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'pausiert', role: 'spielleiter', code: 'ABC234' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spielleiter', online: true }],
+    map: AKTIVE_KARTE,
+    fog: FOG_LEER,
+  })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+
+  // Die Kartenansicht ist gerendert (die gemockte Fassade wurde erzeugt) …
+  await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
+  // … aber der Spielleiter sieht kein Overlay (kein Element der Rolle `region`).
+  expect(screen.queryByRole('region', { name: 'Pausiert' })).toBeNull()
+  expect(screen.queryByRole('region')).toBeNull()
+}, 15000)
+
+test('Start entfernt das Overlay', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'pausiert', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Abendrunde', status: 'pausiert', role: 'spieler' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spieler', online: true }],
+    map: AKTIVE_KARTE,
+    fog: FOG_LEER,
+  })
+
+  render(<App />)
+  await screen.findByText(/Abendrunde/)
+  await betreten()
+  // GIVEN: das Overlay `Pausiert` liegt ueber der Karte.
+  await screen.findByRole('region', { name: 'Pausiert' })
+
+  // WHEN: `session:status` mit `gestartet`.
+  await act(async () => {
+    socketMock.__emit('status', { sessionId: 's1', status: 'gestartet' })
+  })
+
+  // THEN: kein Overlay mehr, die Zustandspille zeigt `Läuft`.
+  await waitFor(() => expect(screen.queryByRole('region', { name: 'Pausiert' })).toBeNull())
+  expect(screen.queryByRole('region')).toBeNull()
+  expect(screen.getByText('Läuft').closest('.status-pill')).not.toBeNull()
+}, 15000)
 
 // --- Alias in der Raumansicht (#45) ---------------------------------------------------------
 

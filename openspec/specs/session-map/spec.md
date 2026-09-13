@@ -305,7 +305,11 @@ und Raster der neuen Karte umstellen; ein Wechsel auf `null` SHALL die Kartenans
 einmal freigeben.
 
 Dem Spielleiter SHALL die Raumansicht zusätzlich eine Kartenverwaltung anbieten: die
-eingehängten Karten mit je einer Schaltfläche zum Aktivieren und zum Aushängen, eine Auswahl
+eingehängten Karten mit je einer Schaltfläche zum Aktivieren und zum Aushängen (solange keine
+Karte eingehängt ist, statt der Liste den Leerzustand von `ui-status` mit dem Titel
+`Noch keine Karten eingehängt` und dem Hinweis `Hänge eine Karte aus deiner Bibliothek ein.`;
+solange die Instanzliste noch nicht geantwortet hat, weder Liste noch Leerzustand), eine
+Auswahl
 der eigenen Bibliothekskarten, die noch nicht eingehängt sind, mit einer Schaltfläche zum
 Einhängen, sowie eine Schaltfläche, die die aktive Karte zurücksetzt. Dafür SHALL sie die
 Instanzliste und die eigene Kartenliste vom Server abfragen. Einem Spieler MUST NOT sie die
@@ -405,3 +409,14 @@ Kartenverwaltung zeigen und MUST NOT für ihn Instanzliste oder Kartenliste abfr
 - **WHEN** er die Schaltfläche zum Aktivieren betätigt und das Acknowledgement
   `{ ok: false, message }` lautet
 - **THEN** zeigt die Anwendung diese Meldung an, und die aktive Karte ist unverändert
+
+#### Scenario: Ohne eingehängte Karten zeigt die Kartenverwaltung den Leerzustand
+
+- **GIVEN** die Anwendung hat den Raum betreten, das Acknowledgement nennt
+  `role: "spielleiter"` und `map: null`, die Instanzliste liefert `[]`, und die eigene
+  Kartenliste liefert „Wald"
+- **WHEN** die Raumansicht gerendert wird und die Instanzliste geantwortet hat
+- **THEN** zeigt die Kartenverwaltung (unter der Überschrift `Karten`) einen Absatz der Klasse
+  `empty-state` mit dem Titel `Noch keine Karten eingehängt` und dem Hinweis
+  `Hänge eine Karte aus deiner Bibliothek ein.`, kein Element der Rolle `listitem`, und
+  bietet in der Auswahl zum Einhängen weiterhin „Wald" an

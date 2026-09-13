@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import type { MapSummary } from '../../shared/map.js'
 import type { MapInstance } from '../../shared/session-map.js'
 import { useT } from '../i18n/locale.js'
+import { EmptyState } from '../ui/status.js'
 import { listMaps } from '../map/api.js'
 import { useToasts } from '../ui/toast.js'
 import { listSessionMaps, mountMap, unmountMap } from './maps-api.js'
@@ -29,7 +30,10 @@ const GENERIC_UNMOUNT_ERROR_MESSAGE = 'Die Karte konnte nicht ausgehängt werden
 export function MapPanel({ sessionId, activeInstanceId, onActivate, activateError }: MapPanelProps) {
   const t = useT()
   const { push } = useToasts()
-  const [instances, setInstances] = useState<MapInstance[]>([])
+  // ui-status (#91, design.md D6): `null` bis die Instanzliste geantwortet hat - erst danach
+  // darf zwischen Leerzustand und Liste entschieden werden (sonst blitzte der Leerzustand vor
+  // jeder Antwort auf).
+  const [instances, setInstances] = useState<MapInstance[] | null>(null)
   const [libraryMaps, setLibraryMaps] = useState<MapSummary[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [mountError, setMountError] = useState<string | null>(null)
@@ -64,7 +68,7 @@ export function MapPanel({ sessionId, activeInstanceId, onActivate, activateErro
     })
   }, [sessionId])
 
-  const mountedMapIds = new Set(instances.map((instance) => instance.mapId))
+  const mountedMapIds = new Set((instances ?? []).map((instance) => instance.mapId))
   const availableMaps = libraryMaps.filter((map) => !mountedMapIds.has(map.id))
 
   useEffect(() => {
@@ -128,19 +132,24 @@ export function MapPanel({ sessionId, activeInstanceId, onActivate, activateErro
       {mountError !== null && <p role="alert">{mountError}</p>}
       {unmountError !== null && <p role="alert">{unmountError}</p>}
 
-      <ul>
-        {instances.map((instance) => (
-          <li key={instance.id} aria-current={instance.id === activeInstanceId ? 'true' : undefined}>
-            <span>{instance.name}</span>
-            <button type="button" aria-label={`${instance.name} aktivieren`} onClick={() => onActivate(instance.id)}>
-              Aktivieren
-            </button>
-            <button type="button" aria-label={`${instance.name} aushängen`} onClick={() => handleUnmount(instance.id)}>
-              Aushängen
-            </button>
-          </li>
-        ))}
-      </ul>
+      {instances !== null && instances.length === 0 && (
+        <EmptyState title={t('empty.mapInstances.title')} hint={t('empty.mapInstances.hint')} />
+      )}
+      {instances !== null && instances.length > 0 && (
+        <ul>
+          {instances.map((instance) => (
+            <li key={instance.id} aria-current={instance.id === activeInstanceId ? 'true' : undefined}>
+              <span>{instance.name}</span>
+              <button type="button" aria-label={`${instance.name} aktivieren`} onClick={() => onActivate(instance.id)}>
+                Aktivieren
+              </button>
+              <button type="button" aria-label={`${instance.name} aushängen`} onClick={() => handleUnmount(instance.id)}>
+                Aushängen
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <form onSubmit={handleMount}>
         <label htmlFor="map-panel-mapId">Karte aus der Bibliothek</label>

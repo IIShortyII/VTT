@@ -78,4 +78,10 @@ export const en: Record<TextKey, string> = {
   'toast.mapMounted': 'Map mounted',
   'toast.annotationRemoved': 'Annotation removed',
   'toast.annotationsRemoved': 'Annotations removed',
+
+  'dialog.close': 'Close',
+  'dialog.cancel': 'Cancel',
+  'map.delete.title': 'Delete map "{name}"?',
+  'map.delete.message': 'The map is removed from the library and cannot be restored.',
+  'map.delete.confirm': 'Delete',
 }

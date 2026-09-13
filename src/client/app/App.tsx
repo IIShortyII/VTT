@@ -8,6 +8,7 @@ import { syncLocale, useT } from '../i18n/locale.js'
 import { MapLibrary } from '../map/MapLibrary.js'
 import { SessionList } from '../session/SessionList.js'
 import { SessionRoom } from '../session/SessionRoom.js'
+import { ConfirmProvider } from '../ui/confirm.js'
 import { ToastProvider } from '../ui/toast.js'
 import { AppShell } from './AppShell.js'
 import { FALLBACK_BUILD, type BuildInfo } from './build-info.js'
@@ -26,6 +27,9 @@ import { Hero } from './Hero.js'
 // naechste Aktion erzeugt ihn in der neuen Sprache.
 // ui-feedback (#88, design.md D2): `App` wird vom Toast-Provider umschlossen - der Host steht
 // als Geschwister nach dem `<footer>`, damit jede Ansicht auslösen kann.
+// ui-dialog (#89, design.md D4): `App` ist zusaetzlich vom `ConfirmProvider` umschlossen
+// (innerhalb des Toast-Providers) - der Bestaetigungsdialog steht damit als Geschwister nach
+// dem `<footer>` und vor dem Toast-Host, ausserhalb von `main`.
 type AuthState = { status: 'unbekannt' } | { status: 'anonym' } | { status: 'angemeldet'; user: UserOutput }
 
 type AuthView = 'login' | 'register'
@@ -169,16 +173,18 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
 
   return (
     <ToastProvider>
-      <AppShell
-        canGoBack={canGoBack}
-        onBack={onBack}
-        account={account}
-        onLogout={() => void handleLogout()}
-        hinweis={hinweis}
-        build={build}
-      >
-        {content}
-      </AppShell>
+      <ConfirmProvider>
+        <AppShell
+          canGoBack={canGoBack}
+          onBack={onBack}
+          account={account}
+          onLogout={() => void handleLogout()}
+          hinweis={hinweis}
+          build={build}
+        >
+          {content}
+        </AppShell>
+      </ConfirmProvider>
     </ToastProvider>
   )
 }

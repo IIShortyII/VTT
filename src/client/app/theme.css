@@ -597,6 +597,57 @@ main.app-shell {
   text-align: center;
 }
 
+/* Dialoge (ui-dialog, #89) */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--gray-1) 55%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.modal {
+  position: relative;
+  width: 100%;
+  max-width: 22rem;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-5);
+  background: var(--panel-grad);
+  box-shadow: var(--shadow-panel);
+}
+
+.modal--wide {
+  max-width: 36rem;
+}
+
+.modal-close {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+}
+
+.modal-title {
+  margin: 0 var(--space-6) var(--space-2) 0;
+  font-size: var(--font-size-4);
+}
+
+.modal-description {
+  margin: 0 0 var(--space-4);
+  color: var(--color-text-muted);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
 @media (prefers-reduced-motion: no-preference) {
   button,
   .chip {
@@ -618,5 +669,20 @@ main.app-shell {
 
   .toast {
     animation: toast-in 0.18s ease-out;
+  }
+
+  @keyframes modal-in {
+    from {
+      opacity: 0;
+      transform: translateY(var(--space-2));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .modal {
+    animation: modal-in 0.16s ease-out;
   }
 }

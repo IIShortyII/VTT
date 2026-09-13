@@ -1,6 +1,8 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 
 import { DEFAULT_GRID, GRID_TYPES, IMAGE_MIME_TYPES, type Grid, type GridType, type MapSummary } from '../../shared/map.js'
+import { useT } from '../i18n/locale.js'
+import { useConfirm } from '../ui/confirm.js'
 import { createMap, deleteMap, listMaps, mapImageUrl, updateMap, uploadMapImage } from './api.js'
 import { MapCanvas } from './MapCanvas.js'
 
@@ -12,6 +14,10 @@ import { MapCanvas } from './MapCanvas.js'
 // Top-Bar der App-Shell - keine Prop `onBack`, keine eigene Schaltflaeche dafuer. Die innere
 // Schaltflaeche der Kartenansicht (zurueck zur Kartenliste) heisst `Zur Bibliothek`, damit es
 // im Dokument nie zwei Schaltflaechen mit dem Namen "Zurueck" gibt.
+// ui-dialog (#89, design.md D6): `Löschen` fragt ueber den Bestaetigungsdialog von `ui-dialog`
+// nach, statt den Zwei-Klick-Zustand zu halten - `confirmingDelete`/`handleDeleteClick`
+// entfallen. Nur die drei `map.delete.*`-Schluessel laufen ueber `useT()`; alle uebrigen
+// Rohstrings dieser Datei bleiben bis Epic C (#87-Entscheidung).
 
 type LibraryView = { view: 'liste' } | { view: 'detail'; mapId: string }
 
@@ -28,6 +34,8 @@ function gridsEqual(a: Grid, b: Grid): boolean {
 }
 
 export function MapLibrary() {
+  const t = useT()
+  const { confirm } = useConfirm()
   const [view, setView] = useState<LibraryView>({ view: 'liste' })
   const [maps, setMaps] = useState<MapSummary[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -41,7 +49,6 @@ export function MapLibrary() {
   const [detailError, setDetailError] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const [draftName, setDraftName] = useState('')
   const [draftGridType, setDraftGridType] = useState<GridType>(DEFAULT_GRID.type)
@@ -79,14 +86,12 @@ export function MapLibrary() {
     applyDrafts(map)
     setDetailError(null)
     setUploadError(null)
-    setConfirmingDelete(false)
     setView({ view: 'detail', mapId: map.id })
   }
 
   const backToList = () => {
     setView({ view: 'liste' })
     setCurrent(null)
-    setConfirmingDelete(false)
   }
 
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
@@ -173,16 +178,17 @@ export function MapLibrary() {
     }
   }
 
-  const handleDeleteClick = () => {
-    if (!confirmingDelete) {
-      setConfirmingDelete(true)
+  const handleDelete = async () => {
+    if (!current) {
       return
     }
-    void handleConfirmedDelete()
-  }
-
-  const handleConfirmedDelete = async () => {
-    if (!current) {
+    const ok = await confirm({
+      title: t('map.delete.title', { name: current.name }),
+      message: t('map.delete.message'),
+      confirmLabel: t('map.delete.confirm'),
+      danger: true,
+    })
+    if (!ok) {
       return
     }
     setDetailError(null)
@@ -193,12 +199,10 @@ export function MapLibrary() {
         await reload()
       } else {
         setDetailError(result.message)
-        setConfirmingDelete(false)
       }
     } catch (error) {
       console.error(error)
       setDetailError(GENERIC_DELETE_ERROR_MESSAGE)
-      setConfirmingDelete(false)
     }
   }
 
@@ -279,8 +283,8 @@ export function MapLibrary() {
           {uploadError !== null && <p role="alert">{uploadError}</p>}
         </div>
 
-        <button type="button" onClick={handleDeleteClick}>
-          {confirmingDelete ? 'Wirklich löschen' : 'Löschen'}
+        <button type="button" className="danger" onClick={() => void handleDelete()}>
+          Löschen
         </button>
       </div>
     )

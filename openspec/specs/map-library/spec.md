@@ -408,6 +408,12 @@ anbieten. Die Bibliothek SHALL die eigenen Karten mit Namen und Bildstatus aufli
 Anlegen einer Karte mit Namen und Bilddatei in einem Schritt erlauben (Karte anlegen, dann
 Bild hochladen), und eine Karte zur Bearbeitung öffnen: Kartenansicht mit Bild und Raster,
 Formular für Name und Raster, Bild ersetzen, Löschen nach Bestätigung, Zurück zur Liste.
+Die Bestätigung SHALL über den Bestätigungsdialog von `ui-dialog` laufen: `Löschen` öffnet
+einen `alertdialog` mit dem Titel `Karte „<Name>" löschen?` (`ui-text`, `map.delete.title`),
+der Beschreibung `Die Karte wird aus der Bibliothek entfernt und kann nicht wiederhergestellt
+werden.` und der bestätigenden Schaltfläche `Löschen` (Klasse `danger`); erst dessen
+Bestätigung sendet `DELETE`. Abbrechen des Dialogs MUST NOT eine Anfrage senden. Die
+Anwendung MUST NOT einen zweiten Klick auf dieselbe Schaltfläche als Bestätigung werten.
 
 Was die Kartenansicht zeigt, SHALL ausschließlich aus Antworten des Servers stammen — ein
 gespeichertes Raster wird mit dem Wert aus der Antwort gezeichnet, nicht mit der Eingabe
@@ -462,9 +468,22 @@ Verlassen der Kartenansicht SHALL die Anwendung die Canvas-Ressourcen genau einm
 #### Scenario: Löschen nach Bestätigung
 
 - **GIVEN** die Karte „Taverne" ist geöffnet
-- **WHEN** der Nutzer „Löschen" wählt und die Rückfrage bestätigt
-- **THEN** sendet die Anwendung `DELETE /api/maps/<id>`, kehrt zur Liste zurück, und
-  „Taverne" ist nicht mehr aufgeführt
+- **WHEN** der Nutzer „Löschen" in der Kartenansicht wählt
+- **THEN** gibt es einen Dialog mit der Rolle `alertdialog` und dem Namen
+  `Karte „Taverne" löschen?`, dessen Beschreibung `Die Karte wird aus der Bibliothek
+  entfernt und kann nicht wiederhergestellt werden.` lautet, mit den Schaltflächen
+  `Abbrechen` und `Löschen` (Klasse `danger`), und es wurde noch kein
+  `DELETE /api/maps/<id>` gesendet; wählt der Nutzer `Löschen` innerhalb des Dialogs,
+  sendet die Anwendung `DELETE /api/maps/<id>`, kehrt zur Liste zurück, und „Taverne" ist
+  nicht mehr aufgeführt
+
+#### Scenario: Abgebrochenes Löschen sendet nichts
+
+- **GIVEN** die Karte „Taverne" ist geöffnet, und der Löschdialog ist über „Löschen" offen
+- **WHEN** der Nutzer `Abbrechen` im Dialog wählt
+- **THEN** gibt es keinen Dialog mit der Rolle `alertdialog` mehr, es wurde kein
+  `DELETE /api/maps/<id>` gesendet, die Kartenansicht „Taverne" ist weiterhin gerendert,
+  und der Fokus liegt auf der Schaltfläche „Löschen" der Kartenansicht
 
 #### Scenario: Verlassen gibt die Kartenansicht frei
 

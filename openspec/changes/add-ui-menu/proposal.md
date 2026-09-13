@@ -93,6 +93,8 @@ Entscheidungen aus dem Issue-Text (#92, #102) und der Explore-Runde (2026-09-13)
 - `user-auth`: Requirement „Passwortänderung in der Oberfläche" (Modal statt `<details>`).
 - `game-session`: Requirement „Sitzungsoberfläche" (maskierter Code, Popover).
 - `ui-start`: Requirement „Stylesheet der Startansicht" (ohne `.start-account`).
+- `ui-text`: Requirement „Sprachschalter in der Top-Bar" (die englischen Szenarien der
+  Start- und Raumansicht finden `Log out` im Kontomenü und den Code im Popover).
 
 ## Impact
 

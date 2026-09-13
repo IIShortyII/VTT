@@ -31,6 +31,16 @@ export function Modal({ title, onClose, role = 'dialog', description, wide, chil
   const descriptionId = useId()
   const boxRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
+  const openerRef = useRef<HTMLElement | null>(null)
+
+  // Auslöser merken - beim ersten Render, nicht im Effekt (design.md D1/D2): React ruft
+  // `focus()` fuer Kinder mit `autoFocus` in der Commit-Phase auf, also *vor* jedem Effekt
+  // des Modals - ein im Effekt gelesenes `activeElement` waere dort bereits das
+  // Eingabefeld/`Abbrechen` in der Box, nicht der Auslöser. Nur der Render-Zeitpunkt liegt
+  // sicher davor; befuellt wird nur einmal (solange noch `null`).
+  if (openerRef.current === null && document.activeElement instanceof HTMLElement) {
+    openerRef.current = document.activeElement
+  }
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -53,9 +63,9 @@ export function Modal({ title, onClose, role = 'dialog', description, wide, chil
   }, [])
 
   // Fokus beim Oeffnen und Fokusrueckgabe (D2, Requirement "Fokus beim Öffnen"/
-  // "Fokusrückgabe"): einmalig beim Mount/Unmount, kein Abhaengigkeitseintrag.
+  // "Fokusrückgabe"): einmalig beim Mount/Unmount, kein Abhaengigkeitseintrag. Der Auslöser
+  // wurde bereits beim Rendern gemerkt (oben) - hier nur noch gelesen.
   useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const box = boxRef.current
     if (box) {
       const activeElement = document.activeElement
@@ -65,6 +75,7 @@ export function Modal({ title, onClose, role = 'dialog', description, wide, chil
       }
     }
     return () => {
+      const opener = openerRef.current
       if (opener && opener.isConnected) {
         opener.focus()
       }

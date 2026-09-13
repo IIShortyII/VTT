@@ -35,6 +35,7 @@ jest.mock('../src/client/session/socket.js', () => {
     enter: jest.fn(),
     transition: jest.fn(),
     alias: jest.fn(),
+    rename: jest.fn(),
     on: jest.fn((event: string, handler: (payload: unknown) => void) => {
       handlers[event] = handler
     }),
@@ -69,6 +70,7 @@ type SocketTestApi = {
     enter: jest.Mock
     transition: jest.Mock
     alias: jest.Mock
+    rename: jest.Mock
     on: jest.Mock
   }
   __handlers: Record<string, (payload: unknown) => void>
@@ -400,36 +402,42 @@ test('Raumansicht unter Englisch', async () => {
   // GIVEN: gespeicherte Wahl `en`; die Karte traegt die Schaltflaeche `Enter`.
   const enter = (await screen.findAllByRole('button', { name: 'Enter' }))[0]
 
-  // WHEN: der Nutzer loest `Enter` der Karte aus, die Raumansicht ist gerendert (Ueberschrift
-  // der Ebene 1 `Freitagsrunde`).
+  // WHEN: `Enter` der Karte, Raumansicht gerendert (Ueberschrift der Ebene 1 `Freitagsrunde`),
+  // danach der Umschalter `Show session code`.
   await act(async () => {
     fireEvent.click(enter)
   })
   await screen.findByRole('heading', { level: 1, name: 'Freitagsrunde' })
-  // und danach den Trigger `Show session code`.
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show session code' }))
   })
 
-  // THEN: Top-Bar und Raum sind englisch; der Code bleibt als Datenwert unveraendert.
+  // THEN: Top-Bar englisch (`Back`, Gruppe `Language`).
   const header = screen.getByRole('banner')
   expect(within(header).getByRole('button', { name: 'Back' })).toBeTruthy()
   expect(within(header).getByRole('group', { name: 'Language' })).toBeTruthy()
 
-  const pille = screen.getByText('Open').closest('.status-pill')
-  expect(pille).not.toBeNull()
-  expect(screen.getByText('••••••')).toBeTruthy()
-  const codePopover = screen.getByRole('dialog', { name: 'Session code' })
-  expect(within(codePopover).getByText('ABC234')).toBeTruthy()
-  expect(within(codePopover).getByRole('button', { name: 'Copy' })).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Start' })).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'End' })).toBeTruthy()
+  // MODIFIED (#93): die Gruppe `Session` mit Zustandspille `Open`, `<code>`-Element `Session
+  // code` mit dem Klartext `ABC234` (Umschalter gedrueckt) und den englischen Schaltflaechen.
+  const bar = screen.getByRole('group', { name: 'Session' })
+  expect(within(bar).getByText('Open').closest('.status-pill')).not.toBeNull()
+  expect(within(bar).getByLabelText('Session code').textContent).toBe('ABC234')
+  expect(within(bar).getByRole('button', { name: 'Show session code' }).getAttribute('aria-pressed')).toBe('true')
+  expect(within(bar).getByRole('button', { name: 'Copy session code' })).toBeTruthy()
+  expect(within(bar).getByRole('button', { name: 'Rename' })).toBeTruthy()
+  expect(within(bar).getByRole('button', { name: 'Open' })).toBeTruthy()
+  expect(within(bar).getByRole('button', { name: 'Start' })).toBeTruthy()
+  expect(within(bar).getByRole('button', { name: 'Pause' })).toBeTruthy()
+  expect(within(bar).getByRole('button', { name: 'End' })).toBeTruthy()
+  expect(within(bar).getByRole('button', { name: 'Session settings' })).toBeTruthy()
 
+  // Keine deutschen Beschriftungen, kein deutscher Zustandstext.
   expect(screen.queryByRole('button', { name: 'Zurück' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Starten' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Beenden' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Sitzungscode anzeigen' })).toBeNull()
-  expect(screen.queryByRole('button', { name: 'Kopieren' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Sitzungscode kopieren' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Umbenennen' })).toBeNull()
   expect(screen.queryByText('Geöffnet')).toBeNull()
 })
 

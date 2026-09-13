@@ -17,6 +17,12 @@
 // in einem zugeklappten Aufklappbereich (`<details class="start-account">` ohne `open`, Summary
 // `Passwort ändern`); das Szenario „Angemeldete Ansicht bietet die Passwortänderung an" ist
 // darauf umgestellt.
+//
+// add-toast-feedback (#88, MODIFIED user-auth): Der Erfolg der Passwortänderung erscheint als
+// Toast `Passwort geändert.` im Toast-Host (`role="status"`, `ui-feedback`); nach einem Erfolg
+// zeigt das Formular keine Meldung mit `role="alert"`. Eine Ablehnung bleibt inline mit
+// `role="alert"` und loest keinen Toast aus. Die beiden Passwort-Szenarien sind darauf umgestellt
+// (Testnamen bleiben).
 
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { App } from '../src/client/app/App.js'
@@ -233,8 +239,10 @@ test('Vergebener Nutzername wird angezeigt', async () => {
 // --- Passwortänderung in der Oberfläche -----------------------------------------------------
 // Requirement "Passwortänderung in der Oberfläche" aus
 // openspec/changes/add-account-security/specs/user-auth/spec.md, MODIFIED in
-// openspec/changes/add-start-view/specs/user-auth/spec.md (#86). Das Formular liegt in einem
-// zugeklappten `<details class="start-account">` (design.md D4/D5).
+// openspec/changes/add-start-view/specs/user-auth/spec.md (#86) und
+// openspec/changes/add-toast-feedback/specs/user-auth/spec.md (#88). Das Formular liegt in einem
+// zugeklappten `<details class="start-account">` (design.md D4/D5); der Erfolg erscheint als
+// Toast im Toast-Host (#88).
 
 const ANGEMELDETER_NUTZER = { id: 'nutzer-1', email: 'spieler@example.com', username: 'Gandalf' }
 
@@ -288,8 +296,14 @@ test('Abgelehnte Passwortänderung wird angezeigt', async () => {
 
   fireEvent.submit(must(bisher.closest('form'), 'ein <form> um die Passwortfelder'))
 
-  // Die Meldung des Servers wird angezeigt …
+  // MODIFIED (#88): die Ablehnung erscheint als Meldung mit `role="alert"` im Formular …
   await waitFor(() => expect(screen.getAllByText(ABLEHNUNG).length).toBeGreaterThan(0))
+  const form = must(bisher.closest('form'), 'ein <form> um die Passwortfelder')
+  const alert = within(form as HTMLElement).getByRole('alert')
+  expect(alert.textContent).toContain(ABLEHNUNG)
+  // … der Toast-Host zeigt keinen Toast (kein Erfolgstoast bei einer Ablehnung) …
+  const host = screen.queryByRole('status')
+  expect(host === null || host.children.length === 0).toBe(true)
   // … und die Ansicht bleibt angemeldet (constitution.md §9.1): eine abgelehnte Änderung meldet
   // den Nutzer nicht ab.
   expect(screen.getByRole('button', { name: /ändern/i })).toBeTruthy()
@@ -310,8 +324,12 @@ test('Erfolgreiche Passwortänderung wird bestätigt', async () => {
 
   fireEvent.submit(must(bisher.closest('form'), 'ein <form> um die Passwortfelder'))
 
-  // Eine Erfolgsmeldung erscheint …
-  await waitFor(() => expect(screen.getByText(/geändert/i)).toBeTruthy())
+  // MODIFIED (#88): der Erfolg erscheint als Toast `Passwort geändert.` im Toast-Host
+  // (`role="status"`), nicht mehr als `role="alert"` im Formular.
+  const host = await screen.findByRole('status')
+  await waitFor(() => expect(within(host).getByText('Passwort geändert.')).toBeTruthy())
+  const form = must(bisher.closest('form'), 'ein <form> um die Passwortfelder')
+  expect(within(form as HTMLElement).queryByRole('alert')).toBeNull()
   // … beide Passwortfelder sind geleert …
   expect((must(bisherigesPasswortFeld(container), 'das bisherige Passwortfeld') as HTMLInputElement).value).toBe('')
   expect((must(neuesPasswortFeld(container), 'das neue Passwortfeld') as HTMLInputElement).value).toBe('')

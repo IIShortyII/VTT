@@ -28,6 +28,13 @@
 // 1 (Sitzungsname) erkannt; kein Textknoten traegt mehr den Rohwert (design.md D8). Vier
 // Szenarien sind darauf umgestellt (Testnamen bleiben); die Suite importiert das i18n-Modul
 // nicht — die Szenarien laufen in der Standardsprache Deutsch.
+//
+// add-toast-feedback (#88, MODIFIED game-session): Neben dem Sitzungscode bietet die Raumansicht
+// dem Spielleiter eine Schaltfläche `Kopieren`; einem Spieler nicht. Gelingt das Kopieren, löst
+// die Anwendung den Toast `Sitzungscode kopiert` im Toast-Host (`role="status"`, `ui-feedback`)
+// aus; scheitert die Zwischenablage, erscheint kein Toast. Die beiden Raumansicht-Szenarien sind
+// um die An-/Abwesenheit der Schaltfläche ergaenzt; zwei neue Szenarien pruefen Kopieren und
+// Scheitern (Zwischenablage-Ersatz per `Object.defineProperty`, design.md D6).
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
@@ -228,6 +235,8 @@ test('Raumansicht des Spielleiters', async () => {
   expect(pille).not.toBeNull()
   // Sitzungscode fuer den Spielleiter.
   expect(screen.getByText(/ABC234/)).toBeTruthy()
+  // MODIFIED (add-toast-feedback #88): eine Schaltfläche `Kopieren` neben dem Sitzungscode.
+  expect(screen.getByRole('button', { name: 'Kopieren' })).toBeTruthy()
   // Beide Teilnehmer werden mit ihrem Nutzernamen benannt (keiner traegt einen Alias).
   expect(screen.getByText(/alrik/)).toBeTruthy()
   expect(screen.getByText(/borgil/)).toBeTruthy()
@@ -278,9 +287,93 @@ test('Raumansicht des Spielers', async () => {
   expect(within(main).getByText(/\bich\b/)).toBeTruthy()
   // Kein Sitzungscode und keine Uebergangs-Schaltflaeche.
   expect(screen.queryByText(/code/i)).toBeNull()
+  // MODIFIED (add-toast-feedback #88): einem Spieler wird keine Schaltfläche `Kopieren` gezeigt.
+  expect(screen.queryByRole('button', { name: 'Kopieren' })).toBeNull()
   expect(screen.queryByRole('button', { name: /starten|beenden|öffnen|pausieren/i })).toBeNull()
   // Kein Textknoten traegt den Rohwert des Zustands.
   expect(screen.queryByText('gestartet')).toBeNull()
+})
+
+test('Sitzungscode wird kopiert', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spielleiter', code: 'ABC234' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spielleiter', code: 'ABC234' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spielleiter', online: true }],
+  })
+  // Die Zwischenablage des Browsers bestaetigt das Schreiben (design.md D6). `navigator.clipboard`
+  // fehlt in jsdom, daher per `Object.defineProperty` einsetzen und danach wiederherstellen.
+  const writeText = jest.fn().mockResolvedValue(undefined)
+  const original = Object.getOwnPropertyDescriptor(globalThis.navigator, 'clipboard')
+  Object.defineProperty(globalThis.navigator, 'clipboard', { value: { writeText }, configurable: true })
+
+  try {
+    render(<App />)
+    await screen.findByText(/Freitagsrunde/)
+    await betreten()
+    await screen.findByRole('heading', { level: 1, name: 'Freitagsrunde' })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Kopieren' }))
+    })
+
+    // Genau der Sitzungscode wurde in die Zwischenablage geschrieben …
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('ABC234'))
+    // … und der Toast-Host zeigt den Toast `Sitzungscode kopiert`.
+    const host = await screen.findByRole('status')
+    await waitFor(() => expect(within(host).getByText('Sitzungscode kopiert')).toBeTruthy())
+  } finally {
+    Object.defineProperty(globalThis.navigator, 'clipboard', original ?? { value: undefined, configurable: true })
+  }
+})
+
+test('Gescheitertes Kopieren zeigt keinen Toast', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spielleiter', code: 'ABC234' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spielleiter', code: 'ABC234' },
+    participants: [{ userId: 'u-selbst', username: 'ich', role: 'spielleiter', online: true }],
+  })
+  // Die Zwischenablage lehnt das Schreiben ab.
+  const writeText = jest.fn().mockRejectedValue(new Error('Zwischenablage nicht verfügbar'))
+  const original = Object.getOwnPropertyDescriptor(globalThis.navigator, 'clipboard')
+  Object.defineProperty(globalThis.navigator, 'clipboard', { value: { writeText }, configurable: true })
+
+  try {
+    render(<App />)
+    await screen.findByText(/Freitagsrunde/)
+    await betreten()
+    await screen.findByRole('heading', { level: 1, name: 'Freitagsrunde' })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Kopieren' }))
+    })
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('ABC234'))
+    // Mikrotasks des abgelehnten Schreibens abfliessen lassen, damit ein faelschlicher Toast
+    // Zeit haette zu erscheinen.
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    // Kein Toast, und die Raumansicht bleibt mit dem Code `ABC234` gerendert.
+    const host = screen.queryByRole('status')
+    expect(host === null || host.children.length === 0).toBe(true)
+    expect(screen.getByText(/ABC234/)).toBeTruthy()
+  } finally {
+    Object.defineProperty(globalThis.navigator, 'clipboard', original ?? { value: undefined, configurable: true })
+  }
 })
 
 test('Zustand folgt dem Server', async () => {

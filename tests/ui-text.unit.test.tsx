@@ -347,9 +347,12 @@ test('Angemeldete Startansicht unter Englisch', async () => {
   // GIVEN: die angemeldete Startansicht ist erschienen (Schaltflaeche `Sitzung leiten`).
   await screen.findByRole('button', { name: 'Sitzung leiten' })
 
-  // WHEN: der Nutzer loest `English` in der Top-Bar aus.
+  // WHEN: der Nutzer loest `English` in der Top-Bar aus und danach die Menue-Schaltflaeche `Gandalf`.
   await act(async () => {
     fireEvent.click(schalterKnopf('English'))
+  })
+  await act(async () => {
+    fireEvent.click(within(screen.getByRole('banner')).getByRole('button', { name: 'Gandalf' }))
   })
 
   // THEN: die Startansicht traegt die englischen Texte; Daten (Nutzername, Sitzungsname) bleiben.
@@ -357,7 +360,8 @@ test('Angemeldete Startansicht unter Englisch', async () => {
   expect(screen.getByRole('button', { name: 'Run a session' })).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Join' })).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Map library' })).toBeTruthy()
-  expect(within(screen.getByRole('banner')).getByRole('button', { name: 'Log out' })).toBeTruthy()
+  const kontomenue = screen.getByRole('menu', { name: 'Gandalf' })
+  expect(within(kontomenue).getAllByRole('menuitem').map((el) => el.textContent)).toEqual(['Change password', 'Log out'])
 
   const liste = screen.getByRole('list', { name: 'My game sessions' })
   const eintraege = within(liste).getAllByRole('listitem')
@@ -372,6 +376,8 @@ test('Angemeldete Startansicht unter Englisch', async () => {
   expect(normalize(screen.getByRole('contentinfo').textContent)).toBe(`Version 0.0.0-dev ${MITTELPUNKT} Build dev`)
 
   expect(screen.queryByRole('button', { name: 'Sitzung leiten' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Log out' })).toBeNull()
+  expect(screen.queryByRole('menuitem', { name: 'Abmelden' })).toBeNull()
   expect(screen.queryByText('Läuft')).toBeNull()
 })
 
@@ -400,6 +406,10 @@ test('Raumansicht unter Englisch', async () => {
     fireEvent.click(enter)
   })
   await screen.findByRole('heading', { level: 1, name: 'Freitagsrunde' })
+  // und danach den Trigger `Show session code`.
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Show session code' }))
+  })
 
   // THEN: Top-Bar und Raum sind englisch; der Code bleibt als Datenwert unveraendert.
   const header = screen.getByRole('banner')
@@ -408,13 +418,18 @@ test('Raumansicht unter Englisch', async () => {
 
   const pille = screen.getByText('Open').closest('.status-pill')
   expect(pille).not.toBeNull()
-  expect(screen.getByText(/ABC234/)).toBeTruthy()
+  expect(screen.getByText('••••••')).toBeTruthy()
+  const codePopover = screen.getByRole('dialog', { name: 'Session code' })
+  expect(within(codePopover).getByText('ABC234')).toBeTruthy()
+  expect(within(codePopover).getByRole('button', { name: 'Copy' })).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Start' })).toBeTruthy()
   expect(screen.getByRole('button', { name: 'End' })).toBeTruthy()
 
   expect(screen.queryByRole('button', { name: 'Zurück' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Starten' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Beenden' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Sitzungscode anzeigen' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Kopieren' })).toBeNull()
   expect(screen.queryByText('Geöffnet')).toBeNull()
 })
 

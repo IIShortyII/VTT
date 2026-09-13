@@ -250,9 +250,12 @@ test('Sitzungsliste mit Erstellen und Beitreten', async () => {
   })
   expect(codeFeld(container)).not.toBeNull()
 
-  // Abmeldung in der Top-Bar (ui-shell), nicht mehr in der Liste; Startansicht ohne Zurueck.
+  // Abmeldung liegt im Kontomenue der Top-Bar (ui-shell, „Top-Bar“): aussen nur die
+  // Menue-Schaltflaeche mit dem Nutzernamen, keine Schaltflaeche `Abmelden`; Startansicht ohne Zurueck.
   const header = screen.getByRole('banner')
-  expect(within(header).getByRole('button', { name: /abmelden/i })).toBeTruthy()
+  const konto = within(header).getByRole('button', { name: 'ich' })
+  expect(konto.getAttribute('aria-haspopup')).toBe('menu')
+  expect(within(header).queryByRole('button', { name: /abmelden/i })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Zurück' })).toBeNull()
 })
 

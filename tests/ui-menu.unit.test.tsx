@@ -241,8 +241,8 @@ test('Home und End springen an die Ränder', () => {
   fireEvent.click(screen.getByRole('button', { name: 'auslösen' }))
   const menu = screen.getByRole('menu')
   const zuweisen = within(menu).getByRole('menuitem', { name: 'Zuweisen…' })
-  // GIVEN: `Zuweisen…` ist der aktive Eintrag (Mausfokus setzt `active`).
-  fireEvent.focus(zuweisen)
+  // GIVEN: `Zuweisen…` ist der aktive Eintrag — per Pfeil abwärts vom ersten Eintrag (echter Fokus).
+  fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' })
   expect(document.activeElement).toBe(zuweisen)
 
   fireEvent.keyDown(document.activeElement!, { key: 'End' })

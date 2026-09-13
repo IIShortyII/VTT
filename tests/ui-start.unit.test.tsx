@@ -21,16 +21,21 @@
 //
 // add-ui-dialog (#89, MODIFIED ui-start): Die Hero-Aktionen `Sitzung leiten`/`Beitreten` tragen
 // jetzt `aria-haspopup="dialog"` statt `aria-expanded` und oeffnen ihr Formular in einem Dialog
-// (`ui-dialog`, Rolle `dialog`) gleichen Namens. Die Szenarien „Angemeldete Startansicht zeigt
-// Hero mit Aktionen" und die sechs Szenarien von „Erstellen und Beitreten auf Anforderung"
-// pruefen daher den Dialog und die Fokusrueckgabe an den Auslöser (bei `Abbrechen`/`Escape`);
-// die Testnamen bleiben, weil die Szenariennamen bleiben. App-rendernde Szenarien bekommen
-// 15000 ms Timeout, damit die Vollsuite nicht in das 5-s-Timeout laeuft.
+// (`ui-dialog`, Rolle `dialog`) gleichen Namens.
 //
-// Rote Phase: `App` ist noch nicht vom `ConfirmProvider`/`Modal` gestuetzt; die Startaktionen
-// oeffnen noch Aufklapp-Panels mit `aria-expanded`, keinen Dialog. Die geaenderten Szenarien
-// scheitern daher am fehlenden `aria-haspopup`/`role="dialog"`/an der Fokusrueckgabe — der
-// erwartete rote Grund (constitution.md §3.1), kein Lade- oder Typfehler.
+// add-ui-form (#90, MODIFIED ui-start): Beide Startformulare folgen dem Formularmuster von
+// `ui-form` (design.md D5). `Erstellen`/`Beitreten` sind gesperrt, solange das gemeinsame
+// Schema den Zustand nicht akzeptiert; `Abbrechen` ist nie gesperrt. Eine Ablehnung mit `field`
+// erscheint als Feldfehler des Feldes `Name` bzw. `Sitzungscode` (`aria-invalid`,
+// `aria-describedby` auf ein `role="alert"`-Element). „Sitzung leiten öffnet das
+// Erstellen-Formular" und „Abgelehntes Erstellen bleibt im Formular" aendern ihre Erwartung
+// (Namen bleiben); neu sind „Abgelehnter Beitritt zeigt den Fehler am Sitzungscode" und
+// „Beitreten bleibt gesperrt bei leerem Sitzungscode".
+//
+// Rote Phase: die Formulare tragen noch keine gesperrte Absende-Schaltflaeche aus dem Schema und
+// keinen Feldfehler nach dem Formularmuster — die Szenarien scheitern an der erwarteten
+// Assertion (fehlendes `disabled`/`aria-invalid`), kein Lade- oder Typfehler (constitution.md
+// §3.1). App-rendernde Szenarien bekommen 15000 ms Timeout.
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -108,6 +113,13 @@ function antwort(status: number, body: unknown): Response {
 
 function urlOf(input: RequestInfo | URL): string {
   return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+}
+
+/** Der Feldfehler eines Steuerelements: das `role="alert"`-Element, auf das `aria-describedby`
+ * zeigt (design.md D11). */
+function feldFehlerVon(control: HTMLElement): HTMLElement | null {
+  const id = control.getAttribute('aria-describedby')
+  return id ? document.getElementById(id) : null
 }
 
 type Antwort = Response | Promise<Response> | (() => Response | Promise<Response>)
@@ -232,9 +244,12 @@ test('Sitzung leiten öffnet das Erstellen-Formular', async () => {
   const formular = within(dialog).getByRole('form', { name: 'Neue Spielsitzung' })
   const nameFeld = within(formular).getByLabelText('Name')
   expect(nameFeld).toBeTruthy()
-  expect(within(formular).getByRole('button', { name: 'Erstellen' })).toBeTruthy()
-  expect(within(formular).getByRole('button', { name: 'Abbrechen' })).toBeTruthy()
+  const erstellen = within(formular).getByRole('button', { name: 'Erstellen' }) as HTMLButtonElement
+  const abbrechen = within(formular).getByRole('button', { name: 'Abbrechen' }) as HTMLButtonElement
   expect(document.activeElement).toBe(nameFeld)
+  // MODIFIED (#90): `Erstellen` ist gesperrt, solange `Name` leer ist; `Abbrechen` nie.
+  expect(erstellen.disabled).toBe(true)
+  expect(abbrechen.disabled).toBe(false)
 }, 15000)
 
 test('Beitreten öffnet das Beitreten-Formular und schließt das Erstellen-Formular', async () => {
@@ -343,7 +358,7 @@ test('Abgelehntes Erstellen bleibt im Formular', async () => {
   const MELDUNG = 'Der Name ist bereits vergeben.'
   mockFetch([
     { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
-    { pfad: '/api/sessions', method: 'POST', antwort: antwort(400, { message: MELDUNG }) },
+    { pfad: '/api/sessions', method: 'POST', antwort: antwort(400, { message: MELDUNG, field: 'name' }) },
     { pfad: '/api/sessions', method: 'GET', antwort: antwort(200, []) },
   ])
 
@@ -354,15 +369,20 @@ test('Abgelehntes Erstellen bleibt im Formular', async () => {
   })
   const dialog = screen.getByRole('dialog', { name: 'Neue Spielsitzung' })
   const formular = within(dialog).getByRole('form', { name: 'Neue Spielsitzung' })
-  fireEvent.change(within(formular).getByLabelText('Name'), { target: { value: 'Krypta' } })
+  const nameFeld = within(formular).getByLabelText('Name')
+  fireEvent.change(nameFeld, { target: { value: 'Krypta' } })
 
   await act(async () => {
     fireEvent.submit(formular)
   })
 
-  // Der Dialog bleibt offen und sein Formular zeigt die Meldung des Servers als Fehlermeldung.
+  // MODIFIED (#90): der Dialog bleibt offen und der Fehler steht am Feld `Name`.
   const dialogDanach = await screen.findByRole('dialog', { name: 'Neue Spielsitzung' })
-  await waitFor(() => expect(within(dialogDanach).getByRole('alert').textContent).toContain(MELDUNG))
+  const feld = within(dialogDanach).getByLabelText('Name')
+  await waitFor(() => expect(feld.getAttribute('aria-invalid')).toBe('true'))
+  const fehler = must(feldFehlerVon(feld), 'ein Feldfehler am Feld „Name"')
+  expect(fehler.getAttribute('role')).toBe('alert')
+  expect(fehler.textContent).toContain(MELDUNG)
 }, 15000)
 
 test('Beitritt per Code schließt das Formular', async () => {
@@ -397,6 +417,65 @@ test('Beitritt per Code schließt das Formular', async () => {
   const liste2 = screen.getByRole('list', { name: 'Meine Spielsitzungen' })
   const karte = within(liste2).getByRole('heading', { level: 3, name: 'Freitagsrunde' }).closest('li') as HTMLElement
   expect(within(karte).getByText('Spieler')).toBeTruthy()
+}, 15000)
+
+test('Abgelehnter Beitritt zeigt den Fehler am Sitzungscode', async () => {
+  const MELDUNG = 'Sitzungscode prüfen und ob die Spielleitung die Sitzung geöffnet hat.'
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    { pfad: '/api/sessions/join', method: 'POST', antwort: antwort(404, { message: MELDUNG, field: 'code' }) },
+    { pfad: '/api/sessions', method: 'GET', antwort: antwort(200, []) },
+  ])
+
+  render(<App />)
+  await findeSitzungLeiten()
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Beitreten' }))
+  })
+  const dialog = screen.getByRole('dialog', { name: 'Spielsitzung beitreten' })
+  const formular = within(dialog).getByRole('form', { name: 'Spielsitzung beitreten' })
+  const codeFeld = within(formular).getByLabelText('Sitzungscode')
+  fireEvent.change(codeFeld, { target: { value: 'ZZZ999' } })
+
+  await act(async () => {
+    fireEvent.click(within(formular).getByRole('button', { name: 'Beitreten' }))
+  })
+
+  // Der Dialog bleibt offen und der Fehler steht am Feld `Sitzungscode`.
+  const dialogDanach = await screen.findByRole('dialog', { name: 'Spielsitzung beitreten' })
+  const feld = within(dialogDanach).getByLabelText('Sitzungscode')
+  await waitFor(() => expect(feld.getAttribute('aria-invalid')).toBe('true'))
+  const fehler = must(feldFehlerVon(feld), 'ein Feldfehler am Feld „Sitzungscode"')
+  expect(fehler.getAttribute('role')).toBe('alert')
+  expect(fehler.textContent).toContain(MELDUNG)
+}, 15000)
+
+test('Beitreten bleibt gesperrt bei leerem Sitzungscode', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, NUTZER) },
+    { pfad: '/api/sessions/join', method: 'POST', antwort: antwort(200, {}) },
+    { pfad: '/api/sessions', method: 'GET', antwort: antwort(200, []) },
+  ])
+
+  render(<App />)
+  await findeSitzungLeiten()
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Beitreten' }))
+  })
+  const dialog = screen.getByRole('dialog', { name: 'Spielsitzung beitreten' })
+  const formular = within(dialog).getByRole('form', { name: 'Spielsitzung beitreten' })
+  // Das Feld `Sitzungscode` bleibt leer.
+  const beitreten = within(formular).getByRole('button', { name: 'Beitreten' }) as HTMLButtonElement
+  const abbrechen = within(formular).getByRole('button', { name: 'Abbrechen' }) as HTMLButtonElement
+
+  await act(async () => {
+    fireEvent.click(beitreten)
+    fireEvent.submit(formular)
+  })
+
+  expect(beitreten.disabled).toBe(true)
+  expect(abbrechen.disabled).toBe(false)
+  expect(postBodies('/api/sessions/join')).toEqual([])
 }, 15000)
 
 // --- Requirement: Sitzungskarten ------------------------------------------------------------

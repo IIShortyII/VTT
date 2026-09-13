@@ -1,13 +1,7 @@
 /** @jest-environment jsdom */
 // Komponententests zum Delta "Tokenansicht im Raum" aus
 // openspec/changes/add-token-assignment/specs/session-token/spec.md (tasks.md 1.2). Ein Test je
-// GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname. Neu zu #15: die
-// vier Szenarien "Spieler greift nur eigene Tokens", "Spieler sieht die abgelehnte Bewegung",
-// "Spielleiter weist ein Token über die Liste zu" und "Spielleiter nimmt eine Zuweisung über die
-// Liste zurück". Der bestehende Test "Spieler zieht nicht" aendert seine Aussage (Rueckruf
-// vorhanden, `canMoveToken` verneint fuer das fremde Token), "Spieler sieht keine
-// Token-Verwaltung" bekommt eine weitere Assertion (kein Auswahlfeld). Die uebrigen Szenarien
-// aus #14 bleiben unveraendert.
+// GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname.
 //
 // Geprueft wird, *was* die Anwendung anfordert und anzeigt — nicht, wie es aussieht (AGENTS.md:
 // Rendering nimmt der menschliche App-Test ab). Mock-Grenzen (design.md D8), wie in
@@ -20,15 +14,20 @@
 //    `canMoveToken`) auf und liefert ein Handle mit `setGrid`/`setImage`/`setTokens`/`destroy`
 //    als `jest.fn`; kein Test importiert `pixi.js`,
 //  - `fetch`, nach Pfad und Methode.
-// Elemente ausschliesslich ueber getByRole/getByLabelText/getByText und within (D7-Tabelle);
-// keine `must()`-Helfer mit Kurzmeldung in den neuen Tests — die DOM-Ausgabe der Testing Library
-// ist das Gate-Feedback des implementers (design.md D8).
 //
-// Rote Phase (tasks.md 1.2): fuer einen Spieler uebergibt `SessionRoom` der Canvas-Fassade
-// bislang weder `onTokenMove` noch `canMoveToken`; die Meldung einer abgelehnten Bewegung
-// erscheint fuer den Spieler nirgends; die Token-Verwaltung kennt kein Auswahlfeld und
-// `assignToken` fehlt. Die Szenarien scheitern daher am fehlenden Rueckruf/Bedienelement/an der
-// fehlenden Meldung — der erwartete rote Grund, kein Compile-/Setup-Fehler.
+// add-ui-form (#90, MODIFIED session-token): Das Formular `Tokens` folgt dem Formularmuster von
+// `ui-form` OHNE Feldfehler (design.md D7): `Anlegen` ist gesperrt, solange
+// `CreateTokenInputSchema` (ohne `sessionId`) den Zustand nicht akzeptiert oder das
+// Acknowledgement aussteht, und traegt waehrenddessen `aria-busy="true"`; ein bestaetigendes
+// Acknowledgement leert das Feld `Name`, ein ablehnendes laesst es stehen. „Spielleiter legt ein
+// Token über das Formular an" und „Abgelehnte Aktion zeigt die Meldung" aendern ihre Erwartung
+// (Namen bleiben); „Anlegen bleibt gesperrt ohne Namen" ist neu. Die Ablehnung bleibt
+// Raum-Meldung, das Panel rendert keinen Formularfehler.
+//
+// Rote Phase (constitution.md §3.1): das Formular `Tokens` sperrt `Anlegen` noch nicht aus dem
+// Schema, traegt kein `aria-busy`, wartet nicht auf das Acknowledgement und leert das Feld `Name`
+// noch vor der Antwort. Die geaenderten/neuen Szenarien scheitern an ihrer Assertion, kein
+// Setup-/Compile-Fehler.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
@@ -182,8 +181,6 @@ function spielleiterFetch(): void {
 }
 
 // --- Token-Testdaten ------------------------------------------------------------------------
-// `ownerId` ist Teil der Tokendarstellung (spec.md "Drahtformat"). Standardwert `null`
-// ("gehört dem Spielleiter"); wo ein Besitzer gebraucht wird, entsteht eine lokale Variante.
 
 type ShareAudience = 'keine' | 'alle' | string[]
 type Freigaben = { hp: ShareAudience; tempHp: ShareAudience; ac: ShareAudience; initiative: ShareAudience; conditions: ShareAudience }
@@ -321,10 +318,7 @@ test('Spieler zieht nicht', async () => {
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
   const opts = letzteCanvasOptions()
-  // Positiver Anker: der Tokenbestand erreicht die Spielersicht (D6) ...
   expect(opts.tokens).toEqual([ORK])
-  // ... mit Zieh-Rueckruf fuer jede Rolle (D6), aber einer Greifbarkeitsregel, die das fremde
-  // Token verneint (ORK gehört dem Spielleiter, ownerId null).
   expect(typeof opts.onTokenMove).toBe('function')
   const canMoveToken = opts.canMoveToken as ((token: unknown) => boolean) | undefined
   expect(typeof canMoveToken).toBe('function')
@@ -379,7 +373,14 @@ test('Spieler sieht die abgelehnte Bewegung', async () => {
 test('Spielleiter legt ein Token über das Formular an', async () => {
   spielleiterFetch()
   enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [] })
-  socketMock.__facade.createToken.mockResolvedValue({ ok: true, token: GOBLIN })
+  // Ein zurueckgehaltenes Acknowledgement: erst nach `ackAufloesen` antwortet der Server —
+  // dazwischen ist das Formular im Ladezustand (design.md D7).
+  let ackAufloesen!: (ack: { ok: true; token: unknown }) => void
+  socketMock.__facade.createToken.mockReturnValue(
+    new Promise((res) => {
+      ackAufloesen = res
+    }),
+  )
 
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
@@ -400,13 +401,25 @@ test('Spielleiter legt ein Token über das Formular an', async () => {
   fireEvent.change(screen.getByLabelText('Größe'), { target: { value: '2' } })
   fireEvent.change(screen.getByLabelText('Spalte'), { target: { value: '3' } })
   fireEvent.change(screen.getByLabelText('Zeile'), { target: { value: '4' } })
+
+  const anlegen = screen.getByRole('button', { name: 'Anlegen' }) as HTMLButtonElement
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
+    fireEvent.click(anlegen)
   })
 
   await waitFor(() =>
     expect(socketMock.__facade.createToken).toHaveBeenCalledWith('s1', { name: 'Goblin', color: '#3366ff', icon: 'undead', size: 2, col: 3, row: 4 }),
   )
+  // Solange das Acknowledgement aussteht: gesperrt, `aria-busy="true"`, `Name` bleibt stehen.
+  expect(anlegen.disabled).toBe(true)
+  expect(anlegen.getAttribute('aria-busy')).toBe('true')
+  expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Goblin')
+
+  // Nach dem bestaetigenden Acknowledgement ist das Feld `Name` leer.
+  await act(async () => {
+    ackAufloesen({ ok: true, token: GOBLIN })
+  })
+  await waitFor(() => expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe(''))
 }, 15000)
 
 test('Spielleiter entfernt ein Token über die Liste', async () => {
@@ -482,15 +495,31 @@ test('Abgelehnte Aktion zeigt die Meldung', async () => {
   })
 
   expect(await screen.findByText('Keine Karte aktiv.')).toBeTruthy()
+  // MODIFIED (#90): ein ablehnendes Acknowledgement laesst das Feld `Name` stehen.
+  expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Goblin')
+})
+
+test('Anlegen bleibt gesperrt ohne Namen', async () => {
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  const anlegen = (await screen.findByRole('button', { name: 'Anlegen' })) as HTMLButtonElement
+  const form = must(anlegen.closest('form'), 'das Formular „Tokens"') as HTMLElement
+  await act(async () => {
+    fireEvent.click(anlegen)
+    fireEvent.submit(form)
+  })
+
+  expect(anlegen.disabled).toBe(true)
+  expect(socketMock.__facade.createToken).not.toHaveBeenCalled()
 })
 
 // ============================================================================================
-// Delta add-token-stats (#61): die 10 neuen Szenarien der Requirement "Tokenansicht im Raum"
-// (tasks.md 1.2). Ein Test je Szenario, Testname = Szenarioname. Elemente ausschliesslich ueber
-// die Schnittstellentabelle design.md D9 (Rolle + zugaenglicher Name, genauer Text). Rote Phase:
-// die Wertefelder, Schaltflaechen, das Auswahlfeld "Markierung wählen", die Ueberschrift
-// "Tokenwerte" und die Fassadenmethoden `setTokenStats`/`setTokenConditions` fehlen — die
-// Abfragen finden ihr Element nicht bzw. der erwartete Fassaden-Aufruf bleibt aus.
+// Delta add-token-stats (#61): die 10 neuen Szenarien der Requirement "Tokenansicht im Raum".
 
 test('Spielleiter setzt Werte über die Liste', async () => {
   spielleiterFetch()
@@ -678,7 +707,6 @@ test('Spieler sieht ohne Werte keine Werte', async () => {
   await betreten()
 
   expect(await screen.findByRole('heading', { name: 'Tokenwerte' })).toBeTruthy()
-  // Der Tokenname erscheint, aber kein Werte-Span (queryByText mit dem Werte-Praefix ist null).
   expect(screen.getByText('Ork')).toBeTruthy()
   expect(screen.queryByText(/^(HP|Temp|RK|Ini)/)).toBeNull()
 })
@@ -692,14 +720,11 @@ test('Spieler sieht keine Token-Verwaltung', async () => {
   await betreten()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
-  // Positiver Anker: der Tokenbestand erreicht auch die Spielersicht (D6) ...
   expect(canvasMock.createMapCanvas).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tokens: [GOBLIN] }))
-  // ... aber die Token-Verwaltung bleibt dem Spieler verborgen, samt Auswahlfeld.
   expect(screen.queryByRole('heading', { name: 'Tokens' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Anlegen' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Goblin entfernen' })).toBeNull()
   expect(screen.queryByRole('combobox', { name: 'Goblin zuweisen' })).toBeNull()
-  // Delta #61: auch die Werte- und Markierungsbedienung bleibt dem Spieler verborgen.
   expect(screen.queryByRole('spinbutton', { name: 'Goblin HP' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Goblin Werte speichern' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Goblin Schaden' })).toBeNull()
@@ -708,25 +733,11 @@ test('Spieler sieht keine Token-Verwaltung', async () => {
 })
 
 // ============================================================================================
-// Delta add-token-sharing (#62): die 9 neuen Szenarien der Requirement "Tokenansicht im Raum"
-// (tasks.md 1.2). Ein Test je Szenario, Testname = Szenarioname. Elemente ausschliesslich ueber
-// die Schnittstellentabelle design.md D8: Rolle `checkbox` und genauer zugaenglicher Name
-// (`getByRole('checkbox', { name })`), `queryByRole`/`queryAllByRole` fuer Nicht-Existenz,
-// Klick auf das Kaestchen fuer Ankreuzen/Abwaehlen, `checked`/`disabled` als DOM-Eigenschaften;
-// keine `must()`-Helfer mit Kurzmeldung (design.md D9).
-//
-// Teilnehmer-Fixtures (design.md D9): `sam` mit Alias `Gandalf` (Anzeigename Gandalf), `tom` ohne
-// Alias (Anzeigename tom), `meister` als Spielleiter — keine Anzeigenamen, die Teilstring eines
-// anderen sind.
-//
-// Rote Phase (constitution.md §3.1): die Freigabe-Kontrollkaestchen und die Fassadenmethode
-// `shareToken` fehlen — `getByRole('checkbox', …)` findet sein Element nicht bzw. der erwartete
-// Fassaden-Aufruf bleibt aus. Kein Compile-/Setup-Fehler.
+// Delta add-token-sharing (#62): die 9 Szenarien der Requirement "Tokenansicht im Raum".
 
 const MEISTER = { userId: 'u-selbst', username: 'meister', role: 'spielleiter', online: true }
 const SAM = { userId: 'u-sam', username: 'sam', alias: 'Gandalf', role: 'spieler', online: true }
 const TOM = { userId: 'u-tom', username: 'tom', role: 'spieler', online: true }
-// Der Besitzer-Spieler ist der angemeldete Nutzer (u-selbst), sein Anzeigename ist der Alias Gandalf.
 const SELBST_SPIELER = { userId: 'u-selbst', username: 'ich', alias: 'Gandalf', role: 'spieler', online: true }
 
 function checkbox(name: string): HTMLInputElement {

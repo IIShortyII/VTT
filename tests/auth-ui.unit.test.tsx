@@ -9,25 +9,29 @@
 // (AGENTS.md: Rendering nimmt der menschliche App-Test ab). `fetch` ist gemockt, damit der
 // Server hier nur eine Antwort ist (design.md D10).
 //
-// Nutzer-Fixtures tragen ab #45 zusaetzlich `username` (die Antwort von `/api/auth/me` nennt
-// ihn). Die beiden Szenarien der Registrierungsoberfläche sind rot, weil das
-// Registrierungsformular das Nutzernamensfeld noch nicht rendert.
+// add-ui-form (#90, MODIFIED user-auth): Anmelde-, Registrierungs- und Passwort-Formular folgen
+// dem Formularmuster von `ui-form` (design.md D4). Eine Ablehnung mit `field` erscheint als
+// Feldfehler des genannten Feldes (`aria-invalid="true"` am Steuerelement, `aria-describedby`
+// auf ein `role="alert"`-Element mit der Meldung); eine Ablehnung ohne `field` und ein
+// Netzfehler als Formularfehler (`role="alert"`, Klasse `form-error`) unter dem letzten Feld;
+// die Absende-Schaltflaeche ist gesperrt, solange das gemeinsame Schema den Zustand nicht
+// akzeptiert. Die Szenarien „Fehlgeschlagene Anmeldung wird angezeigt", „Vergebener Nutzername
+// wird angezeigt" und „Abgelehnte Passwortänderung wird angezeigt" aendern ihre Erwartung
+// (Namen bleiben); neu sind „Abgelehntes Feld zeigt den Fehler am Feld", die drei
+// „bleibt gesperrt bei …"-Szenarien und „Anmelden zeigt den Ladezustand und die
+// Rückversicherung".
 //
-// add-start-view (#86, tasks.md 1.2): Die Passwortänderung liegt nun am Ende der Startansicht
-// in einem zugeklappten Aufklappbereich (`<details class="start-account">` ohne `open`, Summary
-// `Passwort ändern`); das Szenario „Angemeldete Ansicht bietet die Passwortänderung an" ist
-// darauf umgestellt.
-//
-// add-toast-feedback (#88, MODIFIED user-auth): Der Erfolg der Passwortänderung erscheint als
-// Toast `Passwort geändert.` im Toast-Host (`role="status"`, `ui-feedback`); nach einem Erfolg
-// zeigt das Formular keine Meldung mit `role="alert"`. Eine Ablehnung bleibt inline mit
-// `role="alert"` und loest keinen Toast aus. Die beiden Passwort-Szenarien sind darauf umgestellt
-// (Testnamen bleiben).
+// Rote Phase (constitution.md §3.1): die Formulare tragen noch keinen Feld-/Formularfehler
+// nach dem Formularmuster und keine gesperrte/ladende Absende-Schaltflaeche mit
+// Rueckversicherung. Die Szenarien scheitern an der erwarteten Assertion (fehlendes
+// `aria-invalid`/`form-error`/`aria-busy`), nicht an einem Setup-Fehler.
 
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react'
 import { App } from '../src/client/app/App.js'
 
 const FEHLERMELDUNG = 'E-Mail oder Passwort ist falsch.'
+const REASSURANCE_DE = 'Verbinde noch… das kann einen Moment dauern.'
+const GUELTIGES_PASSWORT = 'ein-sehr-sicheres-passwort'
 
 const originalFetch = globalThis.fetch
 
@@ -81,6 +85,12 @@ function mockFetchMitFehler(
   }) as unknown as typeof fetch
 }
 
+/** Wurde `fetch` mit einem Pfad aufgerufen? (Fuer „es wurde keine Anfrage gesendet".) */
+function fetchAngefragt(pfad: string): boolean {
+  const mock = globalThis.fetch as unknown as jest.Mock
+  return mock.mock.calls.some(([input]) => urlOf(input as RequestInfo | URL).includes(pfad))
+}
+
 // Die Felder werden ueber ihre Bedeutung gesucht, nicht ueber eine bestimmte Beschriftung:
 // Typ, `name` oder `id` — irgendeines davon traegt jedes ernst gemeinte Eingabefeld.
 function emailFeld(container: HTMLElement): HTMLElement | null {
@@ -97,6 +107,13 @@ function nutzernameFeld(container: HTMLElement): HTMLElement | null {
   return container.querySelector('input[name="username"], input#register-username, input[autocomplete="nickname"]')
 }
 
+/** Der Feldfehler eines Steuerelements: das `role="alert"`-Element, auf das `aria-describedby`
+ * zeigt (design.md D11). `null`, wenn das Steuerelement keines nennt. */
+function feldFehlerVon(control: HTMLElement): HTMLElement | null {
+  const id = control.getAttribute('aria-describedby')
+  return id ? document.getElementById(id) : null
+}
+
 /** Wechselt aus dem Anmelde- in das Registrierungsformular (ein Umschalter, kein Router). */
 function zurRegistrierung(): void {
   fireEvent.click(screen.getByRole('button', { name: /registrieren/i }))
@@ -105,6 +122,7 @@ function zurRegistrierung(): void {
 afterEach(() => {
   globalThis.fetch = originalFetch
   jest.restoreAllMocks()
+  jest.useRealTimers()
 })
 
 test('Ohne Anmeldung erscheint das Anmeldeformular', async () => {
@@ -116,14 +134,15 @@ test('Ohne Anmeldung erscheint das Anmeldeformular', async () => {
   expect(passwortFeld(container)).not.toBeNull()
   // Wechsel zur Registrierung (design.md D7: kein Router, ein Umschalter in der Ansicht).
   expect(screen.getAllByText(/registr/i).length).toBeGreaterThan(0)
+  // MODIFIED (#90): `Anmelden` ist gesperrt, solange beide Felder leer sind.
+  expect((screen.getByRole('button', { name: 'Anmelden' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
 test('Fehlgeschlagene Anmeldung wird angezeigt', async () => {
   mockFetch([
     { pfad: '/api/auth/me', antwort: antwort(401, { error: 'nicht angemeldet' }) },
-    // Der Server meldet den Fehlschlag; die Anwendung soll ihn sichtbar machen, statt ihn zu
-    // verschlucken. Beide gaengigen Feldnamen tragen denselben Text — geprueft wird, dass die
-    // Meldung des Servers ankommt, nicht wie die Huelle heisst.
+    // Der Server meldet den Fehlschlag ohne `field` (`401`) — er betrifft beide Felder; die
+    // Anwendung zeigt ihn als Formularfehler, nicht am einzelnen Feld.
     {
       pfad: '/api/auth/login',
       antwort: antwort(401, { error: FEHLERMELDUNG, message: FEHLERMELDUNG }),
@@ -132,16 +151,124 @@ test('Fehlgeschlagene Anmeldung wird angezeigt', async () => {
 
   const { container } = render(<App />)
   await waitFor(() => expect(emailFeld(container)).not.toBeNull())
-  const email = must(emailFeld(container), 'ein Eingabefeld für die E-Mail')
-  const passwort = must(passwortFeld(container), 'ein Eingabefeld für das Passwort')
+  const email = screen.getByLabelText('E-Mail')
+  const passwort = screen.getByLabelText('Passwort')
   fireEvent.change(email, { target: { value: 'spieler@example.com' } })
-  fireEvent.change(passwort, { target: { value: 'ein-sicheres-passwort' } })
+  fireEvent.change(passwort, { target: { value: GUELTIGES_PASSWORT } })
 
-  fireEvent.submit(must(email.closest('form'), 'ein <form> um die Anmeldefelder'))
+  const form = must(email.closest('form'), 'ein <form> um die Anmeldefelder') as HTMLElement
+  await act(async () => {
+    fireEvent.submit(form)
+  })
 
-  await waitFor(() => expect(screen.getAllByText(FEHLERMELDUNG).length).toBeGreaterThan(0))
+  // MODIFIED (#90): Formularfehler (`role="alert"`, Klasse `form-error`), kein Feld markiert.
+  await waitFor(() => {
+    const alert = within(form).getByRole('alert')
+    expect(alert.classList.contains('form-error')).toBe(true)
+    expect(alert.textContent).toContain(FEHLERMELDUNG)
+  })
+  expect(email.hasAttribute('aria-invalid')).toBe(false)
+  expect(passwort.hasAttribute('aria-invalid')).toBe(false)
   expect(emailFeld(container)).not.toBeNull()
-  expect(passwortFeld(container)).not.toBeNull()
+})
+
+test('Abgelehntes Feld zeigt den Fehler am Feld', async () => {
+  const MELDUNG = 'Das ist keine gültige E-Mail-Adresse.'
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(401, { error: 'nicht angemeldet' }) },
+    { pfad: '/api/auth/login', antwort: antwort(400, { message: MELDUNG, field: 'email' }) },
+  ])
+
+  const { container } = render(<App />)
+  await waitFor(() => expect(emailFeld(container)).not.toBeNull())
+  const email = screen.getByLabelText('E-Mail')
+  const passwort = screen.getByLabelText('Passwort')
+  fireEvent.change(email, { target: { value: 'spieler@example.com' } })
+  fireEvent.change(passwort, { target: { value: GUELTIGES_PASSWORT } })
+  const form = must(email.closest('form'), 'ein <form> um die Anmeldefelder') as HTMLElement
+
+  await act(async () => {
+    fireEvent.submit(form)
+  })
+
+  await waitFor(() => expect(email.getAttribute('aria-invalid')).toBe('true'))
+  const fehler = must(feldFehlerVon(email), 'ein Feldfehler am E-Mail-Feld')
+  expect(fehler.getAttribute('role')).toBe('alert')
+  expect(fehler.textContent).toContain(MELDUNG)
+  expect(passwort.hasAttribute('aria-invalid')).toBe(false)
+  expect(within(form).queryByRole('alert', { name: undefined })).toBe(fehler)
+  expect(form.querySelector('.form-error')).toBeNull()
+  expect(emailFeld(container)).not.toBeNull()
+})
+
+test('Anmelden bleibt gesperrt bei leerem Pflichtfeld', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(401, { error: 'nicht angemeldet' }) },
+    { pfad: '/api/auth/login', antwort: antwort(401, { message: FEHLERMELDUNG }) },
+  ])
+
+  const { container } = render(<App />)
+  await waitFor(() => expect(emailFeld(container)).not.toBeNull())
+  const email = screen.getByLabelText('E-Mail')
+  fireEvent.change(email, { target: { value: 'spieler@example.com' } })
+  // Passwort bleibt leer.
+  const button = screen.getByRole('button', { name: 'Anmelden' }) as HTMLButtonElement
+  const form = must(email.closest('form'), 'ein <form> um die Anmeldefelder') as HTMLElement
+
+  await act(async () => {
+    fireEvent.click(button)
+    fireEvent.submit(form)
+  })
+
+  expect(button.disabled).toBe(true)
+  expect(fetchAngefragt('/api/auth/login')).toBe(false)
+})
+
+test('Anmelden zeigt den Ladezustand und die Rückversicherung', async () => {
+  let loginAufloesen!: (res: Response) => void
+  const loginPromise = new Promise<Response>((res) => {
+    loginAufloesen = res
+  })
+  globalThis.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    const url = urlOf(input)
+    if (url.includes('/api/auth/login')) return loginPromise
+    return antwort(401, { error: 'nicht angemeldet' })
+  }) as unknown as typeof fetch
+
+  const { container } = render(<App />)
+  await waitFor(() => expect(emailFeld(container)).not.toBeNull())
+  const email = screen.getByLabelText('E-Mail')
+  const passwort = screen.getByLabelText('Passwort')
+  fireEvent.change(email, { target: { value: 'spieler@example.com' } })
+  fireEvent.change(passwort, { target: { value: GUELTIGES_PASSWORT } })
+  const form = must(email.closest('form'), 'ein <form> um die Anmeldefelder') as HTMLElement
+  const button = within(form).getByRole('button', { name: 'Anmelden' }) as HTMLButtonElement
+
+  jest.useFakeTimers()
+  await act(async () => {
+    fireEvent.submit(form)
+  })
+
+  // Nach dem Ausloesen: gesperrt und `aria-busy="true"`.
+  expect(button.disabled).toBe(true)
+  expect(button.getAttribute('aria-busy')).toBe('true')
+
+  // Nach 4000 ms: der Rueckversicherungstext.
+  act(() => {
+    jest.advanceTimersByTime(4000)
+  })
+  expect(button.textContent).toBe(REASSURANCE_DE)
+
+  // Nach der Antwort: wieder `Anmelden`, kein `aria-busy`, nicht gesperrt, Formularfehler.
+  await act(async () => {
+    loginAufloesen(antwort(401, { message: FEHLERMELDUNG }))
+  })
+  expect(button.textContent).toBe('Anmelden')
+  expect(button.hasAttribute('aria-busy')).toBe(false)
+  expect(button.disabled).toBe(false)
+  const alert = within(form).getByRole('alert')
+  expect(alert.classList.contains('form-error')).toBe(true)
+  expect(alert.textContent).toContain(FEHLERMELDUNG)
 })
 
 test('Server beim Start nicht erreichbar', async () => {
@@ -187,10 +314,6 @@ test('Fehlgeschlagene Abmeldung wird angezeigt', async () => {
 })
 
 // --- Registrierungsoberfläche (#45) ---------------------------------------------------------
-// Requirement "Registrierungsoberfläche" aus
-// openspec/changes/add-username-and-alias/specs/user-auth/spec.md. Das Nutzernamensfeld
-// (design.md D6) entsteht erst mit der Implementierung; bis dahin fehlt es — die Tests sind
-// rot, weil das erwartete Feld nicht gerendert wird.
 
 test('Registrierungsformular zeigt das Nutzernamensfeld', async () => {
   mockFetch([{ pfad: '/api/auth/me', antwort: antwort(401, { error: 'nicht angemeldet' }) }])
@@ -221,28 +344,66 @@ test('Vergebener Nutzername wird angezeigt', async () => {
   zurRegistrierung()
   await screen.findByText(/Registrierung/i)
 
-  const nutzername = must(nutzernameFeld(container), 'ein Eingabefeld für den Nutzernamen')
-  const email = must(emailFeld(container), 'ein Eingabefeld für die E-Mail')
-  const passwort = must(passwortFeld(container), 'ein Eingabefeld für das Passwort')
+  const nutzername = screen.getByLabelText('Nutzername')
+  const email = screen.getByLabelText('E-Mail')
+  const passwort = screen.getByLabelText('Passwort')
   fireEvent.change(nutzername, { target: { value: 'Gandalf' } })
   fireEvent.change(email, { target: { value: 'spieler@example.com' } })
-  fireEvent.change(passwort, { target: { value: 'ein-sicheres-passwort' } })
+  fireEvent.change(passwort, { target: { value: GUELTIGES_PASSWORT } })
+  const form = must(nutzername.closest('form'), 'ein <form> um die Registrierungsfelder') as HTMLElement
 
-  fireEvent.submit(must(nutzername.closest('form'), 'ein <form> um die Registrierungsfelder'))
+  await act(async () => {
+    fireEvent.submit(form)
+  })
 
-  // Die Meldung des Servers wird angezeigt …
-  await waitFor(() => expect(screen.getAllByText(ABLEHNUNG).length).toBeGreaterThan(0))
+  // MODIFIED (#90): der Fehler steht am Feld `Nutzername`, nicht als Formularfehler.
+  await waitFor(() => expect(nutzername.getAttribute('aria-invalid')).toBe('true'))
+  const fehler = must(feldFehlerVon(nutzername), 'ein Feldfehler am Nutzernamensfeld')
+  expect(fehler.getAttribute('role')).toBe('alert')
+  expect(fehler.textContent).toContain(ABLEHNUNG)
+  expect(email.hasAttribute('aria-invalid')).toBe(false)
+  expect(passwort.hasAttribute('aria-invalid')).toBe(false)
+  expect(form.querySelector('.form-error')).toBeNull()
   // … und die Ansicht bleibt im Registrierungsformular (das Nutzernamensfeld ist weiter da).
   expect(nutzernameFeld(container)).not.toBeNull()
+})
+
+test('Registrieren bleibt gesperrt bei leerem Pflichtfeld', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(401, { error: 'nicht angemeldet' }) },
+    { pfad: '/api/auth/register', antwort: antwort(201, {}) },
+  ])
+
+  const { container } = render(<App />)
+  await waitFor(() => expect(emailFeld(container)).not.toBeNull())
+  zurRegistrierung()
+  await screen.findByText(/Registrierung/i)
+
+  const nutzername = screen.getByLabelText('Nutzername')
+  const email = screen.getByLabelText('E-Mail')
+  fireEvent.change(nutzername, { target: { value: 'Gandalf' } })
+  fireEvent.change(email, { target: { value: 'spieler@example.com' } })
+  // `Passwort` bleibt leer.
+  const button = screen.getByRole('button', { name: 'Registrieren' }) as HTMLButtonElement
+  const form = must(nutzername.closest('form'), 'ein <form> um die Registrierungsfelder') as HTMLElement
+
+  await act(async () => {
+    fireEvent.click(button)
+    fireEvent.submit(form)
+  })
+
+  expect(button.disabled).toBe(true)
+  expect(fetchAngefragt('/api/auth/register')).toBe(false)
 })
 
 // --- Passwortänderung in der Oberfläche -----------------------------------------------------
 // Requirement "Passwortänderung in der Oberfläche" aus
 // openspec/changes/add-account-security/specs/user-auth/spec.md, MODIFIED in
-// openspec/changes/add-start-view/specs/user-auth/spec.md (#86) und
-// openspec/changes/add-toast-feedback/specs/user-auth/spec.md (#88). Das Formular liegt in einem
+// openspec/changes/add-start-view/specs/user-auth/spec.md (#86),
+// openspec/changes/add-toast-feedback/specs/user-auth/spec.md (#88) und
+// openspec/changes/add-ui-form/specs/user-auth/spec.md (#90). Das Formular liegt in einem
 // zugeklappten `<details class="start-account">` (design.md D4/D5); der Erfolg erscheint als
-// Toast im Toast-Host (#88).
+// Toast im Toast-Host (#88), eine Ablehnung mit `field` als Feldfehler (#90).
 
 const ANGEMELDETER_NUTZER = { id: 'nutzer-1', email: 'spieler@example.com', username: 'Gandalf' }
 
@@ -289,24 +450,53 @@ test('Abgelehnte Passwortänderung wird angezeigt', async () => {
 
   const { container } = render(<App />)
   await screen.findByRole('button', { name: /ändern/i })
-  const bisher = must(bisherigesPasswortFeld(container), 'ein Feld für das bisherige Passwort')
-  const neu = must(neuesPasswortFeld(container), 'ein Feld für das neue Passwort')
-  fireEvent.change(bisher, { target: { value: 'ein-sicheres-passwort' } })
+  const bisher = screen.getByLabelText('Bisheriges Passwort')
+  const neu = screen.getByLabelText('Neues Passwort')
+  fireEvent.change(bisher, { target: { value: GUELTIGES_PASSWORT } })
   fireEvent.change(neu, { target: { value: 'mein-neues-sicheres-passwort' } })
+  const form = must(bisher.closest('form'), 'ein <form> um die Passwortfelder') as HTMLElement
 
-  fireEvent.submit(must(bisher.closest('form'), 'ein <form> um die Passwortfelder'))
+  await act(async () => {
+    fireEvent.submit(form)
+  })
 
-  // MODIFIED (#88): die Ablehnung erscheint als Meldung mit `role="alert"` im Formular …
-  await waitFor(() => expect(screen.getAllByText(ABLEHNUNG).length).toBeGreaterThan(0))
-  const form = must(bisher.closest('form'), 'ein <form> um die Passwortfelder')
-  const alert = within(form as HTMLElement).getByRole('alert')
-  expect(alert.textContent).toContain(ABLEHNUNG)
+  // MODIFIED (#90): der Fehler steht am Feld `Bisheriges Passwort`.
+  await waitFor(() => expect(bisher.getAttribute('aria-invalid')).toBe('true'))
+  const fehler = must(feldFehlerVon(bisher), 'ein Feldfehler am Feld „Bisheriges Passwort"')
+  expect(fehler.getAttribute('role')).toBe('alert')
+  expect(fehler.textContent).toContain(ABLEHNUNG)
+  expect(neu.hasAttribute('aria-invalid')).toBe(false)
   // … der Toast-Host zeigt keinen Toast (kein Erfolgstoast bei einer Ablehnung) …
   const host = screen.queryByRole('status')
   expect(host === null || host.children.length === 0).toBe(true)
-  // … und die Ansicht bleibt angemeldet (constitution.md §9.1): eine abgelehnte Änderung meldet
-  // den Nutzer nicht ab.
+  // … und die Ansicht bleibt angemeldet (constitution.md §9.1).
   expect(screen.getByRole('button', { name: /ändern/i })).toBeTruthy()
+})
+
+test('Passwort ändern bleibt gesperrt bei zu kurzem neuen Passwort', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, ANGEMELDETER_NUTZER) },
+    { pfad: '/api/auth/password', antwort: antwort(200, { ok: true }) },
+  ])
+
+  const { container } = render(<App />)
+  await screen.findByRole('button', { name: /ändern/i })
+  const bisher = screen.getByLabelText('Bisheriges Passwort')
+  const neu = screen.getByLabelText('Neues Passwort')
+  fireEvent.change(bisher, { target: { value: GUELTIGES_PASSWORT } })
+  fireEvent.change(neu, { target: { value: 'a'.repeat(14) } })
+  const button = must(bisherigesPasswortFeld(container), 'das Feld')
+  const form = must(bisher.closest('form'), 'ein <form> um die Passwortfelder') as HTMLElement
+  const aendern = within(form).getByRole('button', { name: 'Passwort ändern' }) as HTMLButtonElement
+  void button
+
+  await act(async () => {
+    fireEvent.click(aendern)
+    fireEvent.submit(form)
+  })
+
+  expect(aendern.disabled).toBe(true)
+  expect(fetchAngefragt('/api/auth/password')).toBe(false)
 })
 
 test('Erfolgreiche Passwortänderung wird bestätigt', async () => {
@@ -317,19 +507,21 @@ test('Erfolgreiche Passwortänderung wird bestätigt', async () => {
 
   const { container } = render(<App />)
   await screen.findByRole('button', { name: /ändern/i })
-  const bisher = must(bisherigesPasswortFeld(container), 'ein Feld für das bisherige Passwort')
-  const neu = must(neuesPasswortFeld(container), 'ein Feld für das neue Passwort')
-  fireEvent.change(bisher, { target: { value: 'ein-sicheres-passwort' } })
+  const bisher = screen.getByLabelText('Bisheriges Passwort')
+  const neu = screen.getByLabelText('Neues Passwort')
+  fireEvent.change(bisher, { target: { value: GUELTIGES_PASSWORT } })
   fireEvent.change(neu, { target: { value: 'mein-neues-sicheres-passwort' } })
+  const form = must(bisher.closest('form'), 'ein <form> um die Passwortfelder') as HTMLElement
 
-  fireEvent.submit(must(bisher.closest('form'), 'ein <form> um die Passwortfelder'))
+  await act(async () => {
+    fireEvent.submit(form)
+  })
 
   // MODIFIED (#88): der Erfolg erscheint als Toast `Passwort geändert.` im Toast-Host
   // (`role="status"`), nicht mehr als `role="alert"` im Formular.
   const host = await screen.findByRole('status')
   await waitFor(() => expect(within(host).getByText('Passwort geändert.')).toBeTruthy())
-  const form = must(bisher.closest('form'), 'ein <form> um die Passwortfelder')
-  expect(within(form as HTMLElement).queryByRole('alert')).toBeNull()
+  expect(within(form).queryByRole('alert')).toBeNull()
   // … beide Passwortfelder sind geleert …
   expect((must(bisherigesPasswortFeld(container), 'das bisherige Passwortfeld') as HTMLInputElement).value).toBe('')
   expect((must(neuesPasswortFeld(container), 'das neue Passwortfeld') as HTMLInputElement).value).toBe('')

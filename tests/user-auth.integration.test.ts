@@ -251,6 +251,9 @@ test('Registrierung mit bereits vergebener E-Mail', async () => {
   const res = await register(app, EMAIL, 'ein-ganz-anderes-passwort', 'Radagast')
 
   expect(res.statusCode).toBe(409)
+  // add-ui-form (#90): die vergebene E-Mail wird mit `field` gleich `email` beantwortet, damit
+  // der Client die Meldung am Feld zeigen kann (`ui-form`).
+  expect(fieldOf(res)).toBe('email')
   expect(setCookieHeaders(res)).toHaveLength(0)
   expect(await prisma.user.count({ where: { email: EMAIL } })).toBe(1)
 })

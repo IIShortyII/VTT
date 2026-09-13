@@ -83,7 +83,7 @@ export function useFloating(): FloatingState
 
 export interface MenuEntry { id: string; label: string; icon?: IconName; danger?: boolean; disabled?: boolean; onSelect: () => void }
 export type MenuTriggerVariant = 'more' | 'text' | 'icon'
-export interface MenuTriggerProps { floating: FloatingState; label: string; variant?: MenuTriggerVariant; icon?: IconName; haspopup?: 'menu' | 'dialog'; className?: string }
+export interface MenuTriggerProps { floating: FloatingState; label: string; variant?: MenuTriggerVariant; icon?: IconName; haspopup?: 'dialog' | 'menu'; className?: string }
 export function MenuTrigger(props: MenuTriggerProps): JSX.Element
 export interface ActionMenuProps { floating: FloatingState; label: string; entries: MenuEntry[] }
 export function ActionMenu(props: ActionMenuProps): JSX.Element | null
@@ -165,7 +165,7 @@ keinen `ref` entgegen, der Trigger braucht `floating.triggerRef`):
 - Variante `text`: Kinder `{label}` als Textknoten und danach `<Icon name="chevronDown" />`
   (dekorativ); kein `aria-label`.
 
-`ActionMenuButton` = `const floating = useFloating()` und ein Fragment aus
+`ActionMenuButton` ruft `useFloating()` auf (lokale Variable `floating`) und rendert ein Fragment aus
 `<MenuTrigger floating label variant icon className />` und `<ActionMenu floating label
 entries />`. `label` ist Name des Triggers und `aria-label` des Menüs.
 
@@ -213,7 +213,9 @@ Reihenfolge:
 je Token einen eigenen Schwebezustand:
 
 ```
-<li onContextMenu={floating.onContextMenu}>
+<li
+  onContextMenu={floating.onContextMenu}
+>
   <span>{token.name}</span>
   <MenuTrigger floating={floating} label={t('menu.rowActions', { name: token.name })} />
   … (übrige Zeile wie bisher, ohne `<Name> entfernen`, ohne Auswahlfeld `<Name> zuweisen`, ohne `TokenShareControls`)
@@ -305,7 +307,9 @@ Die Schaltflächen `<Name> aktivieren`/`<Name> aushängen` entfallen. `handleUnm
 Eigene Komponente `LibraryRow` (Props `map`, `onOpen`, `onDelete`):
 
 ```
-<li onContextMenu={floating.onContextMenu}>
+<li
+  onContextMenu={floating.onContextMenu}
+>
   {!map.hasImage && <span>{`${map.name} (ohne Bild)`}</span>}
   <button type="button" onClick={() => onOpen(map)}>{map.name}</button>
   <MenuTrigger floating={floating} label={t('menu.rowActions', { name: map.name })} />

@@ -6,26 +6,31 @@
 // drei zu „Leerzustand", eins zum „Stylesheet der Startansicht".
 //
 // Geprueft wird, *was* die Startansicht rendert und anbietet — nicht, wie es aussieht (AGENTS.md:
-// Rendering nimmt der menschliche App-Test ab). Adressen ausschliesslich nach design.md D8:
+// Rendering nimmt der menschliche App-Test ab). Adressen ausschliesslich nach design.md D8/D9:
 // die einzige Ueberschrift der Ebene 1 als Titel, Formulare beim zugaenglichen Namen, die Liste
 // `Meine Spielsitzungen` und ihre Eintraege per `within`, das Absenden `Beitreten` nur innerhalb
 // des Formulars (im Hero gibt es eine zweite Schaltflaeche `Beitreten`), `document.activeElement`
-// fuer den Fokus, `aria-expanded` per Attribut. `App` wird ohne Props gerendert; `fetch`, die
-// Socket- und die Canvas-Fassade sind nach dem Muster der bestehenden Auth-/Sitzungs-/Shell-Tests
-// gemockt. `POST /api/sessions` und `POST /api/sessions/join` werden ueber den Aufruf-Body des
-// `fetch`-Mocks geprueft; „Antwort steht noch aus" ist ein von Hand aufzuloesendes Promise.
-//
-// Rote Phase: die Startansicht (`Hero`, Aufklapp-Formulare, benannte Sitzungsliste, Karten mit
-// Zustandspille, Leerzustand) existiert noch nicht — es gibt keinen Text `Deine Runde`, keine
-// Schaltflaeche `Sitzung leiten`, keine Liste mit Namen `Meine Spielsitzungen`, keinen
-// Leerzustand und keine Start-Selektoren im Stylesheet. Jedes Szenario wird daher an seiner
-// Assertion rot, nicht an einem Lade- oder Typfehler (constitution.md §3.1): der angemeldete
-// Einstieg laedt wie bisher, erst die neue Adresse fehlt.
+// fuer den Fokus. `App` wird ohne Props gerendert; `fetch`, die Socket- und die Canvas-Fassade
+// sind nach dem Muster der bestehenden Auth-/Sitzungs-/Shell-Tests gemockt. `POST /api/sessions`
+// und `POST /api/sessions/join` werden ueber den Aufruf-Body des `fetch`-Mocks geprueft.
 //
 // add-ui-text-keys (#87, MODIFIED ui-start): Das Betreten-Szenario erkennt die Raumansicht an
 // der Ueberschrift der Ebene 1 (Sitzungsname) und der Zustandspille `Geöffnet` statt an
 // `Zustand: …` (der Rohwert weicht der Pille, design.md D8). Testname bleibt; die Suite
 // importiert das i18n-Modul nicht — sie laeuft in der Standardsprache Deutsch.
+//
+// add-ui-dialog (#89, MODIFIED ui-start): Die Hero-Aktionen `Sitzung leiten`/`Beitreten` tragen
+// jetzt `aria-haspopup="dialog"` statt `aria-expanded` und oeffnen ihr Formular in einem Dialog
+// (`ui-dialog`, Rolle `dialog`) gleichen Namens. Die Szenarien „Angemeldete Startansicht zeigt
+// Hero mit Aktionen" und die sechs Szenarien von „Erstellen und Beitreten auf Anforderung"
+// pruefen daher den Dialog und die Fokusrueckgabe an den Auslöser (bei `Abbrechen`/`Escape`);
+// die Testnamen bleiben, weil die Szenariennamen bleiben. App-rendernde Szenarien bekommen
+// 15000 ms Timeout, damit die Vollsuite nicht in das 5-s-Timeout laeuft.
+//
+// Rote Phase: `App` ist noch nicht vom `ConfirmProvider`/`Modal` gestuetzt; die Startaktionen
+// oeffnen noch Aufklapp-Panels mit `aria-expanded`, keinen Dialog. Die geaenderten Szenarien
+// scheitern daher am fehlenden `aria-haspopup`/`role="dialog"`/an der Fokusrueckgabe — der
+// erwartete rote Grund (constitution.md §3.1), kein Lade- oder Typfehler.
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -198,14 +203,15 @@ test('Angemeldete Startansicht zeigt Hero mit Aktionen', async () => {
   expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
   expect(screen.getByRole('heading', { level: 1, name: 'Meine Spielsitzungen' })).toBeTruthy()
   expect(within(main).getByText('Leite eine Sitzung oder tritt mit einem Code bei.')).toBeTruthy()
-  // Drei Aktionen, die Aufklapp-Auslöser mit `aria-expanded="false"`.
-  expect(sitzungLeiten.getAttribute('aria-expanded')).toBe('false')
-  expect(screen.getByRole('button', { name: 'Beitreten' }).getAttribute('aria-expanded')).toBe('false')
+  // Drei Aktionen; die Dialog-Auslöser tragen `aria-haspopup="dialog"` (ui-dialog #89).
+  expect(sitzungLeiten.getAttribute('aria-haspopup')).toBe('dialog')
+  expect(screen.getByRole('button', { name: 'Beitreten' }).getAttribute('aria-haspopup')).toBe('dialog')
   expect(screen.getByRole('button', { name: 'Kartenbibliothek' })).toBeTruthy()
-  // Ohne Auslösen ist kein Formular gerendert.
+  // Ohne Auslösen ist kein Dialog und kein Formular gerendert.
+  expect(screen.queryByRole('dialog')).toBeNull()
   expect(screen.queryByRole('form', { name: 'Neue Spielsitzung' })).toBeNull()
   expect(screen.queryByRole('form', { name: 'Spielsitzung beitreten' })).toBeNull()
-})
+}, 15000)
 
 // --- Requirement: Erstellen und Beitreten auf Anforderung -----------------------------------
 
@@ -221,14 +227,15 @@ test('Sitzung leiten öffnet das Erstellen-Formular', async () => {
     fireEvent.click(sitzungLeiten)
   })
 
-  const formular = screen.getByRole('form', { name: 'Neue Spielsitzung' })
+  const dialog = screen.getByRole('dialog', { name: 'Neue Spielsitzung' })
+  expect(dialog.getAttribute('aria-modal')).toBe('true')
+  const formular = within(dialog).getByRole('form', { name: 'Neue Spielsitzung' })
   const nameFeld = within(formular).getByLabelText('Name')
   expect(nameFeld).toBeTruthy()
   expect(within(formular).getByRole('button', { name: 'Erstellen' })).toBeTruthy()
   expect(within(formular).getByRole('button', { name: 'Abbrechen' })).toBeTruthy()
   expect(document.activeElement).toBe(nameFeld)
-  expect(sitzungLeiten.getAttribute('aria-expanded')).toBe('true')
-})
+}, 15000)
 
 test('Beitreten öffnet das Beitreten-Formular und schließt das Erstellen-Formular', async () => {
   mockFetch([
@@ -238,29 +245,39 @@ test('Beitreten öffnet das Beitreten-Formular und schließt das Erstellen-Formu
 
   render(<App />)
   const sitzungLeiten = await findeSitzungLeiten()
-  // GIVEN: das Erstellen-Formular ist offen.
+  // GIVEN: der Erstellen-Dialog ist über `Sitzung leiten` offen; der Auslöser traegt den Fokus
+  // (im Browser fokussiert der Klick; in jsdom von Hand gesetzt).
+  sitzungLeiten.focus()
   await act(async () => {
     fireEvent.click(sitzungLeiten)
   })
-  expect(screen.getByRole('form', { name: 'Neue Spielsitzung' })).toBeTruthy()
+  const erstellenDialog = screen.getByRole('dialog', { name: 'Neue Spielsitzung' })
 
-  // WHEN: die Hero-Schaltflaeche `Beitreten` wird ausgeloest (solange das Beitreten-Formular
-  // geschlossen ist, gibt es nur diese eine Schaltflaeche `Beitreten`).
+  // WHEN: Escape im Dialog …
+  await act(async () => {
+    fireEvent.keyDown(erstellenDialog, { key: 'Escape' })
+  })
+  // THEN (Teil 1): der Fokus liegt wieder auf `Sitzung leiten`, der Dialog ist zu.
+  expect(document.activeElement).toBe(sitzungLeiten)
+  expect(screen.queryByRole('dialog', { name: 'Neue Spielsitzung' })).toBeNull()
+
+  // WHEN: … danach die Hero-Schaltflaeche `Beitreten` (nur diese eine, solange kein
+  // Beitreten-Formular offen ist).
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Beitreten' }))
   })
 
-  const formular = screen.getByRole('form', { name: 'Spielsitzung beitreten' })
+  const beitretenDialog = screen.getByRole('dialog', { name: 'Spielsitzung beitreten' })
+  const formular = within(beitretenDialog).getByRole('form', { name: 'Spielsitzung beitreten' })
   const codeFeld = within(formular).getByLabelText('Sitzungscode')
   expect(codeFeld).toBeTruthy()
   // Das Absenden `Beitreten` nur innerhalb des Formulars (im Hero gibt es die zweite).
   expect(within(formular).getByRole('button', { name: 'Beitreten' })).toBeTruthy()
   expect(within(formular).getByRole('button', { name: 'Abbrechen' })).toBeTruthy()
   expect(document.activeElement).toBe(codeFeld)
-  // Das Erstellen-Formular ist geschlossen, `Sitzung leiten` wieder zugeklappt.
-  expect(screen.queryByRole('form', { name: 'Neue Spielsitzung' })).toBeNull()
-  expect(sitzungLeiten.getAttribute('aria-expanded')).toBe('false')
-})
+  // Es gibt keinen Dialog `Neue Spielsitzung` mehr.
+  expect(screen.queryByRole('dialog', { name: 'Neue Spielsitzung' })).toBeNull()
+}, 15000)
 
 test('Abbrechen schließt das Formular', async () => {
   mockFetch([
@@ -270,6 +287,7 @@ test('Abbrechen schließt das Formular', async () => {
 
   render(<App />)
   const sitzungLeiten = await findeSitzungLeiten()
+  sitzungLeiten.focus()
   await act(async () => {
     fireEvent.click(sitzungLeiten)
   })
@@ -279,11 +297,11 @@ test('Abbrechen schließt das Formular', async () => {
     fireEvent.click(within(formular).getByRole('button', { name: 'Abbrechen' }))
   })
 
-  expect(screen.queryByRole('form', { name: 'Neue Spielsitzung' })).toBeNull()
-  expect(sitzungLeiten.getAttribute('aria-expanded')).toBe('false')
+  expect(screen.queryByRole('dialog', { name: 'Neue Spielsitzung' })).toBeNull()
+  expect(document.activeElement).toBe(sitzungLeiten)
   // Keine Anfrage an `/api/sessions` ausser dem Laden der Liste (GET); kein POST.
   expect(postBodies('/api/sessions')).toEqual([])
-})
+}, 15000)
 
 test('Erstellte Spielsitzung schließt das Formular und erscheint als Karte', async () => {
   let liste: unknown[] = []
@@ -303,7 +321,8 @@ test('Erstellte Spielsitzung schließt das Formular und erscheint als Karte', as
   await act(async () => {
     fireEvent.click(sitzungLeiten)
   })
-  const formular = screen.getByRole('form', { name: 'Neue Spielsitzung' })
+  const dialog = screen.getByRole('dialog', { name: 'Neue Spielsitzung' })
+  const formular = within(dialog).getByRole('form', { name: 'Neue Spielsitzung' })
   fireEvent.change(within(formular).getByLabelText('Name'), { target: { value: 'Krypta' } })
   // Nach dem Erstellen liefert die Liste `Krypta` (der Server ist autoritativ, §9.1).
   liste = [{ id: 's9', name: 'Krypta', status: 'geschlossen', role: 'spielleiter' }]
@@ -314,11 +333,11 @@ test('Erstellte Spielsitzung schließt das Formular und erscheint als Karte', as
 
   // Die Absicht wurde als `{ name: 'Krypta' }` gesendet.
   await waitFor(() => expect(postBodies('/api/sessions')).toEqual([{ name: 'Krypta' }]))
-  // Das Formular ist geschlossen, die Liste enthaelt eine Karte `Krypta`.
-  await waitFor(() => expect(screen.queryByRole('form', { name: 'Neue Spielsitzung' })).toBeNull())
+  // Der Dialog ist geschlossen, die Liste enthaelt eine Karte `Krypta`.
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Neue Spielsitzung' })).toBeNull())
   const liste2 = screen.getByRole('list', { name: 'Meine Spielsitzungen' })
   expect(within(liste2).getByRole('heading', { level: 3, name: 'Krypta' })).toBeTruthy()
-})
+}, 15000)
 
 test('Abgelehntes Erstellen bleibt im Formular', async () => {
   const MELDUNG = 'Der Name ist bereits vergeben.'
@@ -333,17 +352,18 @@ test('Abgelehntes Erstellen bleibt im Formular', async () => {
   await act(async () => {
     fireEvent.click(sitzungLeiten)
   })
-  const formular = screen.getByRole('form', { name: 'Neue Spielsitzung' })
+  const dialog = screen.getByRole('dialog', { name: 'Neue Spielsitzung' })
+  const formular = within(dialog).getByRole('form', { name: 'Neue Spielsitzung' })
   fireEvent.change(within(formular).getByLabelText('Name'), { target: { value: 'Krypta' } })
 
   await act(async () => {
     fireEvent.submit(formular)
   })
 
-  // Das Formular bleibt offen und zeigt die Meldung des Servers als Fehlermeldung.
-  const formularDanach = await screen.findByRole('form', { name: 'Neue Spielsitzung' })
-  await waitFor(() => expect(within(formularDanach).getByRole('alert').textContent).toContain(MELDUNG))
-})
+  // Der Dialog bleibt offen und sein Formular zeigt die Meldung des Servers als Fehlermeldung.
+  const dialogDanach = await screen.findByRole('dialog', { name: 'Neue Spielsitzung' })
+  await waitFor(() => expect(within(dialogDanach).getByRole('alert').textContent).toContain(MELDUNG))
+}, 15000)
 
 test('Beitritt per Code schließt das Formular', async () => {
   let liste: unknown[] = []
@@ -362,7 +382,8 @@ test('Beitritt per Code schließt das Formular', async () => {
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Beitreten' }))
   })
-  const formular = screen.getByRole('form', { name: 'Spielsitzung beitreten' })
+  const dialog = screen.getByRole('dialog', { name: 'Spielsitzung beitreten' })
+  const formular = within(dialog).getByRole('form', { name: 'Spielsitzung beitreten' })
   fireEvent.change(within(formular).getByLabelText('Sitzungscode'), { target: { value: 'ABC234' } })
   liste = [{ id: 's8', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]
 
@@ -372,11 +393,11 @@ test('Beitritt per Code schließt das Formular', async () => {
 
   // Die Absicht wurde als `{ code: 'ABC234' }` gesendet.
   await waitFor(() => expect(postBodies('/api/sessions/join')).toEqual([{ code: 'ABC234' }]))
-  await waitFor(() => expect(screen.queryByRole('form', { name: 'Spielsitzung beitreten' })).toBeNull())
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Spielsitzung beitreten' })).toBeNull())
   const liste2 = screen.getByRole('list', { name: 'Meine Spielsitzungen' })
   const karte = within(liste2).getByRole('heading', { level: 3, name: 'Freitagsrunde' }).closest('li') as HTMLElement
   expect(within(karte).getByText('Spieler')).toBeTruthy()
-})
+}, 15000)
 
 // --- Requirement: Sitzungskarten ------------------------------------------------------------
 

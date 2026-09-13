@@ -12,13 +12,19 @@
 // `.ts`-Datei auf); ein virtueller Mock unter einem anderen Schluessel greift nicht, sobald
 // `canvas.ts` existiert (design.md D10). Der Einstieg laeuft ueber die gerenderte `App`.
 //
-// Rote Phase: `App` kennt weder den Zustand `bibliothek` noch die Schaltflaeche
-// „Kartenbibliothek"; MapLibrary/MapCanvas/Fassade fehlen. Die Szenarien scheitern daher am
-// fehlenden Bedienelement bzw. Verhalten — der erwartete rote Grund (tasks.md 1.3), kein
-// Compile-/Setup-Fehler (die Fassade wird nur ueber `jest.requireMock` angesprochen, nie
-// statisch importiert).
+// add-ui-dialog (#89, MODIFIED map-library): Das Loeschen laeuft jetzt ueber den
+// Bestaetigungsdialog von `ui-dialog` statt ueber einen Zwei-Klick-Knopf. „Löschen nach
+// Bestätigung" prueft daher den `alertdialog` (Titel `Karte „Taverne" löschen?`, Beschreibung,
+// bestaetigende Schaltflaeche `Löschen` mit Klasse `danger`) und sendet `DELETE` erst nach
+// dessen Bestaetigung; „Abgebrochenes Löschen sendet nichts" ist neu. Beide adressieren die
+// bestaetigende Schaltflaeche NUR innerhalb des Dialogs (`within`), weil die Kartenansicht
+// ebenfalls eine Schaltflaeche `Löschen` traegt (design.md D9). Die uebrigen Szenarien bleiben.
+//
+// Rote Phase: `App` ist noch nicht vom `ConfirmProvider` umschlossen und `MapLibrary` oeffnet
+// noch keinen Dialog (Zwei-Klick-Knopf `Wirklich löschen`). Die beiden Dialog-Szenarien
+// scheitern daher am fehlenden `alertdialog` — der erwartete rote Grund (constitution.md §3.1).
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 import { App } from '../src/client/app/App.js'
 
@@ -328,25 +334,75 @@ test('Löschen nach Bestätigung', async () => {
     { method: 'DELETE', match: (u) => u.includes('/api/maps/m-tav'), make: () => antwort(204, {}) },
   ])
 
-  const { container } = render(<App />)
+  render(<App />)
   await oeffneBibliothek()
   await oeffneKarte(/taverne/i)
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
+  // `Löschen` in der Kartenansicht oeffnet den Bestaetigungsdialog (kein Zwei-Klick-Knopf mehr).
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: /löschen|loeschen/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Löschen' }))
   })
+
+  const dialog = screen.getByRole('alertdialog', { name: 'Karte „Taverne" löschen?' })
+  const descId = dialog.getAttribute('aria-describedby') ?? ''
+  expect(document.getElementById(descId)?.textContent).toBe(
+    'Die Karte wird aus der Bibliothek entfernt und kann nicht wiederhergestellt werden.',
+  )
+  expect(within(dialog).getByRole('button', { name: 'Abbrechen' })).toBeTruthy()
+  const bestaetigen = within(dialog).getByRole('button', { name: 'Löschen' })
+  expect(bestaetigen.classList.contains('danger')).toBe(true)
+  // Vor der Bestaetigung wurde noch kein DELETE gesendet.
+  expect(calls.some((c) => c.method === 'DELETE' && c.url.includes('/api/maps/m-tav'))).toBe(false)
+
   // Nach dem Entfernen aus der DB liefert die Liste keine Karte mehr.
   maps.length = 0
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: /wirklich/i }))
+    fireEvent.click(bestaetigen)
   })
 
   await waitFor(() => expect(calls.some((c) => c.method === 'DELETE' && c.url.includes('/api/maps/m-tav'))).toBe(true))
   await screen.findByText(/neue karte/i)
   expect(screen.queryByText('Taverne')).toBeNull()
-  void container
-})
+}, 15000)
+
+test('Abgebrochenes Löschen sendet nichts', async () => {
+  installFetch([
+    ...basis(),
+    {
+      method: 'GET',
+      match: (u) => u.includes('/api/maps'),
+      make: () => antwort(200, [{ id: 'm-tav', name: 'Taverne', hasImage: true, grid: DEFAULT_GRID }]),
+    },
+    { method: 'DELETE', match: (u) => u.includes('/api/maps/m-tav'), make: () => antwort(204, {}) },
+  ])
+
+  render(<App />)
+  await oeffneBibliothek()
+  await oeffneKarte(/taverne/i)
+  await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
+
+  // GIVEN: der Loeschdialog ist ueber „Löschen" der Kartenansicht offen; der Auslöser traegt
+  // den Fokus (im Browser fokussiert der Klick den Knopf; in jsdom von Hand gesetzt).
+  const loeschenKnopf = screen.getByRole('button', { name: 'Löschen' })
+  loeschenKnopf.focus()
+  await act(async () => {
+    fireEvent.click(loeschenKnopf)
+  })
+  const dialog = screen.getByRole('alertdialog', { name: 'Karte „Taverne" löschen?' })
+
+  // WHEN: der Nutzer bricht im Dialog ab.
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  })
+
+  // THEN: kein Dialog mehr, kein DELETE, Kartenansicht „Taverne" weiterhin gerendert, Fokus
+  // zurueck auf „Löschen" der Kartenansicht.
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+  expect(calls.some((c) => c.method === 'DELETE' && c.url.includes('/api/maps/m-tav'))).toBe(false)
+  expect(screen.getByRole('button', { name: 'Zur Bibliothek' })).toBeTruthy()
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Löschen' }))
+}, 15000)
 
 test('Verlassen gibt die Kartenansicht frei', async () => {
   installFetch([

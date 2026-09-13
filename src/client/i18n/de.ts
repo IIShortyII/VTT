@@ -83,6 +83,8 @@ export const de = {
   'map.delete.title': 'Karte „{name}" löschen?',
   'map.delete.message': 'Die Karte wird aus der Bibliothek entfernt und kann nicht wiederhergestellt werden.',
   'map.delete.confirm': 'Löschen',
+
+  'form.stillWorking': 'Verbinde noch… das kann einen Moment dauern.',
 } as const
 
 export type TextKey = keyof typeof de

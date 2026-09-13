@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 
-import type { SessionSummary } from '../../shared/session.js'
+import { CreateSessionInputSchema, JoinSessionInputSchema, type SessionSummary } from '../../shared/session.js'
 import { ChangePasswordForm } from '../auth/ChangePasswordForm.js'
 import { Hero } from '../app/Hero.js'
 import { useT } from '../i18n/locale.js'
 import { Icon } from '../ui/Icon.js'
+import { Field, SubmitButton } from '../ui/form.js'
 import { Modal } from '../ui/Modal.js'
 import { createSession, joinSession, listSessions } from './api.js'
 import { ROLE_LABELS, SESSION_STATUS_PRESENTATION } from './session-status.js'
@@ -24,6 +25,10 @@ import { ROLE_LABELS, SESSION_STATUS_PRESENTATION } from './session-status.js'
 // `aria-expanded`. `toggle` entfaellt zugunsten von `open` (setzt `panel` direkt, statt zu
 // schalten) - hoechstens ein Dialog ist ueberhaupt erreichbar, weil ein offener Dialog den
 // Hintergrund per Backdrop verdeckt.
+// ui-form (#90, design.md D5): beide Formulare folgen dem Formularmuster -
+// `createError`/`joinError` weichen je einem Paar `createFieldErrors`/`createFormError` bzw.
+// `joinFieldErrors`/`joinFormError`; `open`/`close` leeren alle vier. `panel-actions` weicht
+// `form-actions`; `Abbrechen` ist nie gesperrt.
 
 export interface SessionListProps {
   onEnter: (sessionId: string) => void
@@ -41,10 +46,15 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
   const [panel, setPanel] = useState<Panel>('none')
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
-  const [createError, setCreateError] = useState<string | null>(null)
-  const [joinError, setJoinError] = useState<string | null>(null)
+  const [createFieldErrors, setCreateFieldErrors] = useState<{ name?: string }>({})
+  const [createFormError, setCreateFormError] = useState<string | null>(null)
+  const [joinFieldErrors, setJoinFieldErrors] = useState<{ code?: string }>({})
+  const [joinFormError, setJoinFormError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [joining, setJoining] = useState(false)
+
+  const createValid = CreateSessionInputSchema.safeParse({ name }).success
+  const joinValid = JoinSessionInputSchema.safeParse({ code }).success
 
   const reload = async () => {
     const result = await listSessions()
@@ -66,33 +76,43 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
   }, [t])
 
   const open = (target: Panel) => () => {
-    setCreateError(null)
-    setJoinError(null)
+    setCreateFieldErrors({})
+    setCreateFormError(null)
+    setJoinFieldErrors({})
+    setJoinFormError(null)
     setPanel(target)
   }
 
   const close = () => {
-    setCreateError(null)
-    setJoinError(null)
+    setCreateFieldErrors({})
+    setCreateFormError(null)
+    setJoinFieldErrors({})
+    setJoinFormError(null)
     setPanel('none')
   }
 
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (!createValid || creating) {
+      return
+    }
     setCreating(true)
-    setCreateError(null)
+    setCreateFieldErrors({})
+    setCreateFormError(null)
     try {
       const result = await createSession({ name })
       if (result.ok) {
         setName('')
         setPanel('none')
         await reload()
+      } else if (result.field === 'name') {
+        setCreateFieldErrors({ name: result.message })
       } else {
-        setCreateError(result.message)
+        setCreateFormError(result.message)
       }
     } catch (error) {
       console.error(error)
-      setCreateError(t('start.createFailed'))
+      setCreateFormError(t('start.createFailed'))
     } finally {
       setCreating(false)
     }
@@ -100,20 +120,26 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
 
   const handleJoin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (!joinValid || joining) {
+      return
+    }
     setJoining(true)
-    setJoinError(null)
+    setJoinFieldErrors({})
+    setJoinFormError(null)
     try {
       const result = await joinSession({ code })
       if (result.ok) {
         setCode('')
         setPanel('none')
         await reload()
+      } else if (result.field === 'code') {
+        setJoinFieldErrors({ code: result.message })
       } else {
-        setJoinError(result.message)
+        setJoinFormError(result.message)
       }
     } catch (error) {
       console.error(error)
-      setJoinError(t('start.joinFailed'))
+      setJoinFormError(t('start.joinFailed'))
     } finally {
       setJoining(false)
     }
@@ -141,28 +167,29 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
 
       {panel === 'erstellen' && (
         <Modal title={t('start.create.title')} onClose={close}>
-          <form aria-label={t('start.create.title')} onSubmit={(event) => void handleCreate(event)}>
-            <label className="field-label" htmlFor="session-name">
-              {t('start.create.name')}
-            </label>
-            <input
-              id="session-name"
-              name="name"
-              type="text"
-              autoFocus
-              required
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-            {createError !== null && (
-              <p role="alert" className="field-error">
-                {createError}
+          <form className="form-grid" aria-label={t('start.create.title')} onSubmit={(event) => void handleCreate(event)}>
+            <Field id="session-name" label={t('start.create.name')} error={createFieldErrors.name ?? null}>
+              {(control) => (
+                <input
+                  {...control}
+                  name="name"
+                  type="text"
+                  autoFocus
+                  required
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              )}
+            </Field>
+            {createFormError !== null && (
+              <p className="form-error" role="alert">
+                {createFormError}
               </p>
             )}
-            <div className="panel-actions">
-              <button type="submit" className="primary" disabled={creating}>
+            <div className="form-actions">
+              <SubmitButton className="primary" pending={creating} disabled={!createValid}>
                 {t('start.create.submit')}
-              </button>
+              </SubmitButton>
               <button type="button" onClick={close}>
                 {t('start.cancel')}
               </button>
@@ -173,28 +200,29 @@ export function SessionList({ onEnter, onOpenLibrary }: SessionListProps) {
 
       {panel === 'beitreten' && (
         <Modal title={t('start.join.title')} onClose={close}>
-          <form aria-label={t('start.join.title')} onSubmit={(event) => void handleJoin(event)}>
-            <label className="field-label" htmlFor="session-code">
-              {t('start.join.code')}
-            </label>
-            <input
-              id="session-code"
-              name="code"
-              type="text"
-              autoFocus
-              required
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-            />
-            {joinError !== null && (
-              <p role="alert" className="field-error">
-                {joinError}
+          <form className="form-grid" aria-label={t('start.join.title')} onSubmit={(event) => void handleJoin(event)}>
+            <Field id="session-code" label={t('start.join.code')} error={joinFieldErrors.code ?? null}>
+              {(control) => (
+                <input
+                  {...control}
+                  name="code"
+                  type="text"
+                  autoFocus
+                  required
+                  value={code}
+                  onChange={(event) => setCode(event.target.value)}
+                />
+              )}
+            </Field>
+            {joinFormError !== null && (
+              <p className="form-error" role="alert">
+                {joinFormError}
               </p>
             )}
-            <div className="panel-actions">
-              <button type="submit" className="primary" disabled={joining}>
+            <div className="form-actions">
+              <SubmitButton className="primary" pending={joining} disabled={!joinValid}>
                 {t('start.join.submit')}
-              </button>
+              </SubmitButton>
               <button type="button" onClick={close}>
                 {t('start.cancel')}
               </button>

@@ -84,4 +84,6 @@ export const en: Record<TextKey, string> = {
   'map.delete.title': 'Delete map "{name}"?',
   'map.delete.message': 'The map is removed from the library and cannot be restored.',
   'map.delete.confirm': 'Delete',
+
+  'form.stillWorking': 'Still connecting… this may take a moment.',
 }

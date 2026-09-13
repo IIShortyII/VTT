@@ -22,7 +22,7 @@ export interface SessionRoutesDeps {
 }
 
 const NOT_LOGGED_IN_MESSAGE = 'Nicht angemeldet.'
-const JOIN_FAILURE_MESSAGE = 'Unbekannter oder ungültiger Sitzungscode.'
+const JOIN_FAILURE_MESSAGE = 'Sitzungscode prüfen und ob die Spielleitung die Sitzung geöffnet hat.'
 const CODE_GENERATION_FAILURE_MESSAGE = 'Sitzungscode konnte nicht erzeugt werden. Bitte versuche es erneut.'
 const MAX_CODE_ATTEMPTS = 10
 
@@ -127,7 +127,7 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRoutesD
     if (!gameSession || gameSession.status === 'geschlossen') {
       // Unbekannter Code und geschlossene Spielsitzung sind fuer den Anfragenden identisch
       // (constitution.md §9.2, design.md D4).
-      sendError(reply, 404, 'Not Found', JOIN_FAILURE_MESSAGE)
+      sendError(reply, 404, 'Not Found', JOIN_FAILURE_MESSAGE, 'code')
       return
     }
 

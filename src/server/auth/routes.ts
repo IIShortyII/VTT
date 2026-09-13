@@ -118,7 +118,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
     const email = normalizeEmail(parsed.data.email)
     const existing = await prisma.user.findUnique({ where: { email } })
     if (existing) {
-      return sendError(reply, 409, 'Conflict', EMAIL_TAKEN_MESSAGE)
+      return sendError(reply, 409, 'Conflict', EMAIL_TAKEN_MESSAGE, 'email')
     }
 
     const passwordHash = await hashPassword(parsed.data.password)
@@ -139,7 +139,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps): void {
         if (uniqueConstraintTargetsUsername(error)) {
           return sendError(reply, 409, 'Conflict', USERNAME_TAKEN_MESSAGE, 'username')
         }
-        return sendError(reply, 409, 'Conflict', EMAIL_TAKEN_MESSAGE)
+        return sendError(reply, 409, 'Conflict', EMAIL_TAKEN_MESSAGE, 'email')
       }
       throw error
     }

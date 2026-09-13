@@ -1,7 +1,18 @@
 import { useState, type FormEvent } from 'react'
 
 import { displayName, type Participant } from '../../shared/session.js'
-import { TOKEN_ICONS, TokenIconSchema, type CreateTokenInput, type Token, type TokenAudience, type TokenIcon, type TokenStat, type TokenStatsPatch } from '../../shared/token.js'
+import {
+  CreateTokenInputSchema,
+  TOKEN_ICONS,
+  TokenIconSchema,
+  type CreateTokenInput,
+  type Token,
+  type TokenAudience,
+  type TokenIcon,
+  type TokenStat,
+  type TokenStatsPatch,
+} from '../../shared/token.js'
+import { Field, SubmitButton } from '../ui/form.js'
 import { Icon, IconButton } from '../ui/Icon.js'
 import { CONDITION_CATALOG, conditionIcon } from './conditions.js'
 import { TokenShareControls } from './TokenShare.js'
@@ -30,12 +41,18 @@ import { TOKEN_ICON_LABELS } from './token-icons.js'
 // statt eines `<select>` - ein `<option>` kann kein SVG zeigen, jede Option zeigt Icon plus
 // Beschriftung. Die Markierungsliste zeigt je Eintrag das Icon des Katalogeintrags (sonst
 // keins) und eine Icon-only-Schaltflaeche `Entfernen`.
+//
+// ui-form (#90, design.md D7): das Formular `Tokens` folgt dem Formularmuster ohne
+// Feldfehler - `onCreate` liefert jetzt `Promise<boolean>` (bestaetigendes Acknowledgement),
+// die Schaltflaeche `Anlegen` ist eine `SubmitButton` und gesperrt, solange
+// `CreateTokenInputSchema` ohne `sessionId` den Zustand nicht akzeptiert oder das
+// Acknowledgement aussteht; nur ein bestaetigendes Acknowledgement leert `Name`.
 
 export interface TokenPanelProps {
   sessionId: string
   tokens: Token[]
   participants: Participant[]
-  onCreate: (input: Omit<CreateTokenInput, 'sessionId'>) => void
+  onCreate: (input: Omit<CreateTokenInput, 'sessionId'>) => Promise<boolean>
   onRemove: (tokenId: string) => void
   onAssign: (tokenId: string, ownerId: string | null) => void
   onSetStats: (tokenId: string, patch: TokenStatsPatch) => void
@@ -50,6 +67,9 @@ const NO_OWNER_VALUE = ''
 const NO_OWNER_LABEL = 'Spielleiter'
 const NO_CONDITION_PICK_VALUE = ''
 const NO_ICON_VALUE = ''
+
+// design.md D3: als Modulkonstante angelegt, nicht je Render.
+const CreateTokenPayloadSchema = CreateTokenInputSchema.omit({ sessionId: true })
 
 function toStatField(value: string): number | null {
   return value === '' ? null : Number(value)
@@ -287,18 +307,31 @@ export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign,
   const [size, setSize] = useState(DEFAULT_SIZE)
   const [col, setCol] = useState(DEFAULT_CELL)
   const [row, setRow] = useState(DEFAULT_CELL)
+  const [pending, setPending] = useState(false)
+
+  const payload = {
+    name,
+    color,
+    icon: icon !== NO_ICON_VALUE && isTokenIcon(icon) ? icon : null,
+    size: Number(size),
+    col: Number(col),
+    row: Number(row),
+  }
+  const valid = CreateTokenPayloadSchema.safeParse(payload).success
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    onCreate({
-      name,
-      color,
-      icon: icon !== NO_ICON_VALUE && isTokenIcon(icon) ? icon : null,
-      size: Number(size),
-      col: Number(col),
-      row: Number(row),
-    })
-    setName('')
+    if (!valid || pending) {
+      return
+    }
+    setPending(true)
+    onCreate(payload)
+      .then((confirmed) => {
+        if (confirmed) {
+          setName('')
+        }
+      })
+      .finally(() => setPending(false))
   }
 
   // add-token-assignment (#15, design.md D7): nur Mitglieder mit Rolle `spieler` sind
@@ -310,24 +343,20 @@ export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign,
     <div>
       <h2>Tokens</h2>
 
-      <form onSubmit={handleSubmit}>
-        <label htmlFor="token-panel-name">Name</label>
-        <input id="token-panel-name" name="name" value={name} onChange={(event) => setName(event.target.value)} />
+      <form className="form-grid" onSubmit={handleSubmit}>
+        <Field id="token-panel-name" label="Name">
+          {(control) => <input {...control} name="name" value={name} onChange={(event) => setName(event.target.value)} />}
+        </Field>
 
-        <label htmlFor="token-panel-color">Farbe</label>
-        <input
-          id="token-panel-color"
-          type="color"
-          name="color"
-          value={color}
-          onChange={(event) => setColor(event.target.value)}
-        />
+        <Field id="token-panel-color" label="Farbe">
+          {(control) => <input {...control} type="color" name="color" value={color} onChange={(event) => setColor(event.target.value)} />}
+        </Field>
 
         {/* add-icon-registry (#85, design.md D6): Optionsgruppe statt `<select>` - ein
             `<option>` kann kein SVG zeigen. Zugaenglicher Name jedes Optionsfelds ist der
             Text seines Labels; das Icon ist dekorativ. */}
-        <fieldset>
-          <legend>Symbol</legend>
+        <fieldset className="form-field form-field--row">
+          <legend className="field-label">Symbol</legend>
           <label>
             <input type="radio" name="icon" value={NO_ICON_VALUE} checked={icon === NO_ICON_VALUE} onChange={(event) => setIcon(event.target.value)} />
             Kein Symbol
@@ -340,21 +369,30 @@ export function TokenPanel({ tokens, participants, onCreate, onRemove, onAssign,
           ))}
         </fieldset>
 
-        <label htmlFor="token-panel-size">Größe</label>
-        <select id="token-panel-size" name="size" value={size} onChange={(event) => setSize(event.target.value)}>
-          <option value="1">1×1</option>
-          <option value="2">2×2</option>
-          <option value="3">3×3</option>
-          <option value="4">4×4</option>
-        </select>
+        <Field id="token-panel-size" label="Größe">
+          {(control) => (
+            <select {...control} name="size" value={size} onChange={(event) => setSize(event.target.value)}>
+              <option value="1">1×1</option>
+              <option value="2">2×2</option>
+              <option value="3">3×3</option>
+              <option value="4">4×4</option>
+            </select>
+          )}
+        </Field>
 
-        <label htmlFor="token-panel-col">Spalte</label>
-        <input id="token-panel-col" type="number" name="col" value={col} onChange={(event) => setCol(event.target.value)} />
+        <Field id="token-panel-col" label="Spalte">
+          {(control) => <input {...control} type="number" name="col" value={col} onChange={(event) => setCol(event.target.value)} />}
+        </Field>
 
-        <label htmlFor="token-panel-row">Zeile</label>
-        <input id="token-panel-row" type="number" name="row" value={row} onChange={(event) => setRow(event.target.value)} />
+        <Field id="token-panel-row" label="Zeile">
+          {(control) => <input {...control} type="number" name="row" value={row} onChange={(event) => setRow(event.target.value)} />}
+        </Field>
 
-        <button type="submit">Anlegen</button>
+        <div className="form-actions">
+          <SubmitButton pending={pending} disabled={!valid}>
+            Anlegen
+          </SubmitButton>
+        </div>
       </form>
 
       <ul>

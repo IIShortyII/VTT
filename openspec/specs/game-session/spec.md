@@ -68,8 +68,10 @@ der Beitritt mit `200` und der bestehenden Mitgliedschaft (unveränderte Rolle) 
 ohne eine zweite anzulegen.
 
 Ein Code, zu dem keine Spielsitzung existiert, und ein Code einer `geschlossenen`
-Spielsitzung SHALL mit identischem Statuscode (`404`) und identischer Meldung beantwortet
-werden (`constitution.md` §9.2); in beiden Fällen MUST NOT eine Mitgliedschaft entstehen.
+Spielsitzung SHALL mit identischem Statuscode (`404`), der identischen Meldung
+`Sitzungscode prüfen und ob die Spielleitung die Sitzung geöffnet hat.` und `field` gleich
+`code` beantwortet werden (`constitution.md` §9.2) — die Meldung nennt die Handlung, nicht
+den Grund; in beiden Fällen MUST NOT eine Mitgliedschaft entstehen.
 
 Ein Beitritt SHALL die Teilnehmerliste im Raum dieser Spielsitzung aktualisieren (siehe
 Requirement „Teilnehmerliste in Echtzeit").
@@ -96,8 +98,9 @@ Requirement „Teilnehmerliste in Echtzeit").
 - **GIVEN** eine Spielsitzung im Zustand `geschlossen` mit Code `ABC234` und keine
   Spielsitzung mit Code `ZZZ999`, sowie ein angemeldeter Nutzer, der in keiner Mitglied ist
 - **WHEN** je ein `POST /api/sessions/join` mit `ABC234` und mit `ZZZ999` eingeht
-- **THEN** antworten beide mit `404`, Statuscode und `message` beider Antworten sind
-  identisch, und in der Datenbank existiert zu diesem Nutzer keine Mitgliedschaft
+- **THEN** antworten beide mit `404`, `message` gleich
+  `Sitzungscode prüfen und ob die Spielleitung die Sitzung geöffnet hat.` und `field` gleich
+  `code`, Statuscode und `message` beider Antworten sind identisch, und in der Datenbank existiert zu diesem Nutzer keine Mitgliedschaft
 
 #### Scenario: Erneuter Beitritt eines Mitglieds ist idempotent
 

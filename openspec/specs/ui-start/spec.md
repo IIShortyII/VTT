@@ -108,7 +108,11 @@ Schließen-Schaltfläche des Dialogs und `Escape` SHALL den Dialog schließen; d
 der Fokus auf der Aktion liegen, die ihn geöffnet hat. Absenden SHALL wie bisher
 `POST /api/sessions` bzw. `POST /api/sessions/join` senden; bestätigt der Server, SHALL
 der Dialog schließen und die Sitzungsliste neu geladen werden. Lehnt der Server ab, SHALL
-der Dialog offen bleiben und die Meldung des Servers als Fehlermeldung zeigen. Ob eine
+der Dialog offen bleiben und die Meldung des Servers zeigen: mit `field` als Feldfehler des
+Feldes `Name` (`name`) bzw. `Sitzungscode` (`code`), sonst als Formularfehler (`ui-form`).
+Beide Formulare SHALL dem Formularmuster folgen; gültig ist der Zustand, den
+`CreateSessionInputSchema` bzw. `JoinSessionInputSchema` akzeptiert; `Abbrechen` ist nie
+gesperrt. Ob eine
 Spielsitzung entstanden ist oder ein Beitritt gelungen ist, entscheidet ausschließlich die
 Antwort des Servers (`constitution.md` §9.1).
 
@@ -118,7 +122,8 @@ Antwort des Servers (`constitution.md` §9.1).
 - **WHEN** der Nutzer `Sitzung leiten` auslöst
 - **THEN** gibt es einen Dialog `Neue Spielsitzung` (Rolle `dialog`, `aria-modal="true"`),
   darin das Formular `Neue Spielsitzung` mit dem Eingabefeld `Name` und den Schaltflächen
-  `Erstellen` und `Abbrechen`, und das Eingabefeld `Name` hat den Fokus
+  `Erstellen` und `Abbrechen`, das Eingabefeld `Name` hat den Fokus, `Erstellen` ist
+  gesperrt, solange `Name` leer ist, und `Abbrechen` ist nicht gesperrt
 
 #### Scenario: Beitreten öffnet das Beitreten-Formular und schließt das Erstellen-Formular
 
@@ -152,11 +157,12 @@ Antwort des Servers (`constitution.md` §9.1).
 
 #### Scenario: Abgelehntes Erstellen bleibt im Formular
 
-- **GIVEN** der Erstellen-Dialog ist offen, und `POST /api/sessions` antwortet mit `400`
-  und einer Meldung
+- **GIVEN** der Erstellen-Dialog ist offen, und `POST /api/sessions` antwortet mit `400`,
+  einer Meldung und `field` gleich `name`
 - **WHEN** der Nutzer einen Namen eingibt und `Erstellen` auslöst
-- **THEN** ist der Dialog `Neue Spielsitzung` weiterhin offen und sein Formular zeigt diese
-  Meldung als Fehlermeldung (`role="alert"`)
+- **THEN** ist der Dialog `Neue Spielsitzung` weiterhin offen, und in seinem Formular
+  trägt das Feld `Name` `aria-invalid="true"` und verweist per `aria-describedby` auf ein
+  Element mit der Rolle `alert` und dieser Meldung
 
 #### Scenario: Beitritt per Code schließt das Formular
 
@@ -167,6 +173,25 @@ Antwort des Servers (`constitution.md` §9.1).
 - **THEN** hat die Anwendung `POST /api/sessions/join` mit `{ "code": "ABC234" }` gesendet,
   es gibt keinen Dialog `Spielsitzung beitreten` mehr, und die Sitzungsliste enthält eine
   Karte `Freitagsrunde` mit der Rolle `Spieler`
+
+#### Scenario: Abgelehnter Beitritt zeigt den Fehler am Sitzungscode
+
+- **GIVEN** der Beitreten-Dialog ist offen, und `POST /api/sessions/join` antwortet mit
+  `404`, der Meldung `Sitzungscode prüfen und ob die Spielleitung die Sitzung geöffnet hat.`
+  und `field` gleich `code`
+- **WHEN** der Nutzer `ZZZ999` als Sitzungscode eingibt und `Beitreten` innerhalb des
+  Formulars auslöst
+- **THEN** ist der Dialog `Spielsitzung beitreten` weiterhin offen, und in seinem Formular
+  trägt das Feld `Sitzungscode` `aria-invalid="true"` und verweist per `aria-describedby` auf ein
+  Element mit der Rolle `alert` und dieser Meldung
+
+#### Scenario: Beitreten bleibt gesperrt bei leerem Sitzungscode
+
+- **GIVEN** der Beitreten-Dialog ist offen, und das Feld `Sitzungscode` ist leer
+- **WHEN** die Schaltfläche `Beitreten` innerhalb des Formulars angeklickt und das Formular
+  abgeschickt wird
+- **THEN** ist die Schaltfläche `Beitreten` innerhalb des Formulars gesperrt, `Abbrechen` ist
+  nicht gesperrt, und es wurde keine Anfrage an `/api/sessions/join` gesendet
 
 ### Requirement: Sitzungskarten
 

@@ -40,6 +40,8 @@ Für den Nutzernamen gilt (Herleitung in design.md D1 dieses Change):
 - Ein bereits vergebener Nutzername SHALL mit `409` und `field` gleich `username` beantwortet
   werden; ein formal ungültiger oder fehlender mit `400` und `field` gleich `username`. In
   beiden Fällen MUST NOT ein Konto entstehen und MUST NOT ein Sitzungscookie gesetzt werden.
+- Eine bereits vergebene E-Mail SHALL mit `409` und `field` gleich `email` beantwortet
+  werden, damit der Client die Meldung am Feld zeigen kann (`ui-form`).
 
 #### Scenario: Registrierung mit unbenutzter E-Mail
 
@@ -57,8 +59,8 @@ Für den Nutzernamen gilt (Herleitung in design.md D1 dieses Change):
 - **GIVEN** ein Konto zu `spieler@example.com` existiert bereits
 - **WHEN** `POST /api/auth/register` erneut mit dieser E-Mail und einem noch unbenutzten
   Nutzernamen eingeht
-- **THEN** antwortet der Server mit `409`, legt kein zweites Konto an und setzt kein
-  Sitzungscookie
+- **THEN** antwortet der Server mit `409` und `field` gleich `email`, legt kein zweites Konto an
+  und setzt kein Sitzungscookie
 
 #### Scenario: Registrierung mit ungültigen Eingaben
 
@@ -274,18 +276,57 @@ und MUST NOT dauerhaft im Ladezustand verharren oder eine unbehandelte Promise-R
 hinterlassen. Sie MUST NOT sich selbst als abgemeldet erklären, solange der Server das nicht
 bestätigt hat (`constitution.md` §9.1).
 
+Das Anmeldeformular SHALL dem Formularmuster von `ui-form` folgen: Felder `E-Mail`
+(`email`) und `Passwort` (`password`), Absende-Schaltfläche `Anmelden`; gültig ist der
+Zustand, den `LoginInputSchema` akzeptiert. Eine Ablehnung mit `field` SHALL als Feldfehler
+des genannten Feldes erscheinen, eine Ablehnung ohne `field` (`401`) und ein Netzfehler als
+Formularfehler.
+
 #### Scenario: Ohne Anmeldung erscheint das Anmeldeformular
 
 - **GIVEN** der Server meldet keinen angemeldeten Nutzer
 - **WHEN** die Anwendung gerendert wird
 - **THEN** zeigt sie Eingabefelder für E-Mail und Passwort sowie einen Wechsel zur
-  Registrierung
+  Registrierung, und die Schaltfläche `Anmelden` ist gesperrt, solange beide Felder leer
+  sind
 
 #### Scenario: Fehlgeschlagene Anmeldung wird angezeigt
 
-- **GIVEN** das Anmeldeformular ist ausgefüllt
-- **WHEN** der Server die Anmeldung mit `401` ablehnt
-- **THEN** zeigt die Anwendung eine Fehlermeldung an und bleibt im Anmeldeformular
+- **GIVEN** das Anmeldeformular ist mit einer gültigen E-Mail und einem Passwort ausgefüllt
+- **WHEN** der Nutzer `Anmelden` auslöst und der Server die Anmeldung mit `401` und einer
+  Meldung ablehnt
+- **THEN** zeigt das Formular diese Meldung als Formularfehler (`role="alert"`, Klasse
+  `form-error`), weder das Feld `E-Mail` noch das Feld `Passwort` trägt `aria-invalid`,
+  und die Anwendung bleibt im Anmeldeformular
+
+#### Scenario: Abgelehntes Feld zeigt den Fehler am Feld
+
+- **GIVEN** das Anmeldeformular ist mit einer gültigen E-Mail und einem Passwort ausgefüllt
+- **WHEN** der Nutzer `Anmelden` auslöst und der Server mit `400`, der Meldung
+  `Das ist keine gültige E-Mail-Adresse.` und `field` gleich `email` ablehnt
+- **THEN** trägt das Feld `E-Mail` `aria-invalid="true"` und verweist per `aria-describedby` auf ein
+  Element mit der Rolle `alert` und dieser Meldung, das Feld `Passwort` trägt kein `aria-invalid`, es gibt kein
+  Element mit der Klasse `form-error`, und die Anwendung bleibt im Anmeldeformular
+
+#### Scenario: Anmelden bleibt gesperrt bei leerem Pflichtfeld
+
+- **GIVEN** das Anmeldeformular ist gerendert, das Feld `E-Mail` ist mit einer gültigen
+  E-Mail ausgefüllt und das Feld `Passwort` ist leer
+- **WHEN** die Schaltfläche `Anmelden` angeklickt und das Formular abgeschickt wird
+- **THEN** ist die Schaltfläche `Anmelden` gesperrt, und es wurde keine Anfrage an
+  `/api/auth/login` gesendet
+
+#### Scenario: Anmelden zeigt den Ladezustand und die Rückversicherung
+
+- **GIVEN** das Anmeldeformular ist mit einer gültigen E-Mail und einem Passwort
+  ausgefüllt, die Antwort auf `POST /api/auth/login` steht aus, und es gelten falsche Timer
+- **WHEN** der Nutzer `Anmelden` auslöst, 4000 Millisekunden vergehen und der Server danach
+  mit `401` und einer Meldung antwortet
+- **THEN** war die Schaltfläche `Anmelden` nach dem Auslösen gesperrt und trug
+  `aria-busy="true"`, zeigte nach den 4000 Millisekunden den Text
+  `Verbinde noch… das kann einen Moment dauern.`, und nach der Antwort zeigt sie wieder
+  `Anmelden`, trägt kein `aria-busy`, ist nicht gesperrt, und das Formular zeigt die
+  Meldung als Formularfehler
 
 #### Scenario: Server beim Start nicht erreichbar
 
@@ -443,9 +484,12 @@ die Änderung erfolgte, SHALL bestehen bleiben.
 
 Die Anwendung SHALL einem angemeldeten Nutzer in der angemeldeten Startansicht ein Formular
 zur Passwortänderung anbieten und die Antwort des Servers sichtbar machen: den Erfolg als
-Toast `Passwort geändert.` im Toast-Host (`ui-feedback`), eine Ablehnung als Meldung im
-Formular (`role="alert"`). Nach einem Erfolg MUST NOT das Formular eine Meldung mit
-`role="alert"` zeigen. Das Formular SHALL am Ende der Startansicht in einem zugeklappten Aufklappbereich
+Toast `Passwort geändert.` im Toast-Host (`ui-feedback`), eine Ablehnung mit `field` als Feldfehler des genannten Feldes (`ui-form`), eine Ablehnung
+ohne `field` und einen Netzfehler als Formularfehler. Nach einem Erfolg MUST NOT das
+Formular eine Meldung mit `role="alert"` zeigen. Das Formular SHALL dem Formularmuster
+folgen: Felder `Bisheriges Passwort` (`currentPassword`) und `Neues Passwort`
+(`newPassword`), Absende-Schaltfläche `Passwort ändern`; gültig ist der Zustand, den
+`ChangePasswordInputSchema` akzeptiert. Das Formular SHALL am Ende der Startansicht in einem zugeklappten Aufklappbereich
 (`<details>` mit Summary `Passwort ändern`) liegen, damit es die Sitzungsliste nicht
 verdrängt; seine Felder sind darin enthalten, auch solange der Bereich zugeklappt ist. Eine
 Ablehnung MUST NOT den Nutzer abmelden; die Anwendung bleibt in der angemeldeten Ansicht
@@ -463,9 +507,19 @@ Ablehnung MUST NOT den Nutzer abmelden; die Anwendung bleibt in der angemeldeten
 #### Scenario: Abgelehnte Passwortänderung wird angezeigt
 
 - **GIVEN** das Formular zur Passwortänderung ist ausgefüllt
-- **WHEN** der Server die Änderung mit `403` und einer Meldung ablehnt
-- **THEN** zeigt das Formular diese Meldung mit `role="alert"`, der Toast-Host zeigt keinen
-  Toast, und die Anwendung bleibt in der angemeldeten Ansicht
+- **WHEN** der Nutzer `Passwort ändern` auslöst und der Server die Änderung mit `403`, einer
+  Meldung und `field` gleich `currentPassword` ablehnt
+- **THEN** trägt das Feld `Bisheriges Passwort` `aria-invalid="true"` und verweist per `aria-describedby` auf ein
+  Element mit der Rolle `alert` und dieser Meldung, das Feld `Neues Passwort` trägt kein `aria-invalid`, der
+  Toast-Host zeigt keinen Toast, und die Anwendung bleibt in der angemeldeten Ansicht
+
+#### Scenario: Passwort ändern bleibt gesperrt bei zu kurzem neuen Passwort
+
+- **GIVEN** das Formular zur Passwortänderung ist gerendert, `Bisheriges Passwort` ist
+  ausgefüllt und `Neues Passwort` enthält 14 Zeichen
+- **WHEN** die Schaltfläche `Passwort ändern` angeklickt und das Formular abgeschickt wird
+- **THEN** ist die Schaltfläche `Passwort ändern` gesperrt, und es wurde keine Anfrage an
+  `/api/auth/password` gesendet
 
 #### Scenario: Erfolgreiche Passwortänderung wird bestätigt
 
@@ -493,8 +547,11 @@ Echtzeit").
 ### Requirement: Registrierungsoberfläche
 
 Das Registrierungsformular SHALL Eingabefelder für Nutzername, E-Mail und Passwort zeigen
-und eine Ablehnung des Servers — vergebener oder ungültiger Nutzername — als Meldung sichtbar
-machen, ohne das Formular zu verlassen.
+und eine Ablehnung des Servers — vergebener oder ungültiger Nutzername, vergebene E-Mail —
+am genannten Feld sichtbar machen, ohne das Formular zu verlassen. Das Formular SHALL dem
+Formularmuster von `ui-form` folgen: Felder `Nutzername` (`username`), `E-Mail` (`email`)
+und `Passwort` (`password`), Absende-Schaltfläche `Registrieren`; gültig ist der Zustand,
+den `RegisterInputSchema` akzeptiert.
 
 #### Scenario: Registrierungsformular zeigt das Nutzernamensfeld
 
@@ -508,4 +565,15 @@ machen, ohne das Formular zu verlassen.
 - **GIVEN** das Registrierungsformular ist mit Nutzername, E-Mail und Passwort ausgefüllt
 - **WHEN** der Server die Registrierung mit `409`, einer Meldung und `field` gleich
   `username` ablehnt
-- **THEN** zeigt die Anwendung diese Meldung an und bleibt im Registrierungsformular
+- **THEN** trägt das Feld `Nutzername` `aria-invalid="true"` und verweist per `aria-describedby` auf ein
+  Element mit der Rolle `alert` und dieser Meldung, die Felder `E-Mail` und `Passwort` tragen kein `aria-invalid`, es gibt
+  kein Element mit der Klasse `form-error`, und die Anwendung bleibt im
+  Registrierungsformular
+
+#### Scenario: Registrieren bleibt gesperrt bei leerem Pflichtfeld
+
+- **GIVEN** das Registrierungsformular ist gerendert, `Nutzername` und `E-Mail` sind gültig
+  ausgefüllt und `Passwort` ist leer
+- **WHEN** die Schaltfläche `Registrieren` angeklickt und das Formular abgeschickt wird
+- **THEN** ist die Schaltfläche `Registrieren` gesperrt, und es wurde keine Anfrage an
+  `/api/auth/register` gesendet

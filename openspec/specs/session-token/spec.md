@@ -359,7 +359,12 @@ Fassade SHALL nur greifbare Tokens ziehen lassen und sie sichtbar kennzeichnen (
 App-Test). Ein Token MUST NOT lokal verschoben werden, bevor der Server den Bestand verteilt
 hat (`constitution.md` §9.1).
 
-Der Spielleiter SHALL zusätzlich eine Token-Verwaltung sehen: ein Formular zum Anlegen und
+Der Spielleiter SHALL zusätzlich eine Token-Verwaltung sehen: ein Formular zum Anlegen
+(Formularmuster von `ui-form` ohne Feldfehler: Felder `Name`, `Farbe`, Optionszeile
+`Symbol`, `Größe`, `Spalte`, `Zeile`, Absende-Schaltfläche `Anlegen` — gesperrt, solange
+`CreateTokenInputSchema` ohne `sessionId` den Zustand nicht akzeptiert oder das
+Acknowledgement aussteht; ein bestätigendes Acknowledgement leert das Feld `Name`, ein
+ablehnendes lässt es stehen) und
 eine Liste der Tokens mit „Entfernen", je Token einem Auswahlfeld `<Tokenname> zuweisen`,
 dessen Einträge `Spielleiter` (kein Besitzer) und jedes Mitglied mit Rolle `spieler` unter
 seinem Anzeigenamen (Alias, sonst Nutzername) sind und dessen Wert der aktuellen Zuweisung
@@ -463,7 +468,9 @@ gerendert werden.
 - **WHEN** er im Formular `Tokens` den Namen `Goblin`, die Farbe `#3366ff`, das Symbol
   `💀`, die Größe `2`, Spalte `3` und Zeile `4` einträgt und `Anlegen` auslöst
 - **THEN** sendet die Socket-Fassade `createToken` mit `sessionId`, `name` `Goblin`,
-  `color` `#3366ff`, `icon` `💀`, `size` `2`, `col` `3` und `row` `4`
+  `color` `#3366ff`, `icon` `💀`, `size` `2`, `col` `3` und `row` `4`; solange das
+  Acknowledgement aussteht, ist `Anlegen` gesperrt und trägt `aria-busy="true"`; nach dem
+  bestätigenden Acknowledgement ist das Feld `Name` leer
 
 #### Scenario: Spielleiter entfernt ein Token über die Liste
 
@@ -495,7 +502,8 @@ gerendert werden.
 - **GIVEN** ein Spielleiter im Raum, dessen Socket-Fassade `createToken` mit
   `{ ok: false, message: 'Keine Karte aktiv.' }` beantwortet
 - **WHEN** er das Formular `Tokens` mit gültigen Feldern abschickt
-- **THEN** zeigt die Raumansicht eine Meldung mit genau dem Text `Keine Karte aktiv.`
+- **THEN** zeigt die Raumansicht eine Meldung mit genau dem Text `Keine Karte aktiv.`, und das
+  Feld `Name` trägt weiterhin den eingegebenen Namen
 
 #### Scenario: Spielleiter setzt Werte über die Liste
 
@@ -681,6 +689,14 @@ gerendert werden.
 - **WHEN** er das Kontrollkästchen `Goblin HP für alle` ankreuzt
 - **THEN** zeigt die Raumansicht eine Meldung mit genau dem Text
   `Dieses Token darfst du nicht teilen.`
+
+#### Scenario: Anlegen bleibt gesperrt ohne Namen
+
+- **GIVEN** ein Spielleiter im Raum mit aktiver Karte, das Feld `Name` des Formulars `Tokens`
+  ist leer
+- **WHEN** die Schaltfläche `Anlegen` angeklickt und das Formular abgeschickt wird
+- **THEN** ist die Schaltfläche `Anlegen` gesperrt, und die Socket-Fassade hat kein
+  `createToken` gesendet
 
 ### Requirement: Token zuweisen
 

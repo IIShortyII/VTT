@@ -100,12 +100,18 @@ export function Modal(props: ModalProps): JSX.Element
   ist falsch → `preventDefault`, erstes Element fokussieren; liegt er auf dem ersten
   Element (oder außerhalb) und `shiftKey` ist wahr → `preventDefault`, letztes Element
   fokussieren. In allen anderen Fällen nichts (der Browser rückt selbst vor).
+- **Auslöser merken — beim ersten Render, nicht im Effekt** (D2): ein
+  `useRef<HTMLElement | null>`, das während des **Renderns** befüllt wird, solange es noch
+  `null` ist: `document.activeElement`, falls es ein `HTMLElement` ist. Grund: React ruft
+  `focus()` für Kinder mit `autoFocus` in der Commit-Phase auf, also **vor** jedem Effekt
+  des Modals — ein im Effekt gelesenes `activeElement` wäre bereits das Eingabefeld bzw.
+  `Abbrechen` in der Box, nicht der Auslöser. Nur der Render-Zeitpunkt liegt sicher davor.
 - **Fokus beim Öffnen und Rückgabe** (D2): ein `useEffect` mit leerer Abhängigkeitsliste.
-  Beim Mount: `opener = document.activeElement` merken (als `HTMLElement | null`); liegt
-  der aktuelle Fokus **nicht** innerhalb der Box (`boxRef.current.contains(activeElement)`
-  ist falsch), das erste fokussierbare Element der Box (Selektor wie oben) fokussieren —
-  das ist in der Regel die Schließen-Schaltfläche. Cleanup: ist `opener` ein `HTMLElement`
-  und `opener.isConnected` wahr, `opener.focus()`; sonst nichts.
+  Beim Mount: liegt der aktuelle Fokus **nicht** innerhalb der Box
+  (`boxRef.current.contains(document.activeElement)` ist falsch), das erste fokussierbare
+  Element der Box (Selektor wie oben) fokussieren — das ist in der Regel die
+  Schließen-Schaltfläche. Cleanup: ist der gemerkte Auslöser vorhanden und sein
+  `isConnected` wahr, `focus()` auf ihm; sonst nichts.
 - Die Datei importiert `react`, `./Icon.js` und `../i18n/locale.js`.
 
 ### D2 — Fokusregel in einem Satz
@@ -114,7 +120,9 @@ Beim Öffnen erhält das erste fokussierbare Element der Box den Fokus, **außer
 hat ihn bereits (React ruft `focus()` für Kinder mit `autoFocus` in der Commit-Phase, vor
 dem Effekt des Modals). Damit setzt jeder Aufrufer seinen Startpunkt durch `autoFocus` auf
 genau einem Kind: der Bestätigungsdialog auf `Abbrechen`, die Startformulare auf ihrem
-Eingabefeld. Keine `initialFocus`-Prop.
+Eingabefeld. Keine `initialFocus`-Prop. Dieselbe Reihenfolge zwingt dazu, den Auslöser
+**beim Rendern** zu merken (D1): im Effekt trägt bereits das `autoFocus`-Kind den Fokus,
+und die Rückgabe ginge an ein Element, das mit dem Modal verschwindet.
 
 ### D3 — Modul `src/client/ui/confirm.tsx`
 

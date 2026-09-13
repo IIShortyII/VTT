@@ -17,6 +17,12 @@
 // `Sitzung leiten` erkennbar (statt am Formular `Neue Spielsitzung`); das Chevron der
 // Schaltflaeche `Zurück` ist ein dekoratives Icon (`<svg aria-hidden="true">`) statt des
 // Textknotens `‹`.
+//
+// add-ui-text-keys (#87, MODIFIED ui-shell): Die Top-Bar zeigt in jeder Ansicht — auch anonym —
+// den Sprachschalter aus `ui-text` (Gruppe `Sprache`). Die Raumansicht wird an der Ueberschrift
+// der Ebene 1 (Sitzungsname) statt an `Zustand: …` erkannt, denn der Rohwert weicht der
+// Zustandspille (design.md D8). Zwei Szenarien sind darauf umgestellt (Testnamen bleiben); die
+// Suite importiert das i18n-Modul nicht — sie laeuft in der Standardsprache Deutsch.
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -170,6 +176,8 @@ test('Anonyme Ansicht zeigt nur die Marke', async () => {
 
   const header = screen.getByRole('banner')
   expect(within(header).getByText('VTT')).toBeTruthy()
+  // Auch anonym traegt die Top-Bar den Sprachschalter (Gruppe `Sprache`, ui-text #87).
+  expect(within(header).getByRole('group', { name: 'Sprache' })).toBeTruthy()
   // Keine Kontozone: weder `Abmelden` noch `Zurück` im Dokument.
   expect(screen.queryByRole('button', { name: 'Abmelden' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Zurück' })).toBeNull()
@@ -234,18 +242,20 @@ test('Zurück führt aus dem Raum zur Sitzungsliste', async () => {
   render(<App />)
   await screen.findByText('Freitagsrunde')
   await betreten()
-  // Anker: die Raumansicht ist gerendert.
-  await screen.findByText(/Zustand: geoeffnet|Zustand: geöffnet/i)
+  // Anker: die Raumansicht ist gerendert (Ueberschrift der Ebene 1 `Freitagsrunde`, ui-text #87).
+  await screen.findByRole('heading', { level: 1, name: 'Freitagsrunde' })
 
   const zurueck = screen.getByRole('button', { name: 'Zurück' })
   await act(async () => {
     fireEvent.click(zurueck)
   })
 
-  // Die Sitzungsliste ist zurueck (Schaltflaeche `Sitzung leiten`), die Raumansicht ist nicht
-  // mehr gerendert.
+  // Die Sitzungsliste ist zurueck (Schaltflaeche `Sitzung leiten`); die Raumansicht ist nicht
+  // mehr gerendert: keine Ueberschrift der Ebene 1 `Freitagsrunde`, die Karte der Liste ist eine
+  // Ueberschrift der Ebene 3.
   await screen.findByRole('button', { name: 'Sitzung leiten' })
-  expect(screen.queryByText(/Zustand:/i)).toBeNull()
+  expect(screen.queryByRole('heading', { level: 1, name: 'Freitagsrunde' })).toBeNull()
+  expect(screen.getByRole('heading', { level: 3, name: 'Freitagsrunde' })).toBeTruthy()
 })
 
 test('Abmelden über die Top-Bar', async () => {

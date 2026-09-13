@@ -336,8 +336,6 @@ textarea:focus-visible {
 }
 
 .app-shell-account {
-  grid-column: 3;
-  justify-self: end;
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
@@ -538,6 +536,39 @@ main.app-shell {
   flex-direction: column;
   gap: var(--space-2);
   margin-top: var(--space-3);
+}
+
+/* Textschlüssel (ui-text, #87) */
+.app-shell-tools {
+  grid-column: 3;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.app-shell-locale {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-2);
+  letter-spacing: 0.08em;
+}
+
+.app-shell-locale button {
+  text-decoration: none;
+  color: var(--color-text-muted);
+}
+
+.app-shell-locale button[aria-current='true'] {
+  color: var(--gold-text);
+  font-weight: 600;
+  opacity: 1;
+  cursor: default;
+}
+
+.session-room-status {
+  margin: 0 0 var(--space-3);
 }
 
 @media (prefers-reduced-motion: no-preference) {

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { UserOutput } from '../../shared/auth.js'
 import { fetchCurrentUser, logout } from '../auth/api.js'
 import { LoginForm } from '../auth/LoginForm.js'
 import { RegisterForm } from '../auth/RegisterForm.js'
+import { syncLocale, useT } from '../i18n/locale.js'
 import { MapLibrary } from '../map/MapLibrary.js'
 import { SessionList } from '../session/SessionList.js'
 import { SessionRoom } from '../session/SessionRoom.js'
@@ -16,24 +17,37 @@ import { Hero } from './Hero.js'
 // Loginformular aufblitzt. Innerhalb der angemeldeten Ansicht entscheidet `sessionView`
 // zwischen Sitzungsliste, Raumansicht und Kartenbibliothek (design.md D9, map-library #49) -
 // kein Router (design.md D10, Non-Goal "kein Router").
+// ui-text (#87, design.md D6): die Rohstrings dieser Datei (Ladehinweis, nicht erreichbarer
+// Server, Abmeldefehler, anonymer Hero) laufen jetzt ueber `t(...)`. `logoutFailureMessage`
+// wird zu `t('app.logoutFailed', { cause })` an der Verwendungsstelle, damit die Meldung die
+// aktive Sprache zum Zeitpunkt des Fehlers traegt (design.md D1). Der gespeicherte Hinweis
+// (`hinweis`) wird beim Umschalten nicht neu uebersetzt (design.md "Risks") - hinnehmbar, die
+// naechste Aktion erzeugt ihn in der neuen Sprache.
 type AuthState = { status: 'unbekannt' } | { status: 'anonym' } | { status: 'angemeldet'; user: UserOutput }
 
 type AuthView = 'login' | 'register'
 
 type SessionView = { view: 'liste' } | { view: 'raum'; sessionId: string } | { view: 'bibliothek' }
 
-const SERVER_UNREACHABLE_MESSAGE = 'Der Server ist nicht erreichbar.'
-
-function logoutFailureMessage(error: unknown): string {
-  const cause = error instanceof Error ? error.message : String(error)
-  return `Abmelden fehlgeschlagen: ${cause}`
-}
-
 export interface AppProps {
   build?: BuildInfo
 }
 
 export function App({ build = FALLBACK_BUILD }: AppProps) {
+  // ui-text (#87, Nacharbeit Runde 1, Requirement "Sprachwahl"): eine gespeicherte Wahl SHALL
+  // beim *Start der Anwendung* gelten - das ist der Mount von `App`, nicht (nur) der Import
+  // des Moduls `i18n/locale.ts` (design.md D1 liest den Speicher beim Laden des Moduls, das
+  // aber nur einmal pro Prozess geschieht). Ein `useRef`-Waechter gleicht die aktive Sprache
+  // deshalb genau einmal beim allerersten Rendern erneut mit dem Speicher ab, bevor `useT()`
+  // (unten) die Sprache abonniert oder irgendein Text nachgeschlagen wird - so liest die erste
+  // `useSyncExternalStore`-Momentaufnahme bereits den abgeglichenen Stand, statt ihn erst nach
+  // dem Lesen zu aendern.
+  const syncedLocaleRef = useRef(false)
+  if (!syncedLocaleRef.current) {
+    syncedLocaleRef.current = true
+    syncLocale()
+  }
+  const t = useT()
   const [state, setState] = useState<AuthState>({ status: 'unbekannt' })
   const [view, setView] = useState<AuthView>('login')
   // Fehler, die keine Antwort des Servers sind (Netzfehler, kaputte Antwortform) - kommt hier
@@ -61,13 +75,13 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
         // "anonym" die einzige ehrliche Wahl (§9.1); der Hinweis erklaert dem Besucher, warum
         // er trotz vorhandener Sitzung ein Formular sieht (design.md D4).
         console.error(error)
-        setHinweis(SERVER_UNREACHABLE_MESSAGE)
+        setHinweis(t('app.serverUnreachable'))
         setState({ status: 'anonym' })
       })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [t])
 
   const handleAuthenticated = (user: UserOutput) => {
     setHinweis(null)
@@ -91,7 +105,8 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
       setState(user ? { status: 'angemeldet', user } : { status: 'anonym' })
     } catch (error) {
       console.error(error)
-      setHinweis(logoutFailureMessage(error))
+      const cause = error instanceof Error ? error.message : String(error)
+      setHinweis(t('app.logoutFailed', { cause }))
     }
   }
 
@@ -105,7 +120,7 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
 
   let content
   if (state.status === 'unbekannt') {
-    content = <p>Lädt …</p>
+    content = <p>{t('app.loading')}</p>
   } else if (state.status === 'angemeldet') {
     if (sessionView.view === 'raum') {
       content = (
@@ -134,13 +149,10 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
   } else {
     // Anonyme Startansicht (add-start-view #86, design.md D2): der Hero traegt hier die
     // einzige Ueberschrift der Ebene 1 - Anmelde- und Registrierungsformular bekommen nur
-    // noch eine `<h2>` (LoginForm.tsx, RegisterForm.tsx).
+    // noch eine `<h2>`.
     content = (
       <>
-        <Hero
-          title="Karten, Tokens, Nebel"
-          subline="Leite deine Runde am virtuellen Tisch oder tritt einer bei."
-        />
+        <Hero title={t('hero.anonymous.title')} subline={t('hero.anonymous.subline')} />
         <div className="panel auth-panel">
           {view === 'login' ? (
             <LoginForm onSuccess={handleAuthenticated} onSwitchToRegister={() => setView('register')} />

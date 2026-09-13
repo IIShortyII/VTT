@@ -426,15 +426,20 @@ Beitreten (Code) als Aktionen anbieten, deren Formulare erst auf Anforderung ers
 App-Shell (`ui-shell`). Die Rückkehr aus Raum und Kartenbibliothek zur Sitzungsliste SHALL
 ausschließlich über die Top-Bar erfolgen; Raum und Bibliothek MUST NOT eine eigene
 Schaltfläche dafür zeigen. Nach Auswahl einer Spielsitzung SHALL die Raumansicht deren
-Namen, Zustand und die Teilnehmerliste mit Anwesenheitskennzeichen zeigen. Jeder Teilnehmer
+Namen als Überschrift der Ebene 1, den Zustand als Zustandspille nach der
+Zuordnungstabelle von `ui-start` (Text in der aktiven Sprache, Icon, Varianten-Klasse;
+`ui-text`) und die Teilnehmerliste mit Anwesenheitskennzeichen zeigen; sie MUST NOT den
+Rohwert des Zustands (`geoeffnet`, `gestartet`, `pausiert`, `geschlossen`) als Text zeigen. Jeder Teilnehmer
 SHALL mit seinem Alias benannt werden, falls einer gesetzt ist, sonst mit seinem
 Nutzernamen. Die eigene Zeile der Teilnehmerliste SHALL ein Eingabefeld für den Alias mit
 dem aktuell gesetzten Wert anbieten; das Absenden SHALL `session:alias` mit dem
 eingegebenen Wert senden. Die angezeigte Benennung SHALL der zuletzt vom Server gesendeten
 Teilnehmerliste folgen, nicht der Eingabe (`constitution.md` §9.1); eine Ablehnung des
 Servers SHALL als Meldung sichtbar sein. Dem Spielleiter SHALL sie zusätzlich den
-Sitzungscode und die im aktuellen Zustand erlaubten Übergänge als Schaltflächen anbieten;
-einem Spieler MUST NOT sie Code oder Steuerung zeigen. Der angezeigte Zustand SHALL dem
+Sitzungscode und die im aktuellen Zustand erlaubten Übergänge als Schaltflächen anbieten,
+beschriftet mit dem Verb der Aktion in der aktiven Sprache (`ui-text`: `Öffnen`, `Starten`,
+`Pausieren`, `Beenden`), nie mit dem Aktionsnamen des Vertrags (`oeffnen`, `starten`,
+`pausieren`, `beenden`); einem Spieler MUST NOT sie Code oder Steuerung zeigen. Der angezeigte Zustand SHALL dem
 zuletzt vom Server gemeldeten folgen (`constitution.md` §9.1), nicht der zuletzt geklickten
 Schaltfläche.
 
@@ -470,23 +475,27 @@ erneutes Betreten erfolgt nur durch eine bewusste Handlung des Nutzers. Erhält 
   `role: "spielleiter"`, `status: "geoeffnet"`, `code: "ABC234"` und zwei Teilnehmer, einen
   mit `online: true`, einen mit `online: false`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** zeigt sie den Code `ABC234`, den Zustand, beide Teilnehmer mit unterscheidbarem
-  Anwesenheitskennzeichen sowie Schaltflächen für `starten` und `beenden`, aber keine für
-  `oeffnen` oder `pausieren`
+- **THEN** zeigt sie den Code `ABC234`, die Zustandspille `Geöffnet` (Klasse `status-pill`), beide
+  Teilnehmer mit unterscheidbarem Anwesenheitskennzeichen sowie die Schaltflächen `Starten`
+  und `Beenden`, aber keine Schaltfläche `Öffnen` oder `Pausieren`; kein Textknoten lautet
+  `geoeffnet`, `starten` oder `beenden`
 
 #### Scenario: Raumansicht des Spielers
 
 - **GIVEN** die Anwendung hat den Raum betreten, und das Acknowledgement nennt
   `role: "spieler"`, `status: "gestartet"` und kein Feld `code`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** zeigt sie Namen, Zustand und Teilnehmerliste, aber keinen Sitzungscode und keine
-  Schaltfläche für einen Zustandsübergang
+- **THEN** zeigt sie den Namen als Überschrift der Ebene 1, die Zustandspille `Läuft` mit der
+  Klasse `status-pill--active` und die Teilnehmerliste, aber keinen Sitzungscode und keine
+  Schaltfläche `Öffnen`, `Starten`, `Pausieren` oder `Beenden`; kein Textknoten lautet
+  `gestartet`
 
 #### Scenario: Zustand folgt dem Server
 
-- **GIVEN** die Raumansicht eines Spielers zeigt den Zustand `geoeffnet`
+- **GIVEN** die Raumansicht eines Spielers zeigt die Zustandspille `Geöffnet`
 - **WHEN** die Anwendung `session:status` mit `gestartet` erhält
-- **THEN** zeigt sie den Zustand `gestartet`
+- **THEN** zeigt sie die Zustandspille `Läuft` mit der Klasse `status-pill--active`, und kein
+  Textknoten lautet `gestartet` oder `geoeffnet`
 
 #### Scenario: Wiederverbindung betritt den Raum erneut
 
@@ -497,8 +506,8 @@ erneutes Betreten erfolgt nur durch eine bewusste Handlung des Nutzers. Erhält 
   `session:enter` mit `{ ok: true, ... }`, `status: "gestartet"` und `meister` als
   `online: false` bestätigt wird
 - **THEN** hat die Anwendung `session:enter` genau zweimal mit der `sessionId` des Raums
-  gesendet, genau eine Fassade erzeugt und genau einmal verbunden, und sie zeigt den Zustand
-  `gestartet` und `meister` als abwesend
+  gesendet, genau eine Fassade erzeugt und genau einmal verbunden, und sie zeigt die Zustandspille
+  `Läuft` und `meister` als abwesend
 
 #### Scenario: Ersetzte Verbindung verbindet sich nicht neu
 

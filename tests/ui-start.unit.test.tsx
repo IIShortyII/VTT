@@ -21,6 +21,11 @@
 // Leerzustand und keine Start-Selektoren im Stylesheet. Jedes Szenario wird daher an seiner
 // Assertion rot, nicht an einem Lade- oder Typfehler (constitution.md §3.1): der angemeldete
 // Einstieg laedt wie bisher, erst die neue Adresse fehlt.
+//
+// add-ui-text-keys (#87, MODIFIED ui-start): Das Betreten-Szenario erkennt die Raumansicht an
+// der Ueberschrift der Ebene 1 (Sitzungsname) und der Zustandspille `Geöffnet` statt an
+// `Zustand: …` (der Rohwert weicht der Pille, design.md D8). Testname bleibt; die Suite
+// importiert das i18n-Modul nicht — sie laeuft in der Standardsprache Deutsch.
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -481,8 +486,10 @@ test('Betreten öffnet den Raum der Karte', async () => {
 
   // Die Anwendung sendet `session:enter` mit der `sessionId` `s2` …
   await waitFor(() => expect(socketMock.__facade.enter).toHaveBeenCalledWith('s2'))
-  // … und die Raumansicht ist gerendert (Zustand der Sitzung).
-  await screen.findByText(/Zustand:/i)
+  // … und die Raumansicht ist gerendert (Ueberschrift der Ebene 1 `Sonntagsrunde`, Zustandspille
+  // `Geöffnet`; ui-text #87).
+  await screen.findByRole('heading', { level: 1, name: 'Sonntagsrunde' })
+  expect(screen.getByText('Geöffnet').closest('.status-pill')).not.toBeNull()
 })
 
 // --- Requirement: Leerzustand ---------------------------------------------------------------

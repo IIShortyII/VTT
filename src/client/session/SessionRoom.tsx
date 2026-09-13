@@ -35,13 +35,16 @@ import {
   type TokenStatsPatch,
 } from '../../shared/token.js'
 import type { AnnotationOptions, FogLayer } from '../map/canvas.js'
+import { useT } from '../i18n/locale.js'
 import { MapCanvas } from '../map/MapCanvas.js'
 import { AnnotationPanel } from './AnnotationPanel.js'
 import { FogPanel } from './FogPanel.js'
 import { sessionMapImageUrl } from './fog-api.js'
 import { MapPanel } from './MapPanel.js'
 import { createSessionSocket, type SessionSocketFacade } from './socket.js'
+import { SESSION_STATUS_PRESENTATION, TRANSITION_LABELS } from './session-status.js'
 import { PlayerTokenList } from './TokenStats.js'
+import { Icon } from '../ui/Icon.js'
 import { TokenPanel } from './TokenPanel.js'
 
 // Raumansicht (design.md D10, Requirement "Sitzungsoberflaeche"; session-map #50, Requirement
@@ -63,6 +66,11 @@ import { TokenPanel } from './TokenPanel.js'
 // ui-shell (#84, design.md D4): die Rueckkehr zur Sitzungsliste liegt ausschliesslich in der
 // Top-Bar der App-Shell - diese Ansicht hat weder eine eigene Schaltflaeche "Zurück zur Liste"
 // noch die Prop `onLeave`. Der Fehlerzustand zeigt nur noch die Meldung.
+//
+// ui-text (#87, design.md D6): nur zwei Stellen dieser Ansicht laufen ueber Textschluessel -
+// die Zustandspille (statt des Rohwerts `state.sessionStatus`) und die Uebergangs-
+// Schaltflaechen (statt des Aktionsnamens); die uebrigen Texte dieser Ansicht bleiben
+// Rohstrings bis Epic C/D (proposal.md, Umfang).
 
 export interface SessionRoomProps {
   sessionId: string
@@ -119,6 +127,7 @@ function readStoredUnit(): DistanceUnit {
 }
 
 export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomProps) {
+  const t = useT()
   const socketRef = useRef<SessionSocketFacade | null>(null)
   const [state, setState] = useState<RoomState>({ status: 'lädt' })
   const [replaced, setReplaced] = useState(false)
@@ -671,11 +680,18 @@ export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomPr
     : state.role === 'spielleiter'
       ? sessionMapImageUrl(sessionId, null)
       : sessionMapImageUrl(sessionId, state.fog?.version ?? 0)
+  // ui-text (#87, design.md D6): die Zustandspille nach der Zuordnungstabelle aus
+  // `session-status.ts` (`ui-start`); kein Textknoten traegt den Rohwert des Zustands.
+  const status = SESSION_STATUS_PRESENTATION[state.sessionStatus]
 
   return (
     <div>
       <h1>{state.name}</h1>
-      <p>Zustand: {state.sessionStatus}</p>
+      <p className="session-room-status">
+        <span className={status.modifier ? `status-pill ${status.modifier}` : 'status-pill'}>
+          <Icon name={status.icon} /> {t(status.label)}
+        </span>
+      </p>
       {state.code !== undefined && <p>Code: {state.code}</p>}
       <ul>
         {state.participants.map((participant) => (
@@ -701,7 +717,7 @@ export function SessionRoom({ sessionId, currentUserId, onEnded }: SessionRoomPr
         <div>
           {allowedActions(state.sessionStatus).map((action) => (
             <button key={action} type="button" onClick={() => handleTransition(action)}>
-              {action}
+              {t(TRANSITION_LABELS[action])}
             </button>
           ))}
         </div>

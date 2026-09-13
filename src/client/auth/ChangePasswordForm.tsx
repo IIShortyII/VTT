@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../../shared/auth.js'
+import { useT } from '../i18n/locale.js'
 import { changePassword } from './api.js'
 
 // Formular zur Passwortaenderung in der angemeldeten Ansicht (account-security #13,
@@ -9,11 +10,13 @@ import { changePassword } from './api.js'
 // add-start-view (#86, design.md D5): liegt jetzt in einem `<details>` mit der Summary
 // "Passwort ändern" (SessionList.tsx) - die Summary ist die Ueberschrift, eine eigene `<h2>`
 // stuende sonst zweimal untereinander.
-
-const GENERIC_ERROR_MESSAGE = 'Die Passwortänderung ist fehlgeschlagen. Bitte versuche es erneut.'
-const SUCCESS_MESSAGE = 'Passwort geändert.'
+// ui-text (#87, design.md D6): Labels, Schaltflaeche und die frueher als Modulkonstanten
+// gehaltenen Meldungen laufen jetzt ueber `t('auth.password.*')`; die Aufrufe stehen im
+// Erfolgs- bzw. `catch`-Zweig, damit sie die aktive Sprache zum Zeitpunkt des Ereignisses
+// tragen (design.md D1).
 
 export function ChangePasswordForm() {
+  const t = useT()
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [message, setMessage] = useState<string | null>(null)
@@ -26,7 +29,7 @@ export function ChangePasswordForm() {
     try {
       const result = await changePassword({ currentPassword, newPassword })
       if (result.ok) {
-        setMessage(SUCCESS_MESSAGE)
+        setMessage(t('auth.password.changed'))
         setCurrentPassword('')
         setNewPassword('')
       } else {
@@ -37,7 +40,7 @@ export function ChangePasswordForm() {
     } catch {
       // Ein Server- oder Netzwerkfehler wird angezeigt statt lautlos zu verpuffen
       // (AGENTS.md: "Fehler sprudeln bis zum zentralen Handler").
-      setMessage(GENERIC_ERROR_MESSAGE)
+      setMessage(t('auth.password.failed'))
     } finally {
       setSubmitting(false)
     }
@@ -46,7 +49,7 @@ export function ChangePasswordForm() {
   return (
     <form onSubmit={(event) => void handleSubmit(event)}>
       <label className="field-label" htmlFor="change-password-current">
-        Bisheriges Passwort
+        {t('auth.password.current')}
       </label>
       <input
         id="change-password-current"
@@ -58,7 +61,7 @@ export function ChangePasswordForm() {
         required
       />
       <label className="field-label" htmlFor="change-password-new">
-        Neues Passwort
+        {t('auth.password.new')}
       </label>
       <input
         id="change-password-new"
@@ -73,7 +76,7 @@ export function ChangePasswordForm() {
       />
       {message !== null && <p role="alert">{message}</p>}
       <button type="submit" disabled={submitting}>
-        Passwort ändern
+        {t('auth.password.submit')}
       </button>
     </form>
   )

@@ -18,6 +18,8 @@ menschliche App-Test ab (`constitution.md` §3.4).
 - **Marke**: der Text `VTT` in der Mitte der Top-Bar.
 - **Konto**: der Nutzername des angemeldeten Nutzers und die Schaltfläche `Abmelden`; für
   einen nicht angemeldeten Besucher ist die Zone leer.
+- **Sprachschalter**: die Gruppe `Sprache` (`ui-text`) rechts neben dem Konto, in jeder
+  Ansicht vorhanden — auch für einen nicht angemeldeten Besucher.
 - **Startansicht**: die Sitzungsliste (`game-session`, „Sitzungsoberfläche") sowie jede
   Ansicht eines nicht angemeldeten Besuchers. In der Startansicht gibt es keine Schaltfläche
   `Zurück`.
@@ -51,7 +53,10 @@ führen. Das Chevron der Schaltfläche SHALL ein dekoratives Icon aus `ui-icons`
 (`<svg aria-hidden="true">`) sein, ihr zugänglicher Name bleibt `Zurück`. In der
 Startansicht MUST NOT eine Schaltfläche `Zurück` vorhanden sein. Für einen angemeldeten
 Nutzer SHALL die Top-Bar rechts den Nutzernamen und die Schaltfläche `Abmelden` zeigen;
-für einen nicht angemeldeten Besucher MUST NOT sie ein Konto zeigen. `Abmelden` SHALL die
+für einen nicht angemeldeten Besucher MUST NOT sie ein Konto zeigen. In jeder Ansicht —
+auch für einen nicht angemeldeten Besucher — SHALL die Top-Bar rechts, neben dem Konto,
+den Sprachschalter aus `ui-text` zeigen (Gruppe `Sprache`, Schaltflächen `Deutsch` und
+`English`); `Zurück` und `Abmelden` SHALL Texte der aktiven Sprache sein. `Abmelden` SHALL die
 Abmeldung aus `user-auth` auslösen; der Wechsel in den anonymen Zustand folgt der
 Bestätigung des Servers (`constitution.md` §9.1), nicht dem Klick. Die angemeldete
 Startansicht ist an der Schaltfläche `Sitzung leiten` erkennbar (`ui-start`).
@@ -68,9 +73,9 @@ Startansicht ist an der Schaltfläche `Sitzung leiten` erkennbar (`ui-start`).
 
 - **GIVEN** der Server meldet keinen angemeldeten Nutzer
 - **WHEN** die Anwendung gerendert wird
-- **THEN** enthält das `<header>` den Text `VTT`, und es gibt im Dokument weder eine
-  Schaltfläche `Abmelden` noch eine Schaltfläche `Zurück`; das Anmeldeformular liegt im
-  `<main>`
+- **THEN** enthält das `<header>` den Text `VTT` und die Gruppe `Sprache`, und es gibt im
+  Dokument weder eine Schaltfläche `Abmelden` noch eine Schaltfläche `Zurück`; das
+  Anmeldeformular liegt im `<main>`
 
 #### Scenario: Unteransicht zeigt Zurück als erstes fokussierbares Element
 
@@ -89,11 +94,12 @@ Startansicht ist an der Schaltfläche `Sitzung leiten` erkennbar (`ui-start`).
 
 #### Scenario: Zurück führt aus dem Raum zur Sitzungsliste
 
-- **GIVEN** ein angemeldeter Nutzer hat eine Spielsitzung betreten, und die Raumansicht ist
-  gerendert
+- **GIVEN** ein angemeldeter Nutzer hat die Spielsitzung `Freitagsrunde` betreten, und die
+  Raumansicht ist gerendert (Überschrift der Ebene 1 `Freitagsrunde`)
 - **WHEN** er die Schaltfläche `Zurück` in der Top-Bar auslöst
 - **THEN** zeigt die Anwendung die Sitzungsliste (Schaltfläche `Sitzung leiten`), und die
-  Raumansicht ist nicht mehr gerendert
+  Raumansicht ist nicht mehr gerendert (keine Überschrift der Ebene 1 `Freitagsrunde`; die
+  Karte `Freitagsrunde` der Liste ist eine Überschrift der Ebene 3)
 
 #### Scenario: Abmelden über die Top-Bar
 

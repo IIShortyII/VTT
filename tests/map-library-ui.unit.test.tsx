@@ -282,7 +282,7 @@ test('Karte öffnen zeigt Kartenansicht und Rasterformular', async () => {
 
   const { container } = render(<App />)
   await oeffneBibliothek()
-  await oeffneKarte(/taverne/i)
+  await oeffneKarte(/^Taverne$/)
 
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
   expect(canvasMock.createMapCanvas).toHaveBeenCalledWith(
@@ -314,7 +314,7 @@ test('Gespeichertes Raster kommt vom Server', async () => {
 
   const { container } = render(<App />)
   await oeffneBibliothek()
-  await oeffneKarte(/taverne/i)
+  await oeffneKarte(/^Taverne$/)
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
   const typ = must(selectTyp(container), 'das Typ-Auswahlfeld')
@@ -350,7 +350,7 @@ test('Abgelehnter Upload wird angezeigt', async () => {
 
   const { container } = render(<App />)
   await oeffneBibliothek()
-  await oeffneKarte(/taverne/i)
+  await oeffneKarte(/^Taverne$/)
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
   const ersetzen = must(dateiFeld(container), 'das Dateifeld „Bild ersetzen"')
@@ -372,7 +372,7 @@ test('Löschen nach Bestätigung', async () => {
 
   render(<App />)
   await oeffneBibliothek()
-  await oeffneKarte(/taverne/i)
+  await oeffneKarte(/^Taverne$/)
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
   // `Löschen` in der Kartenansicht oeffnet den Bestaetigungsdialog (kein Zwei-Klick-Knopf mehr).
@@ -415,7 +415,7 @@ test('Abgebrochenes Löschen sendet nichts', async () => {
 
   render(<App />)
   await oeffneBibliothek()
-  await oeffneKarte(/taverne/i)
+  await oeffneKarte(/^Taverne$/)
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
   // GIVEN: der Loeschdialog ist ueber „Löschen" der Kartenansicht offen; der Auslöser traegt
@@ -440,6 +440,90 @@ test('Abgebrochenes Löschen sendet nichts', async () => {
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Löschen' }))
 }, 15000)
 
+test('Öffnen aus dem Menü der Liste', async () => {
+  installFetch([
+    ...basis(),
+    { method: 'GET', match: (u) => u.includes('/api/maps'), make: () => antwort(200, [{ id: 'm-tav', name: 'Taverne', hasImage: true, grid: DEFAULT_GRID }]) },
+  ])
+
+  render(<App />)
+  await oeffneBibliothek()
+
+  // Menü der Zeile öffnen und `Öffnen` wählen.
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Taverne' }))
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Öffnen' }))
+  })
+
+  await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
+  expect(canvasMock.createMapCanvas).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ imageUrl: '/api/maps/m-tav/image', grid: DEFAULT_GRID }),
+  )
+}, 15000)
+
+test('Löschen aus der Liste nach Bestätigung', async () => {
+  installFetch([
+    ...basis(),
+    { method: 'GET', match: (u) => u.includes('/api/maps'), make: () => antwort(200, [{ id: 'm-tav', name: 'Taverne', hasImage: true, grid: DEFAULT_GRID }]) },
+    { method: 'DELETE', match: (u) => u.includes('/api/maps/m-tav'), make: () => antwort(204, {}) },
+  ])
+
+  render(<App />)
+  await oeffneBibliothek()
+
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Taverne' }))
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Löschen' }))
+  })
+  const dialog = screen.getByRole('alertdialog', { name: 'Karte „Taverne" löschen?' })
+  // Vor der Bestätigung wurde kein DELETE gesendet.
+  expect(calls.some((c) => c.method === 'DELETE' && c.url.includes('/api/maps/m-tav'))).toBe(false)
+
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Löschen' }))
+  })
+
+  // Danach folgt `DELETE /api/maps/m-tav` und eine erneute Abfrage der Liste; die Bibliothek
+  // zeigt weiterhin die Liste, nicht die Detailansicht.
+  await waitFor(() => expect(calls.some((c) => c.method === 'DELETE' && c.url.includes('/api/maps/m-tav'))).toBe(true))
+  await waitFor(() => expect(calls.filter((c) => c.method === 'GET' && c.url.includes('/api/maps')).length).toBeGreaterThanOrEqual(2))
+  expect(screen.getByText(/neue karte/i)).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Zur Bibliothek' })).toBeNull()
+}, 15000)
+
+test('Abgebrochenes Löschen aus der Liste sendet nichts', async () => {
+  installFetch([
+    ...basis(),
+    { method: 'GET', match: (u) => u.includes('/api/maps'), make: () => antwort(200, [{ id: 'm-tav', name: 'Taverne', hasImage: true, grid: DEFAULT_GRID }]) },
+    { method: 'DELETE', match: (u) => u.includes('/api/maps/m-tav'), make: () => antwort(204, {}) },
+  ])
+
+  render(<App />)
+  await oeffneBibliothek()
+
+  const trigger = await screen.findByRole('button', { name: 'Aktionen für Taverne' })
+  await act(async () => {
+    fireEvent.click(trigger)
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Löschen' }))
+  })
+  const dialog = screen.getByRole('alertdialog', { name: 'Karte „Taverne" löschen?' })
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  })
+
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+  expect(calls.some((c) => c.method === 'DELETE' && c.url.includes('/api/maps/m-tav'))).toBe(false)
+  // Der Fokus liegt wieder auf dem Trigger `Aktionen für Taverne`.
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Aktionen für Taverne' }))
+}, 15000)
+
 test('Verlassen gibt die Kartenansicht frei', async () => {
   installFetch([
     ...basis(),
@@ -452,7 +536,7 @@ test('Verlassen gibt die Kartenansicht frei', async () => {
 
   render(<App />)
   await oeffneBibliothek()
-  await oeffneKarte(/taverne/i)
+  await oeffneKarte(/^Taverne$/)
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
   await act(async () => {

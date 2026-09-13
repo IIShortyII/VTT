@@ -690,7 +690,6 @@ const START_SELEKTOREN = [
   '.session-card',
   '.session-card-name',
   '.session-card-meta',
-  '.start-account',
 ]
 
 test('Start-Selektoren vorhanden', () => {
@@ -698,4 +697,6 @@ test('Start-Selektoren vorhanden', () => {
   const fehlend = START_SELEKTOREN.filter((sel) => !selectorPresent(norm, sel))
 
   expect(fehlend).toEqual([])
+  expect(START_SELEKTOREN).toHaveLength(11)
+  expect(selectorPresent(norm, '.start-account')).toBe(false)
 })

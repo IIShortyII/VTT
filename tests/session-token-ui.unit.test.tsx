@@ -431,11 +431,23 @@ test('Spielleiter entfernt ein Token über die Liste', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
+  // MODIFIED (#92): Entfernen über das Menü `Aktionen für Goblin` mit Bestätigungsdialog.
   await act(async () => {
-    fireEvent.click(await screen.findByRole('button', { name: 'Goblin entfernen' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Goblin' }))
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Entfernen' }))
+  })
+  const dialog = screen.getByRole('alertdialog', { name: 'Token „Goblin" entfernen?' })
+  // Vor der Bestätigung wurde kein removeToken gesendet.
+  expect(socketMock.__facade.removeToken).not.toHaveBeenCalled()
+
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Entfernen' }))
   })
 
   await waitFor(() => expect(socketMock.__facade.removeToken).toHaveBeenCalledWith('s1', 't-goblin'))
+  expect(screen.queryByRole('alertdialog')).toBeNull()
 })
 
 test('Spielleiter weist ein Token über die Liste zu', async () => {
@@ -447,7 +459,15 @@ test('Spielleiter weist ein Token über die Liste zu', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
-  const select = (await screen.findByRole('combobox', { name: 'Goblin zuweisen' })) as HTMLSelectElement
+  // MODIFIED (#92): Zuweisen über das Menü `Aktionen für Goblin` und das Modal `Goblin zuweisen`.
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Goblin' }))
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Zuweisen…' }))
+  })
+  const dialog = screen.getByRole('dialog', { name: 'Goblin zuweisen' })
+  const select = within(dialog).getByLabelText('Spieler') as HTMLSelectElement
   expect(within(select).getByRole('option', { name: 'Spielleiter' })).toBeTruthy()
   expect(within(select).getByRole('option', { name: 'Gandalf' })).toBeTruthy()
   expect(within(select).queryByRole('option', { name: 'meister' })).toBeNull()
@@ -456,8 +476,12 @@ test('Spielleiter weist ein Token über die Liste zu', async () => {
   await act(async () => {
     fireEvent.change(select, { target: { value: 'u-sam' } })
   })
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Zuweisen' }))
+  })
 
   await waitFor(() => expect(socketMock.__facade.assignToken).toHaveBeenCalledWith('s1', 't-goblin', 'u-sam'))
+  expect(screen.queryByRole('dialog', { name: 'Goblin zuweisen' })).toBeNull()
 })
 
 test('Spielleiter nimmt eine Zuweisung über die Liste zurück', async () => {
@@ -470,11 +494,22 @@ test('Spielleiter nimmt eine Zuweisung über die Liste zurück', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
-  const select = (await screen.findByRole('combobox', { name: 'Goblin zuweisen' })) as HTMLSelectElement
+  // MODIFIED (#92): Zuweisung über das Menü und das Modal `Goblin zuweisen` zurücknehmen.
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Goblin' }))
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Zuweisen…' }))
+  })
+  const dialog = screen.getByRole('dialog', { name: 'Goblin zuweisen' })
+  const select = within(dialog).getByLabelText('Spieler') as HTMLSelectElement
   expect(select.value).toBe('u-sam')
 
   await act(async () => {
     fireEvent.change(select, { target: { value: '' } })
+  })
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Zuweisen' }))
   })
 
   await waitFor(() => expect(socketMock.__facade.assignToken).toHaveBeenCalledWith('s1', 't-goblin', null))
@@ -712,25 +747,36 @@ test('Spieler sieht ohne Werte keine Werte', async () => {
 })
 
 test('Spieler sieht keine Token-Verwaltung', async () => {
+  const FREMDER_ORK = { ...ORK, ownerId: null, shares: null }
   installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
-  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [GOBLIN] })
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [FREMDER_ORK] })
 
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
-  expect(canvasMock.createMapCanvas).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tokens: [GOBLIN] }))
+  expect(canvasMock.createMapCanvas).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tokens: [FREMDER_ORK] }))
+  // Keine Verwaltungselemente (weder Überschrift noch Felder noch die alten Zeilen-Schaltflächen).
   expect(screen.queryByRole('heading', { name: 'Tokens' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Anlegen' })).toBeNull()
-  expect(screen.queryByRole('button', { name: 'Goblin entfernen' })).toBeNull()
-  expect(screen.queryByRole('combobox', { name: 'Goblin zuweisen' })).toBeNull()
-  expect(screen.queryByRole('spinbutton', { name: 'Goblin HP' })).toBeNull()
-  expect(screen.queryByRole('button', { name: 'Goblin Werte speichern' })).toBeNull()
-  expect(screen.queryByRole('button', { name: 'Goblin Schaden' })).toBeNull()
-  expect(screen.queryByRole('combobox', { name: 'Goblin Markierung wählen' })).toBeNull()
-  expect(screen.queryByRole('button', { name: 'Goblin Markierung hinzufügen' })).toBeNull()
-})
+  expect(screen.queryByRole('spinbutton', { name: 'Ork HP' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Ork Werte speichern' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Ork Schaden' })).toBeNull()
+  expect(screen.queryByRole('combobox', { name: 'Ork Markierung wählen' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Ork Markierung hinzufügen' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Ork entfernen' })).toBeNull()
+  expect(screen.queryByRole('combobox', { name: 'Ork zuweisen' })).toBeNull()
+
+  // MODIFIED (#92): das Menü `Aktionen für Ork` unter `Tokenwerte` zeigt alle vier Einträge gesperrt.
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Ork' }))
+  })
+  const menu = screen.getByRole('menu', { name: 'Aktionen für Ork' })
+  for (const eintrag of ['Bearbeiten', 'Zuweisen…', 'Freigeben…', 'Entfernen']) {
+    expect(within(menu).getByRole('menuitem', { name: eintrag }).getAttribute('aria-disabled')).toBe('true')
+  }
+}, 15000)
 
 // ============================================================================================
 // Delta add-token-sharing (#62): die 9 Szenarien der Requirement "Tokenansicht im Raum".
@@ -744,6 +790,18 @@ function checkbox(name: string): HTMLInputElement {
   return screen.getByRole('checkbox', { name }) as HTMLInputElement
 }
 
+// add-ui-menu (#92): die Freigabe-Kästchen liegen jetzt im Modal `Freigaben für <Name>`, das
+// der Eintrag `Freigeben…` des Token-Menüs öffnet.
+async function oeffneFreigaben(tokenName = 'Goblin'): Promise<void> {
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: `Aktionen für ${tokenName}` }))
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Freigeben…' }))
+  })
+  await screen.findByRole('dialog', { name: `Freigaben für ${tokenName}` })
+}
+
 test('Spielleiter teilt einen Wert mit allen über die Liste', async () => {
   const GOBLIN_TEILBAR = { ...GOBLIN, shares: KEINE_SHARES }
   spielleiterFetch()
@@ -754,8 +812,9 @@ test('Spielleiter teilt einen Wert mit allen über die Liste', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
+  await oeffneFreigaben()
   await act(async () => {
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Goblin HP für alle' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Goblin HP für alle' }))
   })
 
   await waitFor(() => expect(socketMock.__facade.shareToken).toHaveBeenCalledWith('s1', 't-goblin', 'hp', 'alle'))
@@ -771,8 +830,9 @@ test('Spielleiter teilt einen Wert mit einem Spieler über die Liste', async () 
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
+  await oeffneFreigaben()
   await act(async () => {
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Goblin RK für Gandalf' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Goblin RK für Gandalf' }))
   })
 
   await waitFor(() => expect(socketMock.__facade.shareToken).toHaveBeenCalledWith('s1', 't-goblin', 'ac', ['u-sam']))
@@ -789,8 +849,9 @@ test('Weiterer Empfänger wird an die Liste angehängt', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
+  await oeffneFreigaben()
   await act(async () => {
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Goblin RK für tom' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Goblin RK für tom' }))
   })
 
   await waitFor(() => expect(socketMock.__facade.shareToken).toHaveBeenCalledWith('s1', 't-goblin', 'ac', ['u-sam', 'u-tom']))
@@ -806,7 +867,8 @@ test('Abwahl des letzten Empfängers sendet keine', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
-  const box = (await screen.findByRole('checkbox', { name: 'Goblin RK für Gandalf' })) as HTMLInputElement
+  await oeffneFreigaben()
+  const box = screen.getByRole('checkbox', { name: 'Goblin RK für Gandalf' }) as HTMLInputElement
   expect(box.checked).toBe(true)
   await act(async () => {
     fireEvent.click(box)
@@ -825,7 +887,8 @@ test('Abwahl von alle sendet keine', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
-  const box = (await screen.findByRole('checkbox', { name: 'Goblin HP für alle' })) as HTMLInputElement
+  await oeffneFreigaben()
+  const box = screen.getByRole('checkbox', { name: 'Goblin HP für alle' }) as HTMLInputElement
   expect(box.checked).toBe(true)
   await act(async () => {
     fireEvent.click(box)
@@ -846,7 +909,7 @@ test('Freigabe-Schalter folgen dem Bestand', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
-  await screen.findByRole('checkbox', { name: 'Goblin HP für alle' })
+  await oeffneFreigaben()
   expect(checkbox('Goblin HP für alle').checked).toBe(true)
   expect(checkbox('Goblin HP für Gandalf').disabled).toBe(true)
   expect(checkbox('Goblin HP für Gandalf').checked).toBe(false)
@@ -869,7 +932,28 @@ test('Besitzer sieht Freigabe-Schalter nur am eigenen Token', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
-  expect(await screen.findByRole('checkbox', { name: 'Goblin HP für alle' })).toBeTruthy()
+  // MODIFIED (#92): das Menü `Aktionen für Ork` zeigt `Freigeben…` gesperrt.
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Ork' }))
+  })
+  const orkMenu = screen.getByRole('menu', { name: 'Aktionen für Ork' })
+  expect(within(orkMenu).getByRole('menuitem', { name: 'Freigeben…' }).getAttribute('aria-disabled')).toBe('true')
+  await act(async () => {
+    fireEvent.keyDown(within(orkMenu).getByRole('menuitem', { name: 'Freigeben…' }), { key: 'Escape' })
+  })
+
+  // Im Menü `Aktionen für Goblin` ist `Freigeben…` nicht gesperrt und öffnet das Modal.
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Aktionen für Goblin' }))
+  })
+  const goblinFreigeben = within(screen.getByRole('menu', { name: 'Aktionen für Goblin' })).getByRole('menuitem', { name: 'Freigeben…' })
+  expect(goblinFreigeben.getAttribute('aria-disabled')).toBeNull()
+  await act(async () => {
+    fireEvent.click(goblinFreigeben)
+  })
+  await screen.findByRole('dialog', { name: 'Freigaben für Goblin' })
+
+  expect(screen.getByRole('checkbox', { name: 'Goblin HP für alle' })).toBeTruthy()
   expect(screen.getByRole('checkbox', { name: 'Goblin HP für tom' })).toBeTruthy()
   expect(screen.queryByRole('checkbox', { name: 'Goblin HP für Gandalf' })).toBeNull()
   expect(screen.queryByRole('checkbox', { name: 'Goblin HP für meister' })).toBeNull()
@@ -886,8 +970,9 @@ test('Besitzer teilt über die Liste', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
+  await oeffneFreigaben()
   await act(async () => {
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Goblin Markierungen für tom' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Goblin Markierungen für tom' }))
   })
 
   await waitFor(() => expect(socketMock.__facade.shareToken).toHaveBeenCalledWith('s1', 't-goblin', 'conditions', ['u-tom']))
@@ -903,9 +988,140 @@ test('Abgelehnte Freigabe zeigt die Meldung', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
+  await oeffneFreigaben()
   await act(async () => {
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Goblin HP für alle' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Goblin HP für alle' }))
   })
 
   expect(await screen.findByText('Dieses Token darfst du nicht teilen.')).toBeTruthy()
 })
+
+// ============================================================================================
+// add-ui-menu (#92): neue Szenarien der Requirement „Tokenansicht im Raum" — Kontextmenü-Rückruf
+// der Karte, Rechtsklick auf Karte und Zeile, Bearbeiten, abgebrochenes Entfernen, gesperrte
+// Einträge für den Spieler.
+
+test('Kartenansicht erhält den Kontextmenü-Rückruf', async () => {
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
+
+  expect(typeof letzteCanvasOptions().onTokenContextMenu).toBe('function')
+})
+
+test('Rechtsklick auf ein Token der Karte öffnet das Token-Menü am Zeiger', async () => {
+  const GOBLIN_TEILBAR = { ...GOBLIN, shares: KEINE_SHARES }
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN_TEILBAR] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
+
+  const onTokenContextMenu = letzteCanvasOptions().onTokenContextMenu as
+    | ((id: string, anchor: { x: number; y: number }) => void)
+    | undefined
+  expect(typeof onTokenContextMenu).toBe('function')
+  await act(async () => {
+    must(onTokenContextMenu, 'onTokenContextMenu-Rueckruf')('t-goblin', { x: 120, y: 80 })
+  })
+
+  const menu = screen.getByRole('menu', { name: 'Aktionen für Goblin' })
+  expect(menu.style.left).toBe('120px')
+  expect(menu.style.top).toBe('80px')
+  const items = within(menu).getAllByRole('menuitem')
+  expect(items.map((el) => el.textContent)).toEqual(['Bearbeiten', 'Zuweisen…', 'Freigeben…', 'Entfernen'])
+  for (const item of items) {
+    expect(item.getAttribute('aria-disabled')).toBeNull()
+  }
+  expect(within(menu).getByRole('menuitem', { name: 'Entfernen' }).classList.contains('menu-item--danger')).toBe(true)
+  expect(document.activeElement).toBe(within(menu).getByRole('menuitem', { name: 'Bearbeiten' }))
+}, 15000)
+
+test('Rechtsklick auf die Token-Zeile öffnet das Menü', async () => {
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  const name = await screen.findByText('Goblin')
+  const unterdrueckt = fireEvent.contextMenu(name, { clientX: 30, clientY: 40 })
+  expect(unterdrueckt).toBe(false)
+
+  const menu = screen.getByRole('menu', { name: 'Aktionen für Goblin' })
+  expect(menu.style.left).toBe('30px')
+  expect(menu.style.top).toBe('40px')
+}, 15000)
+
+test('Bearbeiten setzt den Fokus in das HP-Feld', async () => {
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Goblin' }))
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Bearbeiten' }))
+  })
+
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(document.activeElement).toBe(screen.getByRole('spinbutton', { name: 'Goblin HP' }))
+}, 15000)
+
+test('Abgebrochenes Entfernen sendet nichts', async () => {
+  spielleiterFetch()
+  enterAck('spielleiter', { map: AKTIVE_KARTE, tokens: [GOBLIN] })
+  socketMock.__facade.removeToken.mockResolvedValue({ ok: true })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  const trigger = await screen.findByRole('button', { name: 'Aktionen für Goblin' })
+  await act(async () => {
+    fireEvent.click(trigger)
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Entfernen' }))
+  })
+  const dialog = screen.getByRole('alertdialog', { name: 'Token „Goblin" entfernen?' })
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  })
+
+  expect(socketMock.__facade.removeToken).not.toHaveBeenCalled()
+  expect(screen.queryByRole('alertdialog')).toBeNull()
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Aktionen für Goblin' }))
+}, 15000)
+
+test('Spieler sieht im Token-Menü nur Freigeben aktiv', async () => {
+  const MEIN_GOBLIN = { ...GOBLIN, ownerId: 'u-selbst', shares: KEINE_SHARES }
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [MEIN_GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Goblin' }))
+  })
+  const menu = screen.getByRole('menu', { name: 'Aktionen für Goblin' })
+  expect(within(menu).getByRole('menuitem', { name: 'Bearbeiten' }).getAttribute('aria-disabled')).toBe('true')
+  expect(within(menu).getByRole('menuitem', { name: 'Zuweisen…' }).getAttribute('aria-disabled')).toBe('true')
+  expect(within(menu).getByRole('menuitem', { name: 'Entfernen' }).getAttribute('aria-disabled')).toBe('true')
+  const freigeben = within(menu).getByRole('menuitem', { name: 'Freigeben…' })
+  expect(freigeben.getAttribute('aria-disabled')).toBeNull()
+  expect(document.activeElement).toBe(freigeben)
+}, 15000)

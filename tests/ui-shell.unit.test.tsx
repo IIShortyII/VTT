@@ -2,8 +2,7 @@
 // Komponententests zum Capability `ui-shell` aus
 // openspec/changes/add-app-shell/specs/ui-shell/spec.md (tasks.md 1.1) und dem MODIFIED-Delta
 // openspec/changes/add-start-view/specs/ui-shell/spec.md (#86, tasks.md 1.2). Ein Test je
-// GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname: sechs zur
-// „Top-Bar", zwei zu „Inhaltsbereich und Footer", eins zum „Stylesheet der Shell".
+// GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname.
 //
 // Geprueft wird, *was* die Shell rendert und anbietet — nicht, wie es aussieht (AGENTS.md:
 // Rendering nimmt der menschliche App-Test ab). Adressen ausschliesslich ueber
@@ -23,6 +22,12 @@
 // der Ebene 1 (Sitzungsname) statt an `Zustand: …` erkannt, denn der Rohwert weicht der
 // Zustandspille (design.md D8). Zwei Szenarien sind darauf umgestellt (Testnamen bleiben); die
 // Suite importiert das i18n-Modul nicht — sie laeuft in der Standardsprache Deutsch.
+//
+// add-ui-menu (#92, MODIFIED ui-shell): Das Konto liegt jetzt als Menue-Schaltflaeche (`ui-menu`,
+// Variante `text`) mit dem Nutzernamen als Namen in der Top-Bar; ihre Eintraege `Passwort
+// ändern` und `Abmelden` erscheinen erst im geoeffneten Menue. Ausserhalb eines geoeffneten
+// Kontomenues existiert keine Schaltflaeche `Abmelden`. Zwei Szenarien sind darauf umgestellt
+// (Testnamen bleiben), eins ist neu (`Kontomenü bietet Passwortänderung und Abmelden`).
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -161,9 +166,11 @@ test('Startansicht ohne Zurück', async () => {
 
   const header = screen.getByRole('banner')
   expect(within(header).getByText('VTT')).toBeTruthy()
-  expect(within(header).getByText('Gandalf')).toBeTruthy()
-  expect(within(header).getByRole('button', { name: 'Abmelden' })).toBeTruthy()
-  // In der Startansicht gibt es im Dokument keine Schaltflaeche `Zurück`.
+  // Das Konto ist eine Menue-Schaltflaeche mit dem Nutzernamen und `aria-haspopup="menu"` (ui-menu #92).
+  const konto = within(header).getByRole('button', { name: 'Gandalf' })
+  expect(konto.getAttribute('aria-haspopup')).toBe('menu')
+  // Ausserhalb des geoeffneten Kontomenues existiert keine Schaltflaeche `Abmelden` und kein `Zurück`.
+  expect(screen.queryByRole('button', { name: 'Abmelden' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Zurück' })).toBeNull()
 })
 
@@ -269,17 +276,49 @@ test('Abmelden über die Top-Bar', async () => {
   await screen.findByRole('button', { name: 'Sitzung leiten' })
 
   const header = screen.getByRole('banner')
-  const abmelden = within(header).getByRole('button', { name: 'Abmelden' })
+  // Erst das Kontomenue oeffnen (Menue-Schaltflaeche mit dem Nutzernamen), dann `Abmelden` waehlen.
+  const konto = within(header).getByRole('button', { name: 'Gandalf' })
+  await act(async () => {
+    fireEvent.click(konto)
+  })
+  const abmelden = await screen.findByRole('menuitem', { name: 'Abmelden' })
   await act(async () => {
     fireEvent.click(abmelden)
   })
 
   // Nach der Bestaetigung des Servers erscheint das Anmeldeformular …
   await waitFor(() => expect(container.querySelector('input[type="email"]')).not.toBeNull())
-  // … und die Top-Bar zeigt weder den Nutzernamen noch die Schaltflaeche `Abmelden`.
+  // … und das `<header>` zeigt weder den Nutzernamen noch eine Schaltflaeche `Abmelden`.
   const headerDanach = screen.getByRole('banner')
-  expect(within(headerDanach).queryByRole('button', { name: 'Abmelden' })).toBeNull()
+  expect(within(headerDanach).queryByRole('button', { name: 'Gandalf' })).toBeNull()
   expect(within(headerDanach).queryByText('Gandalf')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Abmelden' })).toBeNull()
+})
+
+test('Kontomenü bietet Passwortänderung und Abmelden', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, { id: 'u-1', email: 'g@example.com', username: 'Gandalf' }) },
+    { pfad: '/api/sessions', antwort: antwort(200, []) },
+  ])
+
+  render(<App />)
+  await screen.findByRole('button', { name: 'Sitzung leiten' })
+
+  const header = screen.getByRole('banner')
+  const konto = within(header).getByRole('button', { name: 'Gandalf' })
+  await act(async () => {
+    fireEvent.click(konto)
+  })
+
+  // Menue mit dem Nutzernamen als Name, genau zwei Eintraege in dieser Reihenfolge, keiner gesperrt.
+  const menu = screen.getByRole('menu', { name: 'Gandalf' })
+  const items = within(menu).getAllByRole('menuitem')
+  expect(items.map((el) => el.textContent)).toEqual(['Passwort ändern', 'Abmelden'])
+  for (const item of items) {
+    expect(item.getAttribute('aria-disabled')).toBeNull()
+  }
+  // `Passwort ändern` ist der aktive Eintrag mit dem Fokus.
+  expect(document.activeElement).toBe(within(menu).getByRole('menuitem', { name: 'Passwort ändern' }))
 })
 
 // --- Requirement: Inhaltsbereich und Footer -------------------------------------------------

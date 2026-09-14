@@ -16,6 +16,8 @@ import {
   type EnterAck,
   type EndedEvent,
   type ParticipantsEvent,
+  type RenameAck,
+  type RenamedEvent,
   type ReplacedEvent,
   type StatusEvent,
   type TransitionAck,
@@ -58,6 +60,8 @@ export interface SessionSocketFacade {
   enter(sessionId: string): Promise<EnterAck>
   transition(sessionId: string, action: TransitionAction): Promise<TransitionAck>
   alias(sessionId: string, alias: string): Promise<AliasAck>
+  // session-bar (#93, design.md D3): Umbenennen-Absicht nach dem Muster von `alias`.
+  rename(sessionId: string, name: string): Promise<RenameAck>
   activateMap(sessionId: string, instanceId: string | null): Promise<ActivateMapAck>
   createToken(sessionId: string, input: CreateTokenFormInput): Promise<CreateTokenAck>
   moveToken(sessionId: string, tokenId: string, cell: Cell): Promise<MoveTokenAck>
@@ -80,6 +84,8 @@ export interface SessionSocketFacade {
   on(event: 'status', handler: (payload: StatusEvent) => void): void
   on(event: 'replaced', handler: (payload: ReplacedEvent) => void): void
   on(event: 'ended', handler: (payload: EndedEvent) => void): void
+  // session-bar (#93, design.md D3): Broadcast des neuen Namens, wie `status` verdrahtet.
+  on(event: 'renamed', handler: (payload: RenamedEvent) => void): void
   on(event: 'map', handler: (payload: MapEvent) => void): void
   on(event: 'tokens', handler: (payload: TokensEvent) => void): void
   on(event: 'fog', handler: (payload: FogEvent) => void): void
@@ -108,7 +114,7 @@ function wireEventFor(event: string): string {
   if (event === 'annotations') {
     return SESSION_ANNOTATION_EVENTS.annotations
   }
-  return SESSION_EVENTS[event as 'participants' | 'status' | 'replaced' | 'ended']
+  return SESSION_EVENTS[event as 'participants' | 'status' | 'replaced' | 'ended' | 'renamed']
 }
 
 /**
@@ -151,6 +157,10 @@ export function createSessionSocket(): SessionSocketFacade {
     alias: (sessionId: string, alias: string) =>
       new Promise<AliasAck>((resolve) => {
         socket.emit(SESSION_EVENTS.alias, { sessionId, alias }, (ack: AliasAck) => resolve(ack))
+      }),
+    rename: (sessionId: string, name: string) =>
+      new Promise<RenameAck>((resolve) => {
+        socket.emit(SESSION_EVENTS.rename, { sessionId, name }, (ack: RenameAck) => resolve(ack))
       }),
     activateMap: (sessionId: string, instanceId: string | null) =>
       new Promise<ActivateMapAck>((resolve) => {

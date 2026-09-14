@@ -8,6 +8,9 @@
 // Version 1.45.0 von `lucide-react` nicht gibt (kein Drache und keine Schlange im Katalog).
 // Naechstliegende Form: `Worm` (geschwungener Koerper) - Tausch im Implementer-Summary
 // genannt, im App-Test zu beurteilen (design.md "Risks").
+//
+// session-bar (#93, design.md D7): `copy` (Lucide `Copy`) nach `close` - die Registry traegt
+// jetzt 55 Namen.
 import {
   ArrowDownToLine,
   Ban,
@@ -23,6 +26,7 @@ import {
   CircleHelp,
   CircleOff,
   CloudFog,
+  Copy,
   Crown,
   EarOff,
   Ellipsis,
@@ -65,7 +69,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-/** Genau die 54 Registry-Namen, in der Reihenfolge aus `specs/ui-icons/spec.md`
+/** Genau die 55 Registry-Namen, in der Reihenfolge aus `specs/ui-icons/spec.md`
  * ("Registry-Namen"): Oberflaeche, Symbolkatalog, Zustandskatalog. */
 export const ICON_NAMES = [
   // Oberflaeche
@@ -75,6 +79,7 @@ export const ICON_NAMES = [
   'check',
   'chevronDown',
   'close',
+  'copy',
   'delete',
   'draw',
   'edit',
@@ -137,6 +142,7 @@ export const ICON_REGISTRY: Record<IconName, LucideIcon> = {
   check: Check,
   chevronDown: ChevronDown,
   close: X,
+  copy: Copy,
   delete: Trash2,
   draw: Brush,
   edit: Pencil,

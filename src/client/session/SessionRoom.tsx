@@ -16,13 +16,13 @@ import {
 import { cellKey, type FogState, type FogTarget } from '../../shared/fog.js'
 import type { Cell, Point } from '../../shared/grid.js'
 import {
-  allowedActions,
   displayName,
   type AliasAck,
   type EnterAck,
   type GameSessionStatus,
   type MemberRole,
   type Participant,
+  type RenameAck,
   type TransitionAction,
 } from '../../shared/session.js'
 import type { ActiveMap } from '../../shared/session-map.js'
@@ -41,16 +41,16 @@ import { AnnotationPanel } from './AnnotationPanel.js'
 import { FogPanel } from './FogPanel.js'
 import { sessionMapImageUrl } from './fog-api.js'
 import { MapPanel } from './MapPanel.js'
+import { RenameSessionForm, SessionBar } from './SessionBar.js'
 import { createSessionSocket, type SessionSocketFacade } from './socket.js'
-import { SESSION_OVERLAY, SESSION_STATUS_PRESENTATION, TRANSITION_LABELS } from './session-status.js'
+import { SESSION_OVERLAY, SESSION_STATUS_PRESENTATION } from './session-status.js'
 import { PlayerTokenList } from './TokenStats.js'
 import { tokenMenuEntries, type TokenMenuAction } from './token-menu.js'
 import { TokenShareControls } from './TokenShare.js'
 import { useConfirm } from '../ui/confirm.js'
 import { Field, SubmitButton } from '../ui/form.js'
-import { Icon } from '../ui/Icon.js'
 import { Modal } from '../ui/Modal.js'
-import { ActionMenu, MenuTrigger, Popover, useFloating, type Anchor, type MenuEntry } from '../ui/menu.js'
+import { ActionMenu, useFloating, type Anchor, type MenuEntry } from '../ui/menu.js'
 import { MapOverlay, StatusBanner } from '../ui/status.js'
 import { useToasts } from '../ui/toast.js'
 import { TokenPanel } from './TokenPanel.js'
@@ -94,14 +94,23 @@ import { TokenPanel } from './TokenPanel.js'
 // baut die Verzweigung, `tokenMenuEntries` (`token-menu.ts`) die vier Eintraege je Rolle und
 // Freigabestand. Zuweisen und Freigeben oeffnen je ein Modal (`assignTokenId`/`shareTokenId`),
 // Entfernen laeuft ueber den Bestaetigungsdialog. `mapMenu`/`mapMenuTokenId` tragen dasselbe
-// Menue fuer einen Rechtsklick auf ein Token der Karte (`onTokenContextMenu`). Der
-// Sitzungscode ist maskiert; `codeFloating` traegt den Popover mit dem Klartext.
+// Menue fuer einen Rechtsklick auf ein Token der Karte (`onTokenContextMenu`).
+//
+// session-bar (#93, design.md D6): `SessionBar` ersetzt `<h1>`, Zustandsabsatz, Code-Absatz
+// und Uebergangs-Schaltflaechen - sie traegt Name, Code, Zustand, Uebergaenge und
+// Verwaltungsmenue aus Props, die diese Datei aus `state`/den Handlern zusammenstellt. Neuer
+// State `transitionError` fuer eine abgelehnte Uebergangsantwort (Bar-Meldung), `renameOpen`
+// fuer das Umbenennen-Modal (`RenameSessionForm`); `onOpenLibrary` wandert wie `onLeave` in
+// einen Ref. `Beenden` fragt vorher ueber `useConfirm` nach; der angezeigte Name folgt
+// ausschliesslich `session:renamed`, nie der Eingabe oder dem Acknowledgement von
+// `session:rename` (constitution.md §9.1).
 
 export interface SessionRoomProps {
   sessionId: string
   currentUserId: string
   onEnded: () => void
   onLeave: () => void
+  onOpenLibrary: () => void
 }
 
 const ENTER_FAILURE_MESSAGE = 'Der Raum konnte nicht betreten werden. Bitte versuche es erneut.'
@@ -111,9 +120,6 @@ const MAP_CANVAS_HEIGHT = 480
 // Liste weiter - Schaltflaeche, Schliessen (Esc/`Schließen`) und der Ablauf des Timers fuehren
 // alle zu `onEnded`, genau einmal (der Timer wird beim Verlassen geraeumt).
 const ENDED_REDIRECT_MS = 4000
-// ui-menu (#92, design.md D9): der Punkt `•` (U+2022) maskiert den Sitzungscode, einmal je
-// Zeichen des Codes.
-const CODE_MASK_CHAR = '•'
 const NO_OWNER_VALUE = ''
 
 type RoomState =
@@ -199,7 +205,7 @@ function AssignTokenDialog({ token, players, onAssign, onClose }: AssignTokenDia
   )
 }
 
-export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: SessionRoomProps) {
+export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpenLibrary }: SessionRoomProps) {
   const t = useT()
   const { push } = useToasts()
   const { confirm } = useConfirm()
@@ -243,12 +249,15 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
   const [tokenError, setTokenError] = useState<string | null>(null)
   // ui-menu (#92, design.md D5/D9): `assignTokenId`/`shareTokenId` steuern die beiden Modals
   // des Token-Menues; `mapMenu`/`mapMenuTokenId` dasselbe Menue am Rechtsklick-Punkt eines
-  // Tokens der Karte; `codeFloating` den Sitzungscode-Popover.
+  // Tokens der Karte.
   const [assignTokenId, setAssignTokenId] = useState<string | null>(null)
   const [shareTokenId, setShareTokenId] = useState<string | null>(null)
   const mapMenu = useFloating()
   const [mapMenuTokenId, setMapMenuTokenId] = useState<string | null>(null)
-  const codeFloating = useFloating()
+  // session-bar (#93, design.md D6): `transitionError` traegt die Bar-Meldung eines vom
+  // Server abgelehnten Uebergangs; `renameOpen` steuert das Umbenennen-Modal.
+  const [transitionError, setTransitionError] = useState<string | null>(null)
+  const [renameOpen, setRenameOpen] = useState(false)
   // add-fog-of-war (#16, design.md D7): lokale Ad-hoc-Auswahl fuer "Bereich markieren" und
   // die Fehlermeldung einer abgelehnten Fog-Aktion. add-measure-draw (#11, design.md D5):
   // `fogTool` wird zu `tool: CanvasTool` - EIN Werkzeugzustand fuer Fog- und
@@ -288,11 +297,14 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
   // ui-status (#91, design.md D2): `onEnded`/`onLeave` (und `push`/`t`, damit der
   // Reconnect-Handler den Toast in der aktuellen Sprache auslösen kann) wandern in Refs, bei
   // jedem Rendern nachgezogen - `wireSocket` liest sie darüber, ohne sie als Abhaengigkeit zu
-  // fuehren (Goal "keine neue Fassade bei einem Rendern von `App`").
+  // fuehren (Goal "keine neue Fassade bei einem Rendern von `App`"). session-bar (#93,
+  // design.md D6): `onOpenLibrary` ebenso.
   const onEndedRef = useRef(onEnded)
   onEndedRef.current = onEnded
   const onLeaveRef = useRef(onLeave)
   onLeaveRef.current = onLeave
+  const onOpenLibraryRef = useRef(onOpenLibrary)
+  onOpenLibraryRef.current = onOpenLibrary
   const pushRef = useRef(push)
   pushRef.current = push
   const tRef = useRef(t)
@@ -353,6 +365,18 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
       })
       socket.on('status', ({ status }) => {
         setState((prev) => (prev.status === 'bereit' ? { ...prev, sessionStatus: status } : prev))
+        // session-bar (#93, Requirement "Übergänge"): ein spaeteres `session:status` raeumt
+        // eine etwa gezeigte Bar-Meldung, wie ein bestaetigter Uebergang.
+        setTransitionError(null)
+      })
+      // session-bar (#93, design.md D6, Requirement "Umbenennen"): der angezeigte Name folgt
+      // ausschliesslich diesem Broadcast, nie der Eingabe oder dem Acknowledgement von
+      // `session:rename` (constitution.md §9.1).
+      socket.on('renamed', ({ sessionId: renamedSessionId, name }) => {
+        if (renamedSessionId !== sessionId) {
+          return
+        }
+        setState((prev) => (prev.status === 'bereit' ? { ...prev, name } : prev))
       })
       // session-map (#50, Requirement "Kartenansicht im Raum"): die angezeigte Karte folgt
       // ausschliesslich `session:map`, nie der zuletzt geklickten Schaltflaeche. `tokens`/`fog`
@@ -488,14 +512,33 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
     [annotationMode, annotationColor, distanceUnit],
   )
 
-  const handleTransition = (action: TransitionAction) => {
+  // session-bar (#93, design.md D6, Requirement "Übergänge"): `Beenden` fragt zuerst ueber
+  // den Bestaetigungsdialog nach - `false` beendet ohne zu senden. Der angezeigte Zustand und
+  // die Sperren folgen ausschliesslich dem Acknowledgement bzw. `session:status`, nie dieser
+  // Absicht (constitution.md §9.1); ein verworfenes Promise wird weiter mit `console.error`
+  // gemeldet.
+  const handleTransition = async (action: TransitionAction) => {
+    if (action === 'beenden') {
+      const confirmed = await confirm({
+        title: t('session.end.title'),
+        message: t('session.end.message'),
+        confirmLabel: t('session.end.confirm'),
+        danger: true,
+      })
+      if (!confirmed) {
+        return
+      }
+    }
     const socket = socketRef.current
     if (!socket) {
       return
     }
-    socket.transition(sessionId, action).catch((error: unknown) => {
+    try {
+      const ack = await socket.transition(sessionId, action)
+      setTransitionError(ack.ok ? null : ack.message)
+    } catch (error) {
       console.error(error)
-    })
+    }
   }
 
   // ui-feedback (#88, design.md D4): der Sitzungscode wird ueber die Zwischenablage des
@@ -534,6 +577,18 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
       .catch((error: unknown) => {
         console.error(error)
       })
+  }
+
+  // session-bar (#93, design.md D6, Requirement "Umbenennen"): die Absicht des Umbenennen-
+  // Modals - ohne Fassade eine lokale Ablehnung (`session.rename.failed`), sonst
+  // `session:rename`. Der angezeigte Name aendert sich hier NICHT - das uebernimmt
+  // ausschliesslich der `renamed`-Handler in `wireSocket` (constitution.md §9.1).
+  const handleRename = (name: string): Promise<RenameAck> => {
+    const socket = socketRef.current
+    if (!socket) {
+      return Promise.resolve({ ok: false, message: t('session.rename.failed') })
+    }
+    return socket.rename(sessionId, name)
   }
 
   // session-map (#50, Requirement "Aktive Karte setzen"): die Absicht wird gesendet, die
@@ -919,12 +974,10 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
       : state.role === 'spielleiter'
         ? sessionMapImageUrl(sessionId, null)
         : sessionMapImageUrl(sessionId, state.fog?.version ?? 0)
-    // ui-text (#87, design.md D6): die Zustandspille nach der Zuordnungstabelle aus
-    // `session-status.ts` (`ui-start`); kein Textknoten traegt den Rohwert des Zustands.
-    const status = SESSION_STATUS_PRESENTATION[state.sessionStatus]
     // ui-status (#91, design.md D5): das Overlay folgt ausschliesslich `state.sessionStatus`
     // (Enter-Acknowledgement, danach `session:status`) - kein eigener State.
     const overlay = SESSION_OVERLAY[state.sessionStatus]
+    const overlayIcon = SESSION_STATUS_PRESENTATION[state.sessionStatus].icon
     // ui-menu (#92, design.md D5): eine Funktion statt einer Liste - jede Zeile und das
     // Karten-Menue rufen sie mit ihrem eigenen Token auf (`tokenMenuEntries`, `token-menu.ts`).
     const menuEntries = (token: Token): MenuEntry[] => tokenMenuEntries(token, state.role === 'spielleiter', t, handleTokenAction)
@@ -932,25 +985,20 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
 
     content = (
       <>
-        <h1>{state.name}</h1>
-        <p className="session-room-status">
-          <span className={status.modifier ? `status-pill ${status.modifier}` : 'status-pill'}>
-            <Icon name={status.icon} /> {t(status.label)}
-          </span>
-        </p>
-        {state.code !== undefined && (
-          <div className="session-room-code">
-            <span>Code: </span>
-            <span className="session-code-mask">{CODE_MASK_CHAR.repeat(state.code.length)}</span>
-            <MenuTrigger floating={codeFloating} variant="icon" icon="info" haspopup="dialog" label={t('session.showCode')} />
-            <Popover floating={codeFloating} label={t('session.code')}>
-              <code className="session-code">{state.code}</code>
-              <button type="button" onClick={handleCopyCode}>
-                {t('session.copyCode')}
-              </button>
-            </Popover>
-          </div>
-        )}
+        {/* session-bar (#93, design.md D6): erstes Element der Raumansicht, ersetzt `<h1>`,
+            Zustandsabsatz, Code-Absatz und Uebergangs-Schaltflaechen. */}
+        <SessionBar
+          name={state.name}
+          status={state.sessionStatus}
+          role={state.role}
+          code={state.code}
+          transitionError={transitionError}
+          onTransition={(action) => void handleTransition(action)}
+          onCopyCode={handleCopyCode}
+          onRename={() => setRenameOpen(true)}
+          onOpenLibrary={() => onOpenLibraryRef.current()}
+          onLeave={leave}
+        />
         <ul>
           {state.participants.map((participant) => (
             <li key={participant.userId}>
@@ -971,15 +1019,6 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
           ))}
         </ul>
         {aliasError !== null && <p role="alert">{aliasError}</p>}
-        {state.role === 'spielleiter' && (
-          <div>
-            {allowedActions(state.sessionStatus).map((action) => (
-              <button key={action} type="button" onClick={() => handleTransition(action)}>
-                {t(TRANSITION_LABELS[action])}
-              </button>
-            ))}
-          </div>
-        )}
 
         {/* session-map (#50, Requirement "Kartenansicht im Raum"): der Name folgt genau dem
             Text "Aktive Karte: <Name>" bzw. "Keine Karte aktiv" (design.md D7). */}
@@ -1004,7 +1043,7 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
               onAnnotationDrawn={handleAnnotationDrawn}
             />
             {overlay !== undefined && state.role === 'spieler' && (
-              <MapOverlay title={t(overlay.title)} subline={t(overlay.subline)} icon={status.icon} />
+              <MapOverlay title={t(overlay.title)} subline={t(overlay.subline)} icon={overlayIcon} />
             )}
           </div>
         )}
@@ -1114,6 +1153,22 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave }: Sess
               {t('session.replaced.continue')}
             </button>
           </div>
+        </Modal>
+      )}
+      {/* session-bar (#93, design.md D6, Requirement "Umbenennen"): das Umbenennen-Modal - der
+          Auslöser ist `Umbenennen` der Bar oder der Menueeintrag (Fokusrueckgabe vor
+          `onSelect`, `ui-menu` D2); nach dem Schliessen liegt der Fokus wieder dort
+          (`ui-dialog`). */}
+      {state.status === 'bereit' && renameOpen && (
+        <Modal title={t('session.rename.title')} onClose={() => setRenameOpen(false)}>
+          <RenameSessionForm
+            initialName={state.name}
+            onSubmit={handleRename}
+            onDone={() => {
+              setRenameOpen(false)
+              push(t('toast.sessionRenamed'))
+            }}
+          />
         </Modal>
       )}
       {/* ui-menu (#92, design.md D5): Zuweisen- und Freigaben-Modal des Token-Menues - der

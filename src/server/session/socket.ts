@@ -8,10 +8,12 @@ import {
   GameSessionStatusSchema,
   MemberRoleSchema,
   nextStatus,
+  RenameInputSchema,
   SESSION_EVENTS,
   TransitionInputSchema,
   type AliasAck,
   type EnterAck,
+  type RenameAck,
   type TransitionAck,
 } from '../../shared/session.js'
 import { ActivateMapInputSchema, SESSION_MAP_EVENTS, type ActivateMapAck } from '../../shared/session-map.js'
@@ -89,6 +91,13 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
 
     socket.on(SESSION_EVENTS.alias, (payload: unknown, callback: (ack: AliasAck) => void) => {
       handleAlias(socket, payload, callback).catch((error: unknown) => {
+        console.error(error)
+        callback({ ok: false, message: GENERIC_ACK_ERROR_MESSAGE })
+      })
+    })
+
+    socket.on(SESSION_EVENTS.rename, (payload: unknown, callback: (ack: RenameAck) => void) => {
+      handleRename(socket, payload, callback).catch((error: unknown) => {
         console.error(error)
         callback({ ok: false, message: GENERIC_ACK_ERROR_MESSAGE })
       })
@@ -263,6 +272,31 @@ export function registerSessionSocket(io: Server, deps: SessionSocketDeps): void
     await prisma.membership.update({ where: { id: authResult.membership.id }, data: { alias } })
     await broadcastParticipants(io, presence, prisma, sessionId)
     callback({ ok: true, alias })
+  }
+
+  /**
+   * `session:rename` (design.md D2, Requirement "Spielsitzung umbenennen"): nur der
+   * Spielleiter, kein Zustandsfilter - Umbenennen ist in jedem Zustand erlaubt. Der Broadcast
+   * erreicht den ganzen Raum, den Absender eingeschlossen (der angezeigte Name folgt dem
+   * Broadcast, nicht dem Acknowledgement, constitution.md §9.1).
+   */
+  async function handleRename(socket: Socket, payload: unknown, callback: (ack: RenameAck) => void): Promise<void> {
+    const parsed = RenameInputSchema.safeParse(payload)
+    if (!parsed.success) {
+      callback({ ok: false, message: INVALID_PAYLOAD_MESSAGE })
+      return
+    }
+    const { sessionId, name } = parsed.data
+
+    const authResult = await authorizeAction({ prisma, clock }, socket, sessionId, { role: 'spielleiter' })
+    if (!authResult.ok) {
+      callback({ ok: false, message: authResult.message })
+      return
+    }
+
+    await prisma.gameSession.update({ where: { id: sessionId }, data: { name } })
+    io.to(roomName(sessionId)).emit(SESSION_EVENTS.renamed, { sessionId, name })
+    callback({ ok: true, name })
   }
 
   /**

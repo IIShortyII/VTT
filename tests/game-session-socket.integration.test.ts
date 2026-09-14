@@ -983,3 +983,142 @@ test('Serverstart normalisiert gestartete Spielsitzungen', async () => {
   expect(await statusInDb(gestartet.id)).toBe('pausiert')
   expect(await statusInDb(geoeffnet.id)).toBe('geoeffnet')
 })
+
+// --- Spielsitzung umbenennen (session:rename, #93) ------------------------------------------
+// Ereignis nach dem Muster des Alias (design.md D2/D10): der Spielleiter sendet
+// `session:rename` `{ sessionId, name }`, erhaelt `{ ok, name }` und alle im Raum — der
+// Absender eingeschlossen — ein `session:renamed`. Der Name wird getrimmt und mit demselben
+// Schema wie beim Erstellen geprueft (1-60 Zeichen). Vor der Implementierung kennt der Server
+// das Ereignis nicht: `emitAck`/`once` laufen in den Timeout (zulaessiger Rot-Grund, §3.1 —
+// wie bei den Alias-Szenarien), kein Setup-/Compile-Fehler.
+
+function rename(socket: Socket, payload: unknown): Promise<Record<string, unknown>> {
+  return emitAck(socket, 'session:rename', payload)
+}
+
+function nameInDb(sessionId: string): Promise<string> {
+  return db()
+    .gameSession.findUnique({ where: { id: sessionId } })
+    .then((row) => must(row, 'die Spielsitzungszeile').name)
+}
+
+async function sessionsOf(app: App, sid: string): Promise<Array<Record<string, unknown>>> {
+  const res = (await app.inject({ method: 'GET', url: '/api/sessions', cookies: { sid } })) as unknown as InjectRes
+  if (res.statusCode !== 200) throw new Error(`GET /api/sessions fehlgeschlagen (${res.statusCode}): ${res.body}`)
+  const list = JSON.parse(res.body)
+  if (!Array.isArray(list)) throw new Error('Erwartet: Array aus GET /api/sessions')
+  return list as Array<Record<string, unknown>>
+}
+
+test('Spielleiter benennt die Spielsitzung um', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sp = await registerUser(app, 'sp@example.com', 'sam')
+  const gs = await createGameSession({ name: 'Freitagsrunde', code: 'ABC234', status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sp.userId, 'spieler')
+
+  const slSocket = client(sl.sid)
+  const spSocket = client(sp.sid)
+  await connect(slSocket)
+  await connect(spSocket)
+  await enter(slSocket, gs.id)
+  await enter(spSocket, gs.id)
+
+  // Beide im Raum warten auf `session:renamed` (Listener vor der Aktion, design.md D10).
+  const beimSpieler = once(spSocket, 'session:renamed')
+  const beimSpielleiter = once(slSocket, 'session:renamed')
+  const ack = await rename(slSocket, { sessionId: gs.id, name: '  Samstagsrunde  ' })
+
+  expect(ack.ok).toBe(true)
+  expect(ack.name).toBe('Samstagsrunde')
+  expect(await nameInDb(gs.id)).toBe('Samstagsrunde')
+
+  const spielerEreignis = await beimSpieler
+  const spielleiterEreignis = await beimSpielleiter
+  expect(rec(spielerEreignis, 'session:renamed beim Spieler').sessionId).toBe(gs.id)
+  expect(rec(spielerEreignis, 'session:renamed beim Spieler').name).toBe('Samstagsrunde')
+  expect(rec(spielleiterEreignis, 'session:renamed beim Spielleiter').name).toBe('Samstagsrunde')
+
+  const eintrag = must(
+    (await sessionsOf(app, sp.sid)).find((s) => s.id === gs.id),
+    'die Spielsitzung in GET /api/sessions des Spielers',
+  )
+  expect(eintrag.name).toBe('Samstagsrunde')
+})
+
+test('Ungültiger Name wird abgelehnt', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const gs = await createGameSession({ name: 'Freitagsrunde', code: 'ABC234', status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+
+  const slSocket = client(sl.sid)
+  await connect(slSocket)
+  await enter(slSocket, gs.id)
+
+  // "kein session:renamed": ein Fehl-Listener macht ein unerwartetes Ereignis sichtbar.
+  let renamedEmpfangen = false
+  slSocket.on('session:renamed', () => {
+    renamedEmpfangen = true
+  })
+
+  const faelle: unknown[] = [
+    { sessionId: gs.id, name: '   ' },
+    { sessionId: gs.id, name: 'a'.repeat(61) },
+    42,
+  ]
+  for (const payload of faelle) {
+    const ack = await rename(slSocket, payload)
+    expect(ack.ok).toBe(false)
+    expect(typeof ack.message).toBe('string')
+  }
+
+  expect(await nameInDb(gs.id)).toBe('Freitagsrunde')
+  expect(renamedEmpfangen).toBe(false)
+})
+
+test('Spieler darf nicht umbenennen', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sp = await registerUser(app, 'sp@example.com', 'sam')
+  const gs = await createGameSession({ name: 'Freitagsrunde', code: 'ABC234', status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sp.userId, 'spieler')
+
+  const slSocket = client(sl.sid)
+  const spSocket = client(sp.sid)
+  await connect(slSocket)
+  await connect(spSocket)
+  await enter(slSocket, gs.id)
+  await enter(spSocket, gs.id)
+
+  let renamedEmpfangen = false
+  slSocket.on('session:renamed', () => {
+    renamedEmpfangen = true
+  })
+
+  const ack = await rename(spSocket, { sessionId: gs.id, name: 'Samstagsrunde' })
+
+  expect(ack.ok).toBe(false)
+  expect(typeof ack.message).toBe('string')
+  expect(await nameInDb(gs.id)).toBe('Freitagsrunde')
+  expect(renamedEmpfangen).toBe(false)
+})
+
+test('Nicht-Mitglied kann nicht umbenennen', async () => {
+  const app = await startApp()
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const fremd = await registerUser(app, 'fremd@example.com', 'fremd')
+  const gs = await createGameSession({ name: 'Freitagsrunde', code: 'ABC234', status: 'geoeffnet' })
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+
+  const fremdSocket = client(fremd.sid)
+  await connect(fremdSocket)
+
+  const ack = await rename(fremdSocket, { sessionId: gs.id, name: 'Samstagsrunde' })
+
+  expect(ack.ok).toBe(false)
+  expect(typeof ack.message).toBe('string')
+  expect(await nameInDb(gs.id)).toBe('Freitagsrunde')
+})

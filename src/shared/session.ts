@@ -61,22 +61,39 @@ const SESSION_NAME_MIN_LENGTH = 1
 const SESSION_NAME_MAX_LENGTH = 60
 
 /**
+ * Name einer Spielsitzung (design.md D1): getrimmt, dann 1-60 Zeichen - herausgezogen aus
+ * `CreateSessionInputSchema`, damit `session:rename` (Requirement "Spielsitzung umbenennen")
+ * dieselbe Regel benutzt (dieselben Meldungen), nicht eine zweite.
+ */
+export const SessionNameSchema = z
+  .string()
+  .transform((value) => value.trim())
+  .pipe(
+    z
+      .string()
+      .min(SESSION_NAME_MIN_LENGTH, 'Der Name muss mindestens 1 Zeichen lang sein.')
+      .max(SESSION_NAME_MAX_LENGTH, `Der Name darf höchstens ${SESSION_NAME_MAX_LENGTH} Zeichen lang sein.`),
+  )
+
+/**
  * `POST /api/sessions` (Requirement "Spielsitzung erstellen"): Name wird vor der
  * Laengenpruefung getrimmt - Client und Server sehen denselben Wert (`transform`, wie beim
  * Sitzungscode).
  */
 export const CreateSessionInputSchema = z.object({
-  name: z
-    .string()
-    .transform((value) => value.trim())
-    .pipe(
-      z
-        .string()
-        .min(SESSION_NAME_MIN_LENGTH, 'Der Name muss mindestens 1 Zeichen lang sein.')
-        .max(SESSION_NAME_MAX_LENGTH, `Der Name darf höchstens ${SESSION_NAME_MAX_LENGTH} Zeichen lang sein.`),
-    ),
+  name: SessionNameSchema,
 })
 export type CreateSessionInput = z.infer<typeof CreateSessionInputSchema>
+
+/**
+ * Payload von `session:rename` (Client -> Server, design.md D1, Requirement "Spielsitzung
+ * umbenennen"): dasselbe Namensschema wie beim Erstellen, aus demselben Schema des Vertrags.
+ */
+export const RenameInputSchema = z.object({
+  sessionId: z.string(),
+  name: SessionNameSchema,
+})
+export type RenameInput = z.infer<typeof RenameInputSchema>
 
 /**
  * `POST /api/sessions/join` (Requirement "Beitritt per Sitzungscode"): Normalisierung
@@ -196,16 +213,25 @@ export type TransitionAck = { ok: true; status: GameSessionStatus } | { ok: fals
  * in `ParticipantSchema`. */
 export type AliasAck = { ok: true; alias: string | null } | { ok: false; message: string }
 
+/** Acknowledgement von `session:rename` (design.md D1, Requirement "Spielsitzung
+ * umbenennen"): `name` ist der gespeicherte, getrimmte Wert - der angezeigte Name folgt aber
+ * dem Broadcast `session:renamed`, nicht diesem Acknowledgement (constitution.md §9.1). */
+export type RenameAck = { ok: true; name: string } | { ok: false; message: string }
+
 /** Ereignisnamen auf der Leitung - eine Quelle fuer Client und Server (spec.md
- * "Drahtformat"). */
+ * "Drahtformat"). `rename`/`renamed` (design.md D1, Requirement "Spielsitzung umbenennen"):
+ * `session:rename` ist die Absicht des Spielleiters mit Acknowledgement, `session:renamed`
+ * der Broadcast an den Raum (den Absender eingeschlossen). */
 export const SESSION_EVENTS = {
   enter: 'session:enter',
   transition: 'session:transition',
   alias: 'session:alias',
+  rename: 'session:rename',
   participants: 'session:participants',
   status: 'session:status',
   replaced: 'session:replaced',
   ended: 'session:ended',
+  renamed: 'session:renamed',
 } as const
 
 export interface ParticipantsEvent {
@@ -224,4 +250,11 @@ export interface ReplacedEvent {
 
 export interface EndedEvent {
   sessionId: string
+}
+
+/** Payload von `session:renamed` (Server -> Client, Requirement "Spielsitzung umbenennen"):
+ * der Raum erfaehrt den neuen Namen, den Absender eingeschlossen. */
+export interface RenamedEvent {
+  sessionId: string
+  name: string
 }

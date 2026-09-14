@@ -173,6 +173,7 @@ export const de = {
   'fog.saveArea': 'Bereich speichern',
   'fog.selectionCount': '{count} Zellen markiert',
   'fog.areaRevealed': '{name} aufgedeckt',
+  'fog.clearSelection': 'Auswahl leeren',
 
   'annotation.legend': 'Messen & Zeichnen',
   'annotation.toolbar': 'Anmerkungswerkzeug',

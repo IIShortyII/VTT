@@ -148,6 +148,7 @@ export const en: Record<TextKey, string> = {
   'fog.saveArea': 'Save area',
   'fog.selectionCount': '{count} cells marked',
   'fog.areaRevealed': '{name} revealed',
+  'fog.clearSelection': 'Clear selection',
 
   'annotation.legend': 'Measure & Draw',
   'annotation.toolbar': 'Annotation tool',

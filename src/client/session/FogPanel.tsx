@@ -104,7 +104,7 @@ export function FogPanel({
 
       <p role="status">{t('fog.selectionCount', { count: selectionCount })}</p>
       <button type="button" onClick={onClearSelection}>
-        Auswahl leeren
+        {t('fog.clearSelection')}
       </button>
 
       {(fog.areas ?? []).length === 0 ? (

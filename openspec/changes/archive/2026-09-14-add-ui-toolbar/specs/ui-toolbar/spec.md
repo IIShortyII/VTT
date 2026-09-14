@@ -1,3 +1,14 @@
+## Purpose
+
+Wiederverwendbare Bausteine der Werkzeugbedienung in der Raumansicht: eine barrierefreie
+Werkzeugleiste (`role="toolbar"` mit Icon-Buttons, `aria-pressed`, `title` mit Tastenkürzel,
+`aria-label`, ≥ 44 px generell), bereichsweite Tastenkürzel, Umschalt-Chips und Farbchips.
+`session-fog` und `session-annotation` legen fest, **welche** Werkzeuge und Modifikatoren sie
+zeigen; diese Capability legt fest, **wie** sie aussehen und sich bedienen lassen (Muster
+`ui-menu`, `ui-form`, `session-tabs`→`ui/tabs.tsx`). Die Bausteine halten nur die lokale
+Werkzeug- und Modifikatorwahl, nie verdeckten oder serverautoritativen Zustand
+(`constitution.md` §9).
+
 ## ADDED Requirements
 
 ### Requirement: Werkzeugleiste

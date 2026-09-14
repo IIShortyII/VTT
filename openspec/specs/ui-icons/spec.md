@@ -74,12 +74,13 @@ sein.
 
 - **GIVEN** die Registry
 - **WHEN** `ICON_NAMES` und die Schlüssel von `ICON_REGISTRY` gelesen werden
-- **THEN** ist `ICON_NAMES` genau die Liste der 56 Registry-Namen in der genannten
-  Reihenfolge (Oberfläche: `add`, `back`, `ban`, `check`, `chevronDown`, `close`, `copy`,
-  `delete`, `draw`, `edit`, `end`, `fog`, `help`, `hide`, `info`, `library`, `locate`, `lock`,
-  `logout`, `map`, `measure`, `more`, `pause`, `players`, `reveal`, `settings`, `start`,
-  `token`, `upload`, `user`, `warning`; danach die zehn Namen des Symbolkatalogs und die
-  fünfzehn des Zustandskatalogs unverändert), und `ICON_REGISTRY` hat genau diese Schlüssel
+- **THEN** ist `ICON_NAMES` genau die Liste der 60 Registry-Namen in der genannten
+  Reihenfolge (Oberfläche: `add`, `angle`, `area`, `back`, `ban`, `check`, `chevronDown`,
+  `circle`, `close`, `copy`, `delete`, `draw`, `edit`, `end`, `fog`, `help`, `hide`, `info`,
+  `library`, `locate`, `lock`, `logout`, `map`, `measure`, `more`, `move`, `pause`, `players`,
+  `reveal`, `settings`, `start`, `token`, `upload`, `user`, `warning`; danach die zehn Namen
+  des Symbolkatalogs und die fünfzehn des Zustandskatalogs unverändert), und `ICON_REGISTRY`
+  hat genau diese Schlüssel
 
 
 ### Requirement: Zugänglichkeit der Icons

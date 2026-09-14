@@ -51,7 +51,8 @@ entscheidet der Server pro Aktion (§9.3).
 ### Requirement: Aufbau der Session-Bar
 
 Die Raumansicht SHALL die Session-Bar als erstes Element rendern, sobald das
-Acknowledgement von `session:enter` vorliegt. Für den Spielleiter SHALL sie Identität mit
+Acknowledgement von `session:enter` vorliegt — vor der Reiterliste `Bereiche`
+(`session-tabs`). Für den Spielleiter SHALL sie Identität mit
 `Umbenennen`, Sitzungscode-Gruppe, Zustandsgruppe mit Steuerung und Verwaltungsmenü
 enthalten; für einen Spieler Identität ohne `Umbenennen`, Zustandsgruppe ohne Steuerung und
 Verwaltungsmenü — die Sitzungscode-Gruppe MUST NOT für ihn gerendert werden (der Server
@@ -72,7 +73,7 @@ per Ellipsis schrumpft, wird im App-Test abgenommen (`constitution.md` §3.4).
   `Sitzungscode kopieren`, die Zustandspille `Geöffnet`, die Gruppe `Steuerung` mit genau
   vier Schaltflächen `Öffnen`, `Starten`, `Pausieren`, `Beenden` in dieser Reihenfolge und
   die Menü-Schaltfläche `Sitzungsverwaltung` (`aria-haspopup="menu"`); die Gruppe `Sitzung`
-  liegt im Dokument vor der Teilnehmerliste
+  liegt im Dokument vor der Reiterliste `Bereiche`
 
 #### Scenario: Bar des Spielers ohne Code und Steuerung
 

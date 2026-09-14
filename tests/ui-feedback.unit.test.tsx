@@ -203,6 +203,15 @@ async function betreten(): Promise<void> {
   })
 }
 
+// MODIFIED (#94): Aktiviert einen Bereichs-Reiter der Raumansicht (session-tabs,
+// Testaufbau-Konvention). Inhalte ausserhalb des Reiters `Karte` liegen in versteckten
+// Reiterpanels und werden erst nach dem Klick von den Standardabfragen gefunden.
+async function aktiviereReiter(name: string): Promise<void> {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('tab', { name }))
+  })
+}
+
 beforeEach(() => {
   jest.clearAllMocks()
   for (const key of Object.keys(socketMock.__handlers)) delete socketMock.__handlers[key]
@@ -231,6 +240,8 @@ test('Angelegtes Token wird gemeldet', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'Goblin' } })
   await act(async () => {
@@ -253,6 +264,8 @@ test('Abgelehntes Token zeigt keinen Toast', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'Goblin' } })
   await act(async () => {
@@ -279,6 +292,8 @@ test('Eingehängte Karte wird gemeldet', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Karten & Nebel` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Karten & Nebel')
 
   const auswahl = (await screen.findByLabelText('Karte aus der Bibliothek')) as HTMLSelectElement
   await act(async () => {
@@ -363,6 +378,8 @@ test('Toast-Text folgt der aktiven Sprache', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   await act(async () => {
     setLocale('en')

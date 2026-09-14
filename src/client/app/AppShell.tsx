@@ -17,6 +17,10 @@ import { ActionMenuButton } from '../ui/menu.js'
 // ui-menu (#92, design.md D8): das Konto ist jetzt eine Menü-Schaltfläche (`ActionMenuButton`,
 // Variante `text`) mit dem Nutzernamen als Namen statt Nutzername-Text plus `Abmelden`-Knopf;
 // `Passwort ändern` öffnet das Modal aus `user-auth` über die neue Prop `onChangePassword`.
+// session-tabs (#94, design.md D6): die neue Prop `wide` (Standard `false`) haengt in der
+// Raumansicht die Klasse `app-shell--wide` an - sie hebt die Breitenbegrenzung der
+// Inhaltsspalte auf (`session-tabs`, "Stylesheet der Bereiche"), damit die Kartenbuehne den
+// vollen Desktop-Monitor nutzt. Jede andere Ansicht laesst die Prop weg (`App.tsx`).
 
 export interface AppShellProps {
   canGoBack: boolean
@@ -26,10 +30,11 @@ export interface AppShellProps {
   onChangePassword: () => void
   hinweis: string | null
   build: BuildInfo
+  wide?: boolean
   children: ReactNode
 }
 
-export function AppShell({ canGoBack, onBack, account, onLogout, onChangePassword, hinweis, build, children }: AppShellProps) {
+export function AppShell({ canGoBack, onBack, account, onLogout, onChangePassword, hinweis, build, wide = false, children }: AppShellProps) {
   const t = useT()
   return (
     <>
@@ -64,7 +69,7 @@ export function AppShell({ canGoBack, onBack, account, onLogout, onChangePasswor
           <LocaleSwitch />
         </div>
       </header>
-      <main className="app-shell">
+      <main className={wide ? 'app-shell app-shell--wide' : 'app-shell'}>
         {hinweis !== null && (
           <p role="alert" className="app-shell-hinweis">
             {hinweis}

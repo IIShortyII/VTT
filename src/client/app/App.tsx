@@ -42,6 +42,9 @@ import { Hero } from './Hero.js'
 // es nach einem Erfolg.
 // session-bar (#93, design.md D6): `SessionRoom` bekommt `onOpenLibrary` - denselben Setter
 // wie `onOpenLibrary` der Sitzungsliste - fuer den Menueeintrag `Kartenbibliothek` der Bar.
+// session-tabs (#94, design.md D6): `AppShell` bekommt `wide={sessionView.view === 'raum'}` im
+// angemeldeten Zweig - die Raumansicht sprengt die Inhaltsspalte (`session-tabs`, "Stylesheet
+// der Bereiche"); jede andere Ansicht (auch anonym) laesst die Prop weg.
 type AuthState = { status: 'unbekannt' } | { status: 'anonym' } | { status: 'angemeldet'; user: UserOutput }
 
 type AuthView = 'login' | 'register'
@@ -139,6 +142,9 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
   const canGoBack = state.status === 'angemeldet' && sessionView.view !== 'liste'
   const onBack = () => setSessionView({ view: 'liste' })
   const account = state.status === 'angemeldet' ? { username: state.user.username } : null
+  // session-tabs (#94, design.md D6): nur die Raumansicht eines angemeldeten Nutzers sprengt
+  // die Inhaltsspalte - anonym oder in Liste/Bibliothek bleibt die Shell bei 55 rem.
+  const wide = state.status === 'angemeldet' && sessionView.view === 'raum'
 
   let content
   if (state.status === 'unbekannt') {
@@ -199,6 +205,7 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
           onChangePassword={() => setPasswordOpen(true)}
           hinweis={hinweis}
           build={build}
+          wide={wide}
         >
           {content}
           {passwordOpen && (

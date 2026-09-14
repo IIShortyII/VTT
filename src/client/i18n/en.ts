@@ -95,6 +95,15 @@ export const en: Record<TextKey, string> = {
   'bar.transport': 'Controls',
   'bar.settings': 'Session settings',
 
+  'tabs.label': 'Areas',
+  'tabs.map': 'Map',
+  'tabs.tokens': 'Tokens',
+  'tabs.mapsFog': 'Maps & Fog',
+  'tabs.participants': 'Participants',
+
+  'setup.title': 'Library & setup',
+  'setup.openLibrary': 'Open map library',
+
   'toast.codeCopied': 'Session code copied',
   'toast.tokenCreated': 'Token created',
   'toast.mapMounted': 'Map mounted',

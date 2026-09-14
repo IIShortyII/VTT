@@ -35,6 +35,7 @@ import {
   type TokenStatsPatch,
 } from '../../shared/token.js'
 import type { AnnotationOptions, FogLayer } from '../map/canvas.js'
+import type { TextKey } from '../i18n/de.js'
 import { useT } from '../i18n/locale.js'
 import { MapCanvas } from '../map/MapCanvas.js'
 import { AnnotationPanel } from './AnnotationPanel.js'
@@ -52,19 +53,21 @@ import { Field, SubmitButton } from '../ui/form.js'
 import { Modal } from '../ui/Modal.js'
 import { ActionMenu, useFloating, type Anchor, type MenuEntry } from '../ui/menu.js'
 import { MapOverlay, StatusBanner } from '../ui/status.js'
+import { TabList, TabPanel } from '../ui/tabs.js'
 import { useToasts } from '../ui/toast.js'
 import { TokenPanel } from './TokenPanel.js'
 
 // Raumansicht (design.md D10, Requirement "Sitzungsoberflaeche"; session-map #50, Requirement
-// "Kartenansicht im Raum"; session-token #14, Requirement "Tokenansicht im Raum";
-// add-token-assignment #15, Requirement "Tokenansicht im Raum"/"Token bewegen"; add-token-stats
-// #61, Requirement "Tokenansicht im Raum"; add-token-sharing #62, Requirement "Zielgruppe
-// eines Tokenwerts setzen"/"Tokenansicht im Raum"; add-fog-of-war #16, Requirement
-// "Fog-Ansicht im Raum"; add-measure-draw #11, Requirement "Anmerkungsansicht im Raum";
-// ui-status #91, Requirement "Verbindungs- und Sitzungszustand im Raum"). Zustand und
-// Teilnehmer kommen ausschliesslich aus dem Acknowledgement von `enter` und den nachfolgenden
-// Server-Ereignissen - der angezeigte Zustand folgt dem Server, nie dem zuletzt geklickten
-// Uebergang oder der zuletzt aktivierten Karte (constitution.md §9.1).
+// "Kartenansicht im Raum"; session-token #14, Requirement "Tokenansicht im Raum"; add-token-
+// assignment #15, Requirement "Tokenansicht im Raum"/"Token bewegen"; add-token-stats #61,
+// Requirement "Tokenansicht im Raum"; add-token-sharing #62, Requirement "Zielgruppe eines
+// Tokenwerts setzen"/"Tokenansicht im Raum"; add-fog-of-war #16, Requirement "Fog-Ansicht im
+// Raum"; add-measure-draw #11, Requirement "Anmerkungsansicht im Raum"; ui-status #91,
+// Requirement "Verbindungs- und Sitzungszustand im Raum"; session-tabs #94, Requirement
+// "Bereiche der Raumansicht"). Zustand und Teilnehmer kommen ausschliesslich aus dem
+// Acknowledgement von `enter` und den nachfolgenden Server-Ereignissen - der angezeigte
+// Zustand folgt dem Server, nie dem zuletzt geklickten Uebergang oder der zuletzt aktivierten
+// Karte (constitution.md §9.1).
 //
 // reenter-room-after-reconnect (#46, design.md D3): eine von der Fassade gemeldete
 // Wiederverbindung betritt denselben Raum ueber dieselbe Fassade erneut - ausser die
@@ -104,6 +107,16 @@ import { TokenPanel } from './TokenPanel.js'
 // einen Ref. `Beenden` fragt vorher ueber `useConfirm` nach; der angezeigte Name folgt
 // ausschliesslich `session:renamed`, nie der Eingabe oder dem Acknowledgement von
 // `session:rename` (constitution.md §9.1).
+//
+// session-tabs (#94, design.md D2): unter der Bar und den drei Raum-Meldungen liegt jetzt die
+// Reiterliste `Bereiche` - `activeTab` ist reiner Komponentenzustand (Standard `karte`), kein
+// Effekt und kein `setState` des Raumzustands beruehrt ihn; er bleibt beim Wiederverbinden
+// erhalten, weil die Komponente gemountet bleibt. Alle Reiterpanels sind immer gerendert,
+// inaktive tragen `hidden` (kein Canvas-Neuaufbau, kein Fetch bei einem Reiterwechsel). Die
+// Panels selbst (Kartenhinweis/Buehne/`AnnotationPanel`/`FogPanel`, `TokenPanel`/
+// `PlayerTokenList`, `MapPanel`, Teilnehmerliste) sind unveraendert - nur ihre Lage im
+// Dokument hat sich geaendert. `MAP_CANVAS_HEIGHT` entfaellt, die Buehnenhoehe kommt aus dem
+// Stylesheet (`.map-stage`, `session-tabs` "Stylesheet der Bereiche").
 
 export interface SessionRoomProps {
   sessionId: string
@@ -115,12 +128,30 @@ export interface SessionRoomProps {
 
 const ENTER_FAILURE_MESSAGE = 'Der Raum konnte nicht betreten werden. Bitte versuche es erneut.'
 const NO_ACTIVE_MAP_MESSAGE = 'Keine Karte aktiv'
-const MAP_CANVAS_HEIGHT = 480
 // ui-status (#91, design.md D4): Sitzungsende leitet 4000 Millisekunden nach dem Dialog zur
 // Liste weiter - Schaltflaeche, Schliessen (Esc/`Schließen`) und der Ablauf des Timers fuehren
 // alle zu `onEnded`, genau einmal (der Timer wird beim Verlassen geraeumt).
 const ENDED_REDIRECT_MS = 4000
 const NO_OWNER_VALUE = ''
+
+// session-tabs (#94, design.md D2): die vier Bereiche der Raumansicht - `roles` entscheidet,
+// wer den Reiter ueberhaupt sieht (`Karten & Nebel` nur der Spielleiter). Eine Tabelle statt
+// verstreuter Bedingungen, wie `SESSION_STATUS_PRESENTATION`/`ROLE_LABELS`
+// (`session-status.ts`).
+type RoomTab = 'karte' | 'tokens' | 'karten' | 'teilnehmer'
+
+interface RoomTabConfig {
+  id: RoomTab
+  labelKey: TextKey
+  roles: readonly MemberRole[]
+}
+
+const ROOM_TABS: readonly RoomTabConfig[] = [
+  { id: 'karte', labelKey: 'tabs.map', roles: ['spielleiter', 'spieler'] },
+  { id: 'tokens', labelKey: 'tabs.tokens', roles: ['spielleiter', 'spieler'] },
+  { id: 'karten', labelKey: 'tabs.mapsFog', roles: ['spielleiter'] },
+  { id: 'teilnehmer', labelKey: 'tabs.participants', roles: ['spielleiter', 'spieler'] },
+]
 
 type RoomState =
   | { status: 'lädt' }
@@ -258,6 +289,10 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
   // Server abgelehnten Uebergangs; `renameOpen` steuert das Umbenennen-Modal.
   const [transitionError, setTransitionError] = useState<string | null>(null)
   const [renameOpen, setRenameOpen] = useState(false)
+  // session-tabs (#94, design.md D2): reiner Komponentenzustand - beim Betreten `karte`, kein
+  // Server-Ereignis und keine Pfeiltaste aendert die Auswahl (nur Klick oder Enter/Leertaste
+  // auf dem fokussierten Reiter, `ui/tabs.tsx`).
+  const [activeTab, setActiveTab] = useState<RoomTab>('karte')
   // add-fog-of-war (#16, design.md D7): lokale Ad-hoc-Auswahl fuer "Bereich markieren" und
   // die Fehlermeldung einer abgelehnten Fog-Aktion. add-measure-draw (#11, design.md D5):
   // `fogTool` wird zu `tool: CanvasTool` - EIN Werkzeugzustand fuer Fog- und
@@ -983,6 +1018,10 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
     const menuEntries = (token: Token): MenuEntry[] => tokenMenuEntries(token, state.role === 'spielleiter', t, handleTokenAction)
     const mapMenuToken = state.tokens.find((token) => token.id === mapMenuTokenId) ?? null
 
+    // session-tabs (#94, design.md D2): die Reiterliste dieser Rolle - `Karten & Nebel` nur
+    // fuer den Spielleiter (`ROOM_TABS`, gefiltert nach `state.role`).
+    const roomTabs = ROOM_TABS.filter((tab) => tab.roles.includes(state.role))
+
     content = (
       <>
         {/* session-bar (#93, design.md D6): erstes Element der Raumansicht, ersetzt `<h1>`,
@@ -999,62 +1038,11 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
           onOpenLibrary={() => onOpenLibraryRef.current()}
           onLeave={leave}
         />
-        <ul>
-          {state.participants.map((participant) => (
-            <li key={participant.userId}>
-              {/* Kein Rollen-Text pro Teilnehmer (Requirement "Sitzungsoberflaeche" nennt nur
-                  Alias-oder-Nutzername und Anwesenheitskennzeichen) - "spielleiter" als
-                  sichtbarer Text wuerde jeden Nutzernamen ueberdecken, der "leiter" als
-                  Teilstring enthaelt. */}
-              <span>{displayName(participant)}</span>
-              <span> – {participant.online ? 'anwesend' : 'abwesend'}</span>
-              {participant.userId === currentUserId && (
-                <form onSubmit={handleAliasSubmit}>
-                  <label htmlFor="alias-input">Alias</label>
-                  <input id="alias-input" value={aliasInput} onChange={(event) => setAliasInput(event.target.value)} />
-                  <button type="submit">Alias setzen</button>
-                </form>
-              )}
-            </li>
-          ))}
-        </ul>
-        {aliasError !== null && <p role="alert">{aliasError}</p>}
-
-        {/* session-map (#50, Requirement "Kartenansicht im Raum"): der Name folgt genau dem
-            Text "Aktive Karte: <Name>" bzw. "Keine Karte aktiv" (design.md D7). */}
-        {state.map !== null ? <p>{`Aktive Karte: ${state.map.name}`}</p> : <p>{NO_ACTIVE_MAP_MESSAGE}</p>}
-        {state.map !== null && (
-          // ui-status (#91, design.md D5): die Buehne ersetzt den bisherigen einfachen
-          // Container - das Overlay liegt als letztes Kind darueber (Groesse unveraendert).
-          <div className="map-stage" style={{ width: '100%', height: MAP_CANVAS_HEIGHT }}>
-            <MapCanvas
-              imageUrl={imageUrl}
-              grid={state.map.grid}
-              tokens={state.tokens}
-              onTokenMove={handleTokenMove}
-              canMoveToken={(token) => canMoveToken(token, { role: state.role, userId: currentUserId })}
-              onTokenContextMenu={handleTokenContextMenu}
-              fog={fogLayer}
-              tool={tool}
-              selection={fogSelection}
-              onCellsSelected={handleFogCellsSelected}
-              annotations={state.annotations}
-              annotationOptions={annotationOptions}
-              onAnnotationDrawn={handleAnnotationDrawn}
-            />
-            {overlay !== undefined && state.role === 'spieler' && (
-              <MapOverlay title={t(overlay.title)} subline={t(overlay.subline)} icon={overlayIcon} />
-            )}
-          </div>
-        )}
-
-        {/* ui-menu (#92, design.md D5, "Karte"): dasselbe Token-Menue wie in der Zeile, jetzt
-            am Rechtsklick-Punkt auf der Karte - gerendert, solange das Token noch existiert. */}
-        {mapMenuToken && <ActionMenu floating={mapMenu} label={t('menu.rowActions', { name: mapMenuToken.name })} entries={menuEntries(mapMenuToken)} />}
 
         {/* add-token-assignment (#15, design.md D6): fuer jede Rolle, damit auch ein Spieler
             eine abgelehnte eigene Bewegung sieht. add-token-sharing (#62): auch eine
-            abgelehnte Freigabe. */}
+            abgelehnte Freigabe. session-tabs (#94, design.md D2): jetzt vor der Reiterliste,
+            damit die Meldung in jedem Reiter sichtbar bleibt. */}
         {tokenError !== null && <p role="alert">{tokenError}</p>}
 
         {/* add-fog-of-war (#16, design.md D7, D8): fuer jede Rolle, wie `tokenError`. */}
@@ -1063,68 +1051,149 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
         {/* add-measure-draw (#11, design.md D6): fuer jede Rolle, wie `tokenError`/`fogError`. */}
         {annotationError !== null && <p role="alert">{annotationError}</p>}
 
+        {/* session-tabs (#94, design.md D2): die Reiterliste `Bereiche` - "Karte" ist beim
+            Betreten aktiv, ein Reiterwechsel aendert ausschliesslich `activeTab`. */}
+        <TabList
+          label={t('tabs.label')}
+          tabs={roomTabs.map((tab) => ({ id: tab.id, label: t(tab.labelKey) }))}
+          active={activeTab}
+          onSelect={setActiveTab}
+          idPrefix="room"
+        />
+
+        <TabPanel id="karte" active={activeTab} idPrefix="room">
+          {/* session-map (#50, Requirement "Kartenansicht im Raum"): der Name folgt genau dem
+              Text "Aktive Karte: <Name>" bzw. "Keine Karte aktiv" (design.md D7). */}
+          {state.map !== null ? (
+            <p className="map-caption">{`Aktive Karte: ${state.map.name}`}</p>
+          ) : (
+            <p className="map-caption">{NO_ACTIVE_MAP_MESSAGE}</p>
+          )}
+          {state.map !== null && (
+            // ui-status (#91, design.md D5): die Buehne ersetzt den bisherigen einfachen
+            // Container - das Overlay liegt als letztes Kind darueber. session-tabs (#94,
+            // design.md D2): kein `style`-Attribut mehr - die Groesse kommt aus dem
+            // Stylesheet (`.map-stage`).
+            <div className="map-stage">
+              <MapCanvas
+                imageUrl={imageUrl}
+                grid={state.map.grid}
+                tokens={state.tokens}
+                onTokenMove={handleTokenMove}
+                canMoveToken={(token) => canMoveToken(token, { role: state.role, userId: currentUserId })}
+                onTokenContextMenu={handleTokenContextMenu}
+                fog={fogLayer}
+                tool={tool}
+                selection={fogSelection}
+                onCellsSelected={handleFogCellsSelected}
+                annotations={state.annotations}
+                annotationOptions={annotationOptions}
+                onAnnotationDrawn={handleAnnotationDrawn}
+              />
+              {overlay !== undefined && state.role === 'spieler' && (
+                <MapOverlay title={t(overlay.title)} subline={t(overlay.subline)} icon={overlayIcon} />
+              )}
+            </div>
+          )}
+
+          {/* add-measure-draw (#11, design.md D6): jede Rolle, nur bei aktiver Karte. */}
+          {state.map !== null && (
+            <AnnotationPanel
+              annotations={state.annotations}
+              grid={state.map.grid}
+              participants={state.participants}
+              viewer={{ role: state.role, userId: currentUserId }}
+              tool={tool}
+              mode={annotationMode}
+              visibility={annotationVisibility}
+              color={annotationColor}
+              unit={distanceUnit}
+              onToolChange={setTool}
+              onModeChange={setAnnotationMode}
+              onVisibilityChange={setAnnotationVisibility}
+              onColorChange={setAnnotationColor}
+              onUnitChange={handleUnitChange}
+              onDelete={handleAnnotationDelete}
+            />
+          )}
+
+          {/* add-fog-of-war (#16, design.md D7): nur fuer den Spielleiter und bei vorhandenem
+              Fog (also bei aktiver Karte) - ein Spieler bekommt weder die Verwaltung noch
+              deren Abfragen (constitution.md §9.2). */}
+          {state.role === 'spielleiter' && state.fog !== null && (
+            <FogPanel
+              fog={state.fog}
+              tool={tool}
+              selectionCount={fogSelection.length}
+              onToolChange={setTool}
+              onRevealAll={() => sendFogSet(true, { kind: 'alle' })}
+              onHideAll={() => sendFogSet(false, { kind: 'alle' })}
+              onAreaCreate={handleFogAreaCreate}
+              onClearSelection={handleFogClearSelection}
+              onAreaToggle={(areaId, revealed) => sendFogSet(revealed, { kind: 'bereich', areaId })}
+              onAreaDelete={handleFogAreaDelete}
+            />
+          )}
+        </TabPanel>
+
+        <TabPanel id="tokens" active={activeTab} idPrefix="room">
+          {state.role === 'spielleiter' ? (
+            <TokenPanel
+              sessionId={sessionId}
+              tokens={state.tokens}
+              onCreate={handleTokenCreate}
+              onSetStats={handleTokenStats}
+              onSetConditions={handleTokenConditions}
+              menuEntries={menuEntries}
+            />
+          ) : (
+            // add-token-stats (#61, design.md D10, Requirement "Tokenansicht im Raum"): ein
+            // Spieler sieht statt der Verwaltung die eigene Werteliste.
+            <PlayerTokenList tokens={state.tokens} menuEntries={menuEntries} />
+          )}
+        </TabPanel>
+
         {state.role === 'spielleiter' && (
-          <MapPanel
-            sessionId={sessionId}
-            activeInstanceId={state.map?.instanceId ?? null}
-            onActivate={handleActivateMap}
-            activateError={activateError}
-          />
+          <TabPanel id="karten" active={activeTab} idPrefix="room">
+            <MapPanel
+              sessionId={sessionId}
+              activeInstanceId={state.map?.instanceId ?? null}
+              onActivate={handleActivateMap}
+              activateError={activateError}
+              onOpenLibrary={() => onOpenLibraryRef.current()}
+            />
+          </TabPanel>
         )}
 
-        {/* add-fog-of-war (#16, design.md D7): nur fuer den Spielleiter und bei vorhandenem Fog
-            (also bei aktiver Karte) - ein Spieler bekommt weder die Verwaltung noch deren
-            Abfragen (constitution.md §9.2). */}
-        {state.role === 'spielleiter' && state.fog !== null && (
-          <FogPanel
-            fog={state.fog}
-            tool={tool}
-            selectionCount={fogSelection.length}
-            onToolChange={setTool}
-            onRevealAll={() => sendFogSet(true, { kind: 'alle' })}
-            onHideAll={() => sendFogSet(false, { kind: 'alle' })}
-            onAreaCreate={handleFogAreaCreate}
-            onClearSelection={handleFogClearSelection}
-            onAreaToggle={(areaId, revealed) => sendFogSet(revealed, { kind: 'bereich', areaId })}
-            onAreaDelete={handleFogAreaDelete}
-          />
-        )}
+        <TabPanel id="teilnehmer" active={activeTab} idPrefix="room">
+          <div className="panel panel--wide">
+            <h2>{t('tabs.participants')}</h2>
+            <ul>
+              {state.participants.map((participant) => (
+                <li key={participant.userId}>
+                  {/* Kein Rollen-Text pro Teilnehmer (Requirement "Sitzungsoberflaeche" nennt
+                      nur Alias-oder-Nutzername und Anwesenheitskennzeichen) - "spielleiter"
+                      als sichtbarer Text wuerde jeden Nutzernamen ueberdecken, der "leiter"
+                      als Teilstring enthaelt. */}
+                  <span>{displayName(participant)}</span>
+                  <span> – {participant.online ? 'anwesend' : 'abwesend'}</span>
+                  {participant.userId === currentUserId && (
+                    <form onSubmit={handleAliasSubmit}>
+                      <label htmlFor="alias-input">Alias</label>
+                      <input id="alias-input" value={aliasInput} onChange={(event) => setAliasInput(event.target.value)} />
+                      <button type="submit">Alias setzen</button>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {aliasError !== null && <p role="alert">{aliasError}</p>}
+          </div>
+        </TabPanel>
 
-        {/* add-measure-draw (#11, design.md D6): jede Rolle, nur bei aktiver Karte. */}
-        {state.map !== null && (
-          <AnnotationPanel
-            annotations={state.annotations}
-            grid={state.map.grid}
-            participants={state.participants}
-            viewer={{ role: state.role, userId: currentUserId }}
-            tool={tool}
-            mode={annotationMode}
-            visibility={annotationVisibility}
-            color={annotationColor}
-            unit={distanceUnit}
-            onToolChange={setTool}
-            onModeChange={setAnnotationMode}
-            onVisibilityChange={setAnnotationVisibility}
-            onColorChange={setAnnotationColor}
-            onUnitChange={handleUnitChange}
-            onDelete={handleAnnotationDelete}
-          />
-        )}
-
-        {state.role === 'spielleiter' && (
-          <TokenPanel
-            sessionId={sessionId}
-            tokens={state.tokens}
-            onCreate={handleTokenCreate}
-            onSetStats={handleTokenStats}
-            onSetConditions={handleTokenConditions}
-            menuEntries={menuEntries}
-          />
-        )}
-
-        {/* add-token-stats (#61, design.md D10, Requirement "Tokenansicht im Raum"): ein
-            Spieler sieht statt der Verwaltung die eigene Werteliste. */}
-        {state.role === 'spieler' && <PlayerTokenList tokens={state.tokens} menuEntries={menuEntries} />}
+        {/* ui-menu (#92, design.md D5, "Karte"): dasselbe Token-Menue wie in der Zeile, jetzt
+            am Rechtsklick-Punkt auf der Karte - gerendert, solange das Token noch existiert. */}
+        {mapMenuToken && <ActionMenu floating={mapMenu} label={t('menu.rowActions', { name: mapMenuToken.name })} entries={menuEntries(mapMenuToken)} />}
       </>
     )
   }

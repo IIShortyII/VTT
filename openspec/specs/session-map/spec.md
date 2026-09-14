@@ -304,6 +304,12 @@ Schaltfläche. Ein Wechsel der aktiven Karte SHALL die bestehende Kartenansicht 
 und Raster der neuen Karte umstellen; ein Wechsel auf `null` SHALL die Kartenansicht genau
 einmal freigeben.
 
+Kartenhinweis und Kartenansicht liegen im Reiter `Karte` der Raumansicht, die
+Kartenverwaltung im Reiter `Karten & Nebel` (`session-tabs`, „Bereiche der
+Raumansicht"). Szenarien dieses Requirements, die Elemente eines Reiters adressieren, setzen voraus,
+dass der Testaufbau diesen Reiter vorher per Klick aktiviert hat (`session-tabs`,
+„Testaufbau-Konvention"): die Kartenverwaltung liegt im Reiter `Karten & Nebel`. Der Reiter `Karte` ist beim Betreten aktiv.
+
 Dem Spielleiter SHALL die Raumansicht zusätzlich eine Kartenverwaltung anbieten: die
 eingehängten Karten mit je einem ⋮-Trigger `Aktionen für <Name>` (`ui-menu`), der — ebenso
 wie ein Rechtsklick auf die Zeile — das Menü `Aktionen für <Name>` mit den Einträgen
@@ -312,9 +318,10 @@ Schaltflächen dafür tragen (solange keine
 Karte eingehängt ist, statt der Liste den Leerzustand von `ui-status` mit dem Titel
 `Noch keine Karten eingehängt` und dem Hinweis `Hänge eine Karte aus deiner Bibliothek ein.`;
 solange die Instanzliste noch nicht geantwortet hat, weder Liste noch Leerzustand), eine
-Auswahl
-der eigenen Bibliothekskarten, die noch nicht eingehängt sind, mit einer Schaltfläche zum
-Einhängen, sowie eine Schaltfläche, die die aktive Karte zurücksetzt. Dafür SHALL sie die
+Auswahl der eigenen Bibliothekskarten, die noch nicht eingehängt sind, mit einer
+Schaltfläche zum Einhängen — beide im zugeklappten Cluster `Bibliothek & Einrichtung`
+(`session-tabs`, „Bibliothek und Einrichtung") —, sowie außerhalb des Clusters eine
+Schaltfläche, die die aktive Karte zurücksetzt. Dafür SHALL sie die
 Instanzliste und die eigene Kartenliste vom Server abfragen. Einem Spieler MUST NOT sie die
 Kartenverwaltung zeigen und MUST NOT für ihn Instanzliste oder Kartenliste abfragen
 (`constitution.md` §9.2). Eine Ablehnung des Servers SHALL als Meldung sichtbar sein.

@@ -9,6 +9,8 @@ import { EmptyState } from '../ui/status.js'
 // Requirement "Fog-Ansicht im Raum"). Reine React-Komponente ohne Pixi-Import - ein lokaler
 // Zustand nur fuer das Namensfeld (eine Absicht, kein Serverzustand), alles andere folgt den
 // Props. Nur `role === 'spielleiter'` und bei vorhandenem Fog gerendert (`SessionRoom.tsx`).
+// session-tabs (#94, design.md D4): das Wurzelelement traegt jetzt die Klasse `panel` (das
+// umgebende Reiterpanel `Karte` ist ein Raster, `.panel` spannt darin eine Spalte).
 
 export interface FogPanelProps {
   fog: FogState
@@ -52,7 +54,7 @@ export function FogPanel({
   }
 
   return (
-    <fieldset>
+    <fieldset className="panel">
       <legend>Fog of War</legend>
 
       {FOG_TOOLS.map((value) => (

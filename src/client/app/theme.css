@@ -862,6 +862,87 @@ main.app-shell {
   color: var(--red);
 }
 
+/* Bereiche (session-tabs, #94) */
+main.app-shell--wide {
+  max-width: none;
+}
+
+.tab-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tab {
+  min-height: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-2);
+  white-space: nowrap;
+}
+
+.tab:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--color-text);
+  background: transparent;
+}
+
+.tab[aria-selected="true"] {
+  color: var(--gold-text);
+  border-bottom-color: var(--gold-2);
+}
+
+.tab-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.tab-panel[hidden] {
+  display: none;
+}
+
+.panel--wide {
+  grid-column: 1 / -1;
+}
+
+.map-caption {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.map-stage {
+  grid-column: 1 / -1;
+  height: calc(100dvh - 15rem);
+  min-height: 20rem;
+  overflow: hidden;
+}
+
+.setup-cluster {
+  margin-top: var(--space-2);
+}
+
+.setup-cluster > summary {
+  cursor: pointer;
+  font-size: var(--font-size-1);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--color-text-muted);
+}
+
+.setup-cluster[open] > summary {
+  margin-bottom: var(--space-2);
+}
+
 @media (prefers-reduced-motion: no-preference) {
   button,
   .chip {

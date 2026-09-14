@@ -44,6 +44,9 @@ import { TOKEN_ICON_LABELS } from './token-icons.js'
 // (`SessionRoom`, `token-menu.ts`) und hier nur ueber `menuEntries` durchgereicht. Ein
 // Rechtsklick auf die Zeile ausserhalb eines Formularfelds oeffnet dasselbe Menue
 // (`floating.onContextMenu`).
+//
+// session-tabs (#94, design.md D4): das Wurzelelement traegt jetzt die Klassen `panel` und
+// `panel--wide` (spannt im Raster des Reiterpanels `Tokens` ueber die volle Breite).
 
 export interface TokenPanelProps {
   sessionId: string
@@ -311,7 +314,7 @@ export function TokenPanel({ tokens, onCreate, onSetStats, onSetConditions, menu
   }
 
   return (
-    <div>
+    <div className="panel panel--wide">
       <h2>Tokens</h2>
 
       <form className="form-grid" onSubmit={handleSubmit}>

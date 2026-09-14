@@ -249,6 +249,15 @@ async function betreten(): Promise<void> {
   })
 }
 
+// MODIFIED (#94): Aktiviert einen Bereichs-Reiter der Raumansicht (session-tabs,
+// Testaufbau-Konvention). Inhalte ausserhalb des Reiters `Karte` liegen in versteckten
+// Reiterpanels und werden erst nach dem Klick von den Standardabfragen gefunden.
+async function aktiviereReiter(name: string): Promise<void> {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('tab', { name }))
+  })
+}
+
 beforeEach(() => {
   jest.clearAllMocks()
   for (const key of Object.keys(socketMock.__handlers)) delete socketMock.__handlers[key]
@@ -385,6 +394,8 @@ test('Spielleiter legt ein Token über das Formular an', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'Goblin' } })
   fireEvent.change(screen.getByLabelText('Farbe'), { target: { value: '#3366ff' } })
@@ -430,6 +441,8 @@ test('Spielleiter entfernt ein Token über die Liste', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   // MODIFIED (#92): Entfernen über das Menü `Aktionen für Goblin` mit Bestätigungsdialog.
   await act(async () => {
@@ -458,6 +471,8 @@ test('Spielleiter weist ein Token über die Liste zu', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   // MODIFIED (#92): Zuweisen über das Menü `Aktionen für Goblin` und das Modal `Goblin zuweisen`.
   await act(async () => {
@@ -493,6 +508,8 @@ test('Spielleiter nimmt eine Zuweisung über die Liste zurück', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   // MODIFIED (#92): Zuweisung über das Menü und das Modal `Goblin zuweisen` zurücknehmen.
   await act(async () => {
@@ -523,6 +540,8 @@ test('Abgelehnte Aktion zeigt die Meldung', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'Goblin' } })
   await act(async () => {
@@ -541,6 +560,8 @@ test('Anlegen bleibt gesperrt ohne Namen', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   const anlegen = (await screen.findByRole('button', { name: 'Anlegen' })) as HTMLButtonElement
   const form = must(anlegen.closest('form'), 'das Formular „Tokens"') as HTMLElement
@@ -563,6 +584,8 @@ test('Spielleiter setzt Werte über die Liste', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   fireEvent.change(await screen.findByRole('spinbutton', { name: 'Goblin HP' }), { target: { value: '23' } })
   fireEvent.change(screen.getByRole('spinbutton', { name: 'Goblin HP-Maximum' }), { target: { value: '40' } })
@@ -590,6 +613,8 @@ test('Wertefelder folgen dem Bestand', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   expect(((await screen.findByRole('spinbutton', { name: 'Goblin HP' })) as HTMLInputElement).value).toBe('23')
   expect((screen.getByRole('spinbutton', { name: 'Goblin HP-Maximum' }) as HTMLInputElement).value).toBe('40')
@@ -611,6 +636,8 @@ test('Schaden über die Liste', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   fireEvent.change(await screen.findByRole('spinbutton', { name: 'Goblin Änderung' }), { target: { value: '7' } })
   await act(async () => {
@@ -628,6 +655,8 @@ test('Heilung deckelt am Maximum', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   fireEvent.change(await screen.findByRole('spinbutton', { name: 'Goblin Änderung' }), { target: { value: '5' } })
   await act(async () => {
@@ -644,6 +673,8 @@ test('Schaden ohne Trefferpunkte sendet nichts', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   fireEvent.change(await screen.findByRole('spinbutton', { name: 'Goblin Änderung' }), { target: { value: '7' } })
   await act(async () => {
@@ -661,6 +692,8 @@ test('Spielleiter setzt eine Markierung über die Schnellwahl', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   const select = (await screen.findByRole('combobox', { name: 'Goblin Markierung wählen' })) as HTMLSelectElement
   expect(within(select).getByRole('option', { name: 'Liegend' })).toBeTruthy()
@@ -682,6 +715,8 @@ test('Spielleiter fügt eine freie Markierung hinzu', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   fireEvent.change(await screen.findByRole('textbox', { name: 'Goblin Markierung' }), { target: { value: 'Segen' } })
   await act(async () => {
@@ -701,6 +736,8 @@ test('Spielleiter entfernt eine Markierung', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   const markierungsListe = await screen.findByRole('list', { name: 'Goblin Markierungen' })
   const liegendEintrag = within(markierungsListe).getByText('Liegend').closest('li')
@@ -723,6 +760,8 @@ test('Spieler sieht die Werte seines Tokens', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   expect(await screen.findByRole('heading', { name: 'Tokenwerte' })).toBeTruthy()
   expect(screen.getByText('HP 23/40')).toBeTruthy()
@@ -740,6 +779,8 @@ test('Spieler sieht ohne Werte keine Werte', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   expect(await screen.findByRole('heading', { name: 'Tokenwerte' })).toBeTruthy()
   expect(screen.getByText('Ork')).toBeTruthy()
@@ -754,6 +795,8 @@ test('Spieler sieht keine Token-Verwaltung', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
   expect(canvasMock.createMapCanvas).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tokens: [FREMDER_ORK] }))
@@ -811,6 +854,8 @@ test('Spielleiter teilt einen Wert mit allen über die Liste', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   await oeffneFreigaben()
   await act(async () => {
@@ -829,6 +874,8 @@ test('Spielleiter teilt einen Wert mit einem Spieler über die Liste', async () 
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   await oeffneFreigaben()
   await act(async () => {
@@ -848,6 +895,8 @@ test('Weiterer Empfänger wird an die Liste angehängt', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   await oeffneFreigaben()
   await act(async () => {
@@ -866,6 +915,8 @@ test('Abwahl des letzten Empfängers sendet keine', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   await oeffneFreigaben()
   const box = screen.getByRole('checkbox', { name: 'Goblin RK für Gandalf' }) as HTMLInputElement
@@ -886,6 +937,8 @@ test('Abwahl von alle sendet keine', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   await oeffneFreigaben()
   const box = screen.getByRole('checkbox', { name: 'Goblin HP für alle' }) as HTMLInputElement
@@ -908,6 +961,8 @@ test('Freigabe-Schalter folgen dem Bestand', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   await oeffneFreigaben()
   expect(checkbox('Goblin HP für alle').checked).toBe(true)
@@ -931,6 +986,8 @@ test('Besitzer sieht Freigabe-Schalter nur am eigenen Token', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   // MODIFIED (#92): das Menü `Aktionen für Ork` zeigt `Freigeben…` gesperrt.
   await act(async () => {
@@ -969,6 +1026,8 @@ test('Besitzer teilt über die Liste', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   await oeffneFreigaben()
   await act(async () => {
@@ -987,6 +1046,8 @@ test('Abgelehnte Freigabe zeigt die Meldung', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   await oeffneFreigaben()
   await act(async () => {
@@ -1050,6 +1111,8 @@ test('Rechtsklick auf die Token-Zeile öffnet das Menü', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   const name = await screen.findByText('Goblin')
   const unterdrueckt = fireEvent.contextMenu(name, { clientX: 30, clientY: 40 })
@@ -1067,6 +1130,8 @@ test('Bearbeiten setzt den Fokus in das HP-Feld', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   await act(async () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Goblin' }))
@@ -1087,6 +1152,8 @@ test('Abgebrochenes Entfernen sendet nichts', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   const trigger = await screen.findByRole('button', { name: 'Aktionen für Goblin' })
   await act(async () => {
@@ -1113,6 +1180,8 @@ test('Spieler sieht im Token-Menü nur Freigeben aktiv', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   await act(async () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Goblin' }))

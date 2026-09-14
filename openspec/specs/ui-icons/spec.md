@@ -17,9 +17,9 @@ jedes Icon trägt eine eigene `aria`-Semantik. Aussehen nimmt der menschliche Ap
   aller Namen, `as const`), dem Typ `IconName` und der Tabelle `ICON_REGISTRY`
   (`Record<IconName, LucideIcon>`), die jeden Namen auf eine Komponente aus `lucide-react`
   abbildet.
-- **Registry-Namen** (genau diese 55, in dieser Reihenfolge):
+- **Registry-Namen** (genau diese 56, in dieser Reihenfolge):
   - Oberfläche: `add`, `back`, `ban`, `check`, `chevronDown`, `close`, `copy`, `delete`,
-    `draw`, `edit`, `end`, `fog`, `help`, `hide`, `info`, `library`, `lock`, `logout`, `map`,
+    `draw`, `edit`, `end`, `fog`, `help`, `hide`, `info`, `library`, `locate`, `lock`, `logout`, `map`,
     `measure`, `more`, `pause`, `players`, `reveal`, `settings`, `start`, `token`,
     `upload`, `user`, `warning`
   - Symbolkatalog: `fighter`, `guardian`, `undead`, `dragon`, `mage`, `archer`, `royal`,
@@ -74,12 +74,13 @@ sein.
 
 - **GIVEN** die Registry
 - **WHEN** `ICON_NAMES` und die Schlüssel von `ICON_REGISTRY` gelesen werden
-- **THEN** ist `ICON_NAMES` genau die Liste der 55 Registry-Namen in der genannten
+- **THEN** ist `ICON_NAMES` genau die Liste der 56 Registry-Namen in der genannten
   Reihenfolge (Oberfläche: `add`, `back`, `ban`, `check`, `chevronDown`, `close`, `copy`,
-  `delete`, `draw`, `edit`, `end`, `fog`, `help`, `hide`, `info`, `library`, `lock`,
+  `delete`, `draw`, `edit`, `end`, `fog`, `help`, `hide`, `info`, `library`, `locate`, `lock`,
   `logout`, `map`, `measure`, `more`, `pause`, `players`, `reveal`, `settings`, `start`,
   `token`, `upload`, `user`, `warning`; danach die zehn Namen des Symbolkatalogs und die
   fünfzehn des Zustandskatalogs unverändert), und `ICON_REGISTRY` hat genau diese Schlüssel
+
 
 ### Requirement: Zugänglichkeit der Icons
 

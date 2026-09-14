@@ -359,6 +359,11 @@ Fassade SHALL nur greifbare Tokens ziehen lassen und sie sichtbar kennzeichnen (
 App-Test). Ein Token MUST NOT lokal verschoben werden, bevor der Server den Bestand verteilt
 hat (`constitution.md` §9.1).
 
+Token-Verwaltung und Liste `Tokenwerte` liegen im Reiter `Tokens` der Raumansicht
+(`session-tabs`, „Bereiche der Raumansicht"). Szenarien dieses Requirements, die Elemente eines Reiters adressieren, setzen voraus,
+dass der Testaufbau diesen Reiter vorher per Klick aktiviert hat (`session-tabs`,
+„Testaufbau-Konvention"): Token-Verwaltung und `Tokenwerte` liegen im Reiter `Tokens`. Der Reiter `Karte` ist beim Betreten aktiv.
+
 Der Spielleiter SHALL zusätzlich eine Token-Verwaltung sehen: ein Formular zum Anlegen
 (Formularmuster von `ui-form` ohne Feldfehler: Felder `Name`, `Farbe`, Optionszeile
 `Symbol`, `Größe`, `Spalte`, `Zeile`, Absende-Schaltfläche `Anlegen` — gesperrt, solange

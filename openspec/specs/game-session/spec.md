@@ -432,7 +432,9 @@ MUST NOT eine eigene Schaltfläche `Zurück` zeigen. Nach Auswahl einer Spielsit
 Element die Session-Bar (`session-bar`) zeigen — mit dem Namen der Spielsitzung als
 Überschrift der Ebene 1 und dem Zustand als Zustandspille nach der Zuordnungstabelle von
 `ui-start` (Text in der aktiven Sprache, Icon, Varianten-Klasse; `ui-text`) — und darunter
-die Teilnehmerliste mit Anwesenheitskennzeichen; sie MUST NOT den Rohwert des Zustands
+die Reiterliste `Bereiche` (`session-tabs`, „Bereiche der Raumansicht"), in deren Reiter
+`Teilnehmer` die Teilnehmerliste mit Anwesenheitskennzeichen liegt; sie MUST NOT den
+Rohwert des Zustands
 (`geoeffnet`, `gestartet`, `pausiert`, `geschlossen`) als Text zeigen. Der angezeigte Name
 SHALL dem Acknowledgement von `session:enter` und danach jedem `session:renamed` folgen
 (Requirement „Spielsitzung umbenennen"). Jeder Teilnehmer
@@ -441,7 +443,10 @@ Nutzernamen. Die eigene Zeile der Teilnehmerliste SHALL ein Eingabefeld für den
 dem aktuell gesetzten Wert anbieten; das Absenden SHALL `session:alias` mit dem
 eingegebenen Wert senden. Die angezeigte Benennung SHALL der zuletzt vom Server gesendeten
 Teilnehmerliste folgen, nicht der Eingabe (`constitution.md` §9.1); eine Ablehnung des
-Servers SHALL als Meldung sichtbar sein. Dem Spielleiter SHALL die Session-Bar zusätzlich
+Servers SHALL als Meldung sichtbar sein. Szenarien dieses Requirements, die Elemente eines Reiters adressieren, setzen voraus,
+dass der Testaufbau diesen Reiter vorher per Klick aktiviert hat (`session-tabs`,
+„Testaufbau-Konvention"): Teilnehmerliste und Alias-Formular liegen im Reiter `Teilnehmer`. Der Reiter `Karte` ist beim Betreten aktiv.
+Dem Spielleiter SHALL die Session-Bar zusätzlich
 den Sitzungscode und die vier Übergänge des Vertrags als Icon-only-Schaltflächen anbieten,
 benannt mit dem Verb der Aktion in der aktiven Sprache (`ui-text`: `Öffnen`, `Starten`,
 `Pausieren`, `Beenden`), nie mit dem Aktionsnamen des Vertrags (`oeffnen`, `starten`,
@@ -505,8 +510,8 @@ Sitzungsende-Dialog erscheinen.
 - **THEN** zeigt sie in der Gruppe `Sitzung` den Namen als Überschrift der Ebene 1, die
   Maske `••••••` mit der Umschalt-Schaltfläche `Sitzungscode anzeigen` (`aria-pressed="false"`)
   und der Schaltfläche `Sitzungscode kopieren`, keinen Textknoten `ABC234`, die Zustandspille
-  `Geöffnet` (Klasse `status-pill`), beide Teilnehmer mit unterscheidbarem
-  Anwesenheitskennzeichen sowie die vier Schaltflächen `Öffnen`, `Starten`, `Pausieren` und
+  `Geöffnet` (Klasse `status-pill`), unter der Gruppe die Reiterliste `Bereiche` mit den
+  Reitern `Karte`, `Tokens`, `Karten & Nebel`, `Teilnehmer` sowie die vier Schaltflächen `Öffnen`, `Starten`, `Pausieren` und
   `Beenden`, von denen `Starten` und `Beenden` nicht `disabled` sind und `Öffnen` und
   `Pausieren` `disabled` sind; kein Textknoten lautet `geoeffnet`, `starten` oder `beenden`
 
@@ -516,7 +521,8 @@ Sitzungsende-Dialog erscheinen.
   `role: "spieler"`, `status: "gestartet"` und kein Feld `code`
 - **WHEN** die Raumansicht gerendert wird
 - **THEN** zeigt sie in der Gruppe `Sitzung` den Namen als Überschrift der Ebene 1 und die
-  Zustandspille `Läuft` mit der Klasse `status-pill--active`, darunter die Teilnehmerliste,
+  Zustandspille `Läuft` mit der Klasse `status-pill--active`, darunter die Reiterliste
+  `Bereiche` mit den Reitern `Karte`, `Tokens`, `Teilnehmer` (kein Reiter `Karten & Nebel`),
   aber weder die Maske `••••••` noch eine Schaltfläche `Sitzungscode anzeigen`,
   `Sitzungscode kopieren`, `Umbenennen`, `Öffnen`, `Starten`, `Pausieren` oder `Beenden`;
   kein Textknoten lautet `gestartet`
@@ -586,7 +592,7 @@ Sitzungsende-Dialog erscheinen.
 - **GIVEN** die Anwendung hat den Raum betreten, und das Acknowledgement nennt zwei
   Teilnehmer: `{ username: "sam", alias: "Gandalf der Graue" }` und `{ username: "meister" }`
   ohne Alias
-- **WHEN** die Raumansicht gerendert wird
+- **WHEN** die Raumansicht gerendert wird und der Reiter `Teilnehmer` geklickt wird
 - **THEN** zeigt die Teilnehmerliste `Gandalf der Graue` und `meister`, aber nicht `sam`
 
 #### Scenario: Eigener Alias wird als Absicht gesendet und folgt dem Server

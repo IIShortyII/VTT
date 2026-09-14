@@ -52,8 +52,8 @@ Kartenhinweis, die Bühne mit der Kartenansicht (`session-map`) und dem Karten-O
 das Panel `Fog of War` (`session-fog`), jeweils unter den dort geltenden Bedingungen;
 `Tokens` — die Token-Verwaltung des Spielleiters bzw. die Liste `Tokenwerte` eines
 Spielers (`session-token`); `Karten & Nebel` — die Kartenverwaltung (`session-map`);
-`Teilnehmer` — ein Panel mit der Überschrift `Teilnehmer` der Ebene 2, der Teilnehmerliste
-und dem Alias-Formular (`game-session`). Die Raum-Meldungen zu Token, Fog und Anmerkungen
+`Teilnehmer` — ein Panel mit der Überschrift `Teilnehmer` der Ebene 2 und den
+Teilnehmerkarten (`game-session`). Die Raum-Meldungen zu Token, Fog und Anmerkungen
 SHALL vor der Reiterliste liegen, damit sie in jedem Reiter sichtbar sind. Ein Klick auf
 einen Reiter SHALL ihn aktivieren. Der aktive Reiter SHALL bei jedem Server-Ereignis
 (`session:status`, `session:participants`, `session:map`, `session:tokens`, `session:fog`,
@@ -89,7 +89,7 @@ oder eine Serveranfrage auslösen.
 - **WHEN** die Raumansicht gerendert wird
 - **THEN** enthält das sichtbare Reiterpanel `Karte` den Text `Aktive Karte: Taverne`, die
   Bühne und die Gruppen `Messen & Zeichnen` und `Fog of War`; die Überschriften `Tokens`
-  und `Karten` der Ebene 2 sowie das Textfeld `Alias` sind über Rollenabfragen nicht
+  und `Karten` der Ebene 2 sowie die Aktion `Alias ändern` sind über Rollenabfragen nicht
   auffindbar (versteckte Teilbäume), und die Reiterpanels `Tokens`, `Karten & Nebel`,
   `Teilnehmer` tragen `hidden`
 
@@ -118,7 +118,8 @@ oder eine Serveranfrage auslösen.
 - **GIVEN** die Raumansicht des Spielleiters mit den Teilnehmern `meister` und `sam`
 - **WHEN** der Reiter `Teilnehmer` geklickt wird
 - **THEN** enthält das sichtbare Reiterpanel `Teilnehmer` die Überschrift `Teilnehmer` der
-  Ebene 2, eine Liste mit den Einträgen `meister` und `sam` und das Feld `Alias`
+  Ebene 2 und die Teilnehmerkarten `meister` und `sam`, und die eigene Karte `meister` trägt
+  die Aktion `Alias ändern`
 
 #### Scenario: Reiter Tokens beim Spieler zeigt die Tokenwerte
 
@@ -127,7 +128,6 @@ oder eine Serveranfrage auslösen.
 - **WHEN** der Reiter `Tokens` geklickt wird
 - **THEN** enthält das sichtbare Reiterpanel `Tokens` die Überschrift `Tokenwerte` der
   Ebene 2 und den Eintrag `Goblin`, aber keine Überschrift `Tokens`
-
 
 ### Requirement: Tastaturbedienung der Reiter
 

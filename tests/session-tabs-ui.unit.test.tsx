@@ -296,7 +296,9 @@ describe('Bereiche der Raumansicht', () => {
     // Teilbaeume; nur `*ByRole` schliesst `hidden` aus, `*ByLabelText`/`*ByText` nicht, design.md D9).
     expect(screen.queryByRole('heading', { name: 'Tokens', level: 2 })).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Karten', level: 2 })).toBeNull()
-    expect(screen.queryByRole('textbox', { name: 'Alias' })).toBeNull()
+    // MODIFIED (#97, add-participant-cards): der Alias liegt hinter der Schaltflaeche
+    // `Alias ändern` (im Modal), die im versteckten Reiterpanel `Teilnehmer` nicht auffindbar ist.
+    expect(screen.queryByRole('button', { name: 'Alias ändern' })).toBeNull()
 
     for (const name of ['Tokens', 'Karten & Nebel', 'Teilnehmer']) {
       expect(verstecktesPanel(name).hasAttribute('hidden')).toBe(true)
@@ -364,10 +366,12 @@ describe('Bereiche der Raumansicht', () => {
 
     const panel = screen.getByRole('tabpanel', { name: 'Teilnehmer' })
     within(panel).getByRole('heading', { level: 2, name: 'Teilnehmer' })
-    const liste = within(panel).getByRole('list')
-    within(liste).getByText(/meister/)
-    within(liste).getByText(/sam/)
-    within(panel).getByLabelText('Alias')
+    // MODIFIED (#97, add-participant-cards): Teilnehmerkarten statt Liste; die eigene Karte
+    // `meister` traegt die Aktion `Alias ändern` (design.md D7).
+    const meister = must(within(panel).getByText('meister').closest('article.participant-card') as HTMLElement | null, 'die Karte meister')
+    const sam = must(within(panel).getByText('sam').closest('article.participant-card') as HTMLElement | null, 'die Karte sam')
+    within(meister).getByRole('button', { name: 'Alias ändern' })
+    expect(sam).toBeTruthy()
   })
 
   test('Reiter Tokens beim Spieler zeigt die Tokenwerte', async () => {

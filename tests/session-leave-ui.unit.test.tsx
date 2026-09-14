@@ -1,10 +1,10 @@
 /** @jest-environment jsdom */
 // Komponententests zum Requirement "Sitzungsoberfläche" aus
-// openspec/changes/add-session-leave/specs/game-session/spec.md (#70): die drei neuen
-// Szenarien des Verlassens/Entfernens in der Raumansicht — "Spieler tritt über die eigene
-// Zeile aus", "Spielleiter entfernt über die Spielerzeile" und "Entfernt-Ereignis führt zur
-// Sitzungsliste". Ein Test je GIVEN/WHEN/THEN-Szenario (constitution.md §4.1),
-// Testname = Szenarioname.
+// openspec/changes/add-session-leave/specs/game-session/spec.md (#70), fortgeschrieben durch
+// add-participant-cards (#97): die Szenarien des Verlassens/Entfernens in der Raumansicht —
+// "Spieler tritt über die eigene Zeile aus", "Spielleiter entfernt über die Spielerzeile" und
+// "Entfernt-Ereignis führt zur Sitzungsliste". Ein Test je GIVEN/WHEN/THEN-Szenario
+// (constitution.md §4.1), Testname = Szenarioname.
 //
 // Aufbau wie tests/session-ui.unit.test.tsx: `fetch` ist gemockt (`/api/auth/me` liefert einen
 // Nutzer, `/api/sessions` die Liste), die Socket-Fassade `src/client/session/socket.ts` ist per
@@ -13,11 +13,15 @@
 // es aussieht (AGENTS.md). Das Austreten/Entfernen ruft die REST-Route
 // `DELETE /api/sessions/:id/members/:userId` (design.md D4), beobachtbar am `fetch`-Mock. Der
 // angemeldete Nutzername (Kontomenue der Top-Bar) ist bewusst von jedem angezeigten
-// Teilnehmernamen verschieden, damit die Namensabfrage eindeutig die Teilnehmerzeile trifft.
+// Teilnehmernamen verschieden, damit die Namensabfrage eindeutig die Teilnehmerkarte trifft.
 //
-// Rote Phase (constitution.md §3.1): die Raumansicht traegt weder `Austreten` noch `Entfernen`,
-// und `session:removed` fuehrt nicht zur Liste — die Szenarien scheitern an ihrer Assertion
-// (fehlendes Element/Verhalten), kein Setup-Fehler.
+// MODIFIED (#97, add-participant-cards): `Austreten`/`Entfernen` liegen nicht mehr als blanke
+// Buttons in der Zeile, sondern im ⋮-Menue `Aktionen für <Name>` der Karte und laufen erst nach
+// einem Bestaetigungsdialog (`Spielsitzung verlassen?` bzw. `<Name> entfernen?`).
+//
+// Rote Phase (constitution.md §3.1): die Karten tragen weder ein ⋮-Menue noch einen
+// Bestaetigungsdialog — die Szenarien scheitern an ihrer Assertion (fehlendes Element/Verhalten),
+// kein Setup-Fehler.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
@@ -33,6 +37,7 @@ jest.mock('../src/client/session/socket.js', () => {
     transition: jest.fn(),
     alias: jest.fn(),
     rename: jest.fn(),
+    assignToken: jest.fn(async () => ({ ok: true })),
     on: jest.fn((event: string, handler: (payload: unknown) => void) => {
       handlers[event] = handler
     }),
@@ -71,6 +76,7 @@ type SocketTestApi = {
     transition: jest.Mock
     alias: jest.Mock
     rename: jest.Mock
+    assignToken: jest.Mock
     on: jest.Mock
   }
   __handlers: Record<string, (payload: unknown) => void>
@@ -128,17 +134,19 @@ async function betreten(): Promise<void> {
 }
 
 // Aktiviert einen Bereichs-Reiter der Raumansicht (session-tabs, Testaufbau-Konvention):
-// Teilnehmerliste liegt im Reiter `Teilnehmer`.
+// Teilnehmerkarten liegen im Reiter `Teilnehmer`.
 async function aktiviereReiter(name: string): Promise<void> {
   await act(async () => {
     fireEvent.click(screen.getByRole('tab', { name }))
   })
 }
 
-/** Die Zeile (`<li>`) eines Teilnehmers, gefunden ueber seinen angezeigten Namen. */
-function zeileMit(name: RegExp): HTMLElement {
-  const treffer = screen.getByText(name)
-  return must(treffer.closest('li'), `eine Teilnehmerzeile (<li>) fuer ${String(name)}`)
+/** Die Karte (`article.participant-card`) eines Teilnehmers, gefunden ueber seinen Namen
+ * (MODIFIED #97: Karte statt `<li>`, design.md D7). */
+function karteMit(name: RegExp): HTMLElement {
+  const panel = screen.getByRole('tabpanel', { name: 'Teilnehmer' })
+  const treffer = within(panel).getByText(name)
+  return must(treffer.closest('article.participant-card') as HTMLElement | null, `eine Teilnehmerkarte fuer ${String(name)}`)
 }
 
 beforeEach(() => {
@@ -154,10 +162,10 @@ afterEach(() => {
 // --- Szenarien ------------------------------------------------------------------------------
 
 test('Spieler tritt über die eigene Zeile aus', async () => {
-  // GIVEN: die Raumansicht eines Spielers mit Nutzernamen `sam` und `userId` `u-selbst` (die
-  // eigene Zeile), dazu ein Spielleiter `meister`.
+  // GIVEN: die Raumansicht eines Spielers mit Nutzernamen `sam` und `userId` `U` (die
+  // eigene Karte), dazu ein Spielleiter `meister`.
   mockFetch([
-    { pfad: '/api/auth/me', antwort: antwort(200, { id: 'u-selbst', email: 'ich@example.com', username: 'ich' }) },
+    { pfad: '/api/auth/me', antwort: antwort(200, { id: 'U', email: 'ich@example.com', username: 'ich' }) },
     { pfad: '/api/sessions/s1/members', antwort: antwort(200, {}) },
     { pfad: '/api/sessions', antwort: antwort(200, [{ id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' }]) },
   ])
@@ -165,7 +173,7 @@ test('Spieler tritt über die eigene Zeile aus', async () => {
     ok: true,
     session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spieler' },
     participants: [
-      { userId: 'u-selbst', username: 'sam', role: 'spieler', online: true },
+      { userId: 'U', username: 'sam', role: 'spieler', online: true },
       { userId: 'u-meister', username: 'meister', role: 'spielleiter', online: true },
     ],
   })
@@ -174,23 +182,34 @@ test('Spieler tritt über die eigene Zeile aus', async () => {
   await screen.findByText(/Abendrunde/)
   await betreten()
   await aktiviereReiter('Teilnehmer')
-  await waitFor(() => expect(screen.getByText(/\bsam\b/)).toBeTruthy())
+  await waitFor(() => expect(karteMit(/\bsam\b/)).toBeTruthy())
 
-  // THEN: die eigene Zeile von `sam` traegt `Austreten`; keine Zeile traegt fuer ihn `Entfernen`.
-  const eigeneZeile = zeileMit(/\bsam\b/)
-  const austreten = within(eigeneZeile).getByRole('button', { name: 'Austreten' })
-  expect(screen.queryByRole('button', { name: 'Entfernen' })).toBeNull()
-
-  // WHEN: `Austreten` ausloesen → DELETE /api/sessions/s1/members/u-selbst.
+  // THEN: das ⋮-Menue der eigenen Karte von `sam` bietet `Austreten`; keine Karte bietet fuer
+  // ihn `Entfernen`.
+  const eigeneKarte = karteMit(/\bsam\b/)
   await act(async () => {
-    fireEvent.click(austreten)
+    fireEvent.click(within(eigeneKarte).getByRole('button', { name: 'Aktionen für sam' }))
   })
-  await waitFor(() => expect(deleteAufrufe().some((u) => u.includes('/api/sessions/s1/members/u-selbst'))).toBe(true))
+  within(screen.getByRole('menu', { name: 'Aktionen für sam' })).getByRole('menuitem', { name: 'Austreten' })
+  expect(screen.queryByRole('menuitem', { name: 'Entfernen' })).toBeNull()
+
+  // WHEN: `Austreten` ausloesen und den Bestaetigungsdialog `Spielsitzung verlassen?` bestaetigen.
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Austreten' }))
+  })
+  const dialog = screen.getByRole('alertdialog', { name: 'Spielsitzung verlassen?' })
+  expect(deleteAufrufe()).toHaveLength(0)
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Austreten' }))
+  })
+
+  // THEN: DELETE /api/sessions/s1/members/U.
+  await waitFor(() => expect(deleteAufrufe().some((u) => u.includes('/api/sessions/s1/members/U'))).toBe(true))
 })
 
 test('Spielleiter entfernt über die Spielerzeile', async () => {
-  // GIVEN: die Raumansicht des Spielleiters `meister` (`userId` `u-selbst`, die eigene Zeile),
-  // dazu ein Spieler `sam` mit `userId` `u-sam`.
+  // GIVEN: die Raumansicht des Spielleiters `meister` (`userId` `u-selbst`, die eigene Karte),
+  // dazu ein Spieler `sam` mit `userId` `U`.
   mockFetch([
     { pfad: '/api/auth/me', antwort: antwort(200, { id: 'u-selbst', email: 'chef@example.com', username: 'chef' }) },
     { pfad: '/api/sessions/s1/members', antwort: antwort(200, {}) },
@@ -203,7 +222,7 @@ test('Spielleiter entfernt über die Spielerzeile', async () => {
     session: { id: 's1', name: 'Abendrunde', status: 'geoeffnet', role: 'spielleiter', code: 'ABC234' },
     participants: [
       { userId: 'u-selbst', username: 'meister', role: 'spielleiter', online: true },
-      { userId: 'u-sam', username: 'sam', role: 'spieler', online: true },
+      { userId: 'U', username: 'sam', role: 'spieler', online: true },
     ],
   })
 
@@ -211,21 +230,33 @@ test('Spielleiter entfernt über die Spielerzeile', async () => {
   await screen.findByText(/Abendrunde/)
   await betreten()
   await aktiviereReiter('Teilnehmer')
-  await waitFor(() => expect(screen.getByText(/\bsam\b/)).toBeTruthy())
+  await waitFor(() => expect(karteMit(/\bsam\b/)).toBeTruthy())
 
-  // THEN: die Zeile von `sam` traegt `Entfernen`; die eigene Zeile von `meister` traegt weder
-  // `Entfernen` noch `Austreten`.
-  const samZeile = zeileMit(/\bsam\b/)
-  const entfernen = within(samZeile).getByRole('button', { name: 'Entfernen' })
-  const eigeneZeile = zeileMit(/\bmeister\b/)
-  expect(within(eigeneZeile).queryByRole('button', { name: 'Entfernen' })).toBeNull()
-  expect(within(eigeneZeile).queryByRole('button', { name: 'Austreten' })).toBeNull()
+  // THEN: das ⋮-Menue der Karte `sam` bietet `Entfernen`; die eigene Karte `meister` traegt
+  // kein ⋮-Menue (weder `Entfernen` noch `Austreten`).
+  const eigeneKarte = karteMit(/\bmeister\b/)
+  expect(within(eigeneKarte).queryByRole('button', { name: 'Aktionen für meister' })).toBeNull()
 
-  // WHEN: `Entfernen` in der Zeile von `sam` ausloesen → DELETE /api/sessions/s1/members/u-sam.
+  const samKarte = karteMit(/\bsam\b/)
   await act(async () => {
-    fireEvent.click(entfernen)
+    fireEvent.click(within(samKarte).getByRole('button', { name: 'Aktionen für sam' }))
   })
-  await waitFor(() => expect(deleteAufrufe().some((u) => u.includes('/api/sessions/s1/members/u-sam'))).toBe(true))
+  const menu = screen.getByRole('menu', { name: 'Aktionen für sam' })
+  within(menu).getByRole('menuitem', { name: 'Entfernen' })
+  expect(within(menu).queryByRole('menuitem', { name: 'Austreten' })).toBeNull()
+
+  // WHEN: `Entfernen` ausloesen und den Bestaetigungsdialog `sam entfernen?` bestaetigen.
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Entfernen' }))
+  })
+  const dialog = screen.getByRole('alertdialog', { name: 'sam entfernen?' })
+  expect(deleteAufrufe()).toHaveLength(0)
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Entfernen' }))
+  })
+
+  // THEN: DELETE /api/sessions/s1/members/U.
+  await waitFor(() => expect(deleteAufrufe().some((u) => u.includes('/api/sessions/s1/members/U'))).toBe(true))
 })
 
 test('Entfernt-Ereignis führt zur Sitzungsliste', async () => {

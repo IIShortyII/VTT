@@ -445,19 +445,27 @@ Element die Session-Bar (`session-bar`) zeigen — mit dem Namen der Spielsitzun
 Überschrift der Ebene 1 und dem Zustand als Zustandspille nach der Zuordnungstabelle von
 `ui-start` (Text in der aktiven Sprache, Icon, Varianten-Klasse; `ui-text`) — und darunter
 die Reiterliste `Bereiche` (`session-tabs`, „Bereiche der Raumansicht"), in deren Reiter
-`Teilnehmer` die Teilnehmerliste mit Anwesenheitskennzeichen liegt; sie MUST NOT den
-Rohwert des Zustands
+`Teilnehmer` die Teilnehmerkarten mit Anwesenheitskennzeichen liegen (Requirement
+„Teilnehmerkarten"); sie MUST NOT den Rohwert des Zustands
 (`geoeffnet`, `gestartet`, `pausiert`, `geschlossen`) als Text zeigen. Der angezeigte Name
 SHALL dem Acknowledgement von `session:enter` und danach jedem `session:renamed` folgen
 (Requirement „Spielsitzung umbenennen"). Jeder Teilnehmer
-SHALL mit seinem Alias benannt werden, falls einer gesetzt ist, sonst mit seinem
-Nutzernamen. Die eigene Zeile der Teilnehmerliste SHALL ein Eingabefeld für den Alias mit
-dem aktuell gesetzten Wert anbieten; das Absenden SHALL `session:alias` mit dem
-eingegebenen Wert senden. Die eigene Zeile eines Spielers SHALL zusätzlich die Aktion `Austreten` tragen; die eigene Zeile des Spielleiters MUST NOT sie tragen. Dem Spielleiter SHALL jede Spieler-Zeile die Aktion `Entfernen` tragen; einem Spieler MUST NOT eine fremde Zeile eine solche Aktion zeigen. Das Auslösen von `Austreten` oder `Entfernen` SHALL `DELETE /api/sessions/:id/members/:userId` mit der `userId` der betroffenen Zeile senden. Die angezeigte Benennung SHALL der zuletzt vom Server gesendeten
-Teilnehmerliste folgen, nicht der Eingabe (`constitution.md` §9.1); eine Ablehnung des
-Servers SHALL als Meldung sichtbar sein. Szenarien dieses Requirements, die Elemente eines Reiters adressieren, setzen voraus,
-dass der Testaufbau diesen Reiter vorher per Klick aktiviert hat (`session-tabs`,
-„Testaufbau-Konvention"): Teilnehmerliste und Alias-Formular liegen im Reiter `Teilnehmer`. Der Reiter `Karte` ist beim Betreten aktiv.
+SHALL als Karte mit seinem Alias benannt werden, falls einer gesetzt ist, sonst mit seinem
+Nutzernamen (Requirement „Teilnehmerkarten"). Die eigene Karte SHALL die Aktion
+`Alias ändern` anbieten, die ein Modal mit einem Feld für den Alias öffnet; das Absenden
+SHALL `session:alias` mit dem eingegebenen Wert senden. Die eigene Karte eines Spielers
+SHALL im ⋮-Menü zusätzlich die Aktion `Austreten` tragen; die eigene Karte des Spielleiters
+MUST NOT sie tragen. Dem Spielleiter SHALL jede Spielerkarte im ⋮-Menü die Aktion
+`Entfernen` tragen; einem Spieler MUST NOT eine fremde Karte eine solche Aktion zeigen.
+`Austreten` und `Entfernen` SHALL vor dem Senden einen Bestätigungsdialog (`ui-dialog`)
+zeigen und erst nach Bestätigung `DELETE /api/sessions/:id/members/:userId` mit der `userId`
+der betroffenen Karte senden. Die angezeigte Benennung SHALL der zuletzt vom Server
+gesendeten Teilnehmerliste folgen, nicht der Eingabe (`constitution.md` §9.1); eine
+Ablehnung des Servers SHALL als Meldung sichtbar sein. Szenarien dieses Requirements, die
+Elemente eines Reiters adressieren, setzen voraus, dass der Testaufbau diesen Reiter vorher
+per Klick aktiviert hat (`session-tabs`, „Testaufbau-Konvention"): die Teilnehmerkarten
+liegen im Reiter `Teilnehmer`, das Feld für den Alias im Modal `Alias ändern`. Der Reiter
+`Karte` ist beim Betreten aktiv.
 Dem Spielleiter SHALL die Session-Bar zusätzlich
 den Sitzungscode und die vier Übergänge des Vertrags als Icon-only-Schaltflächen anbieten,
 benannt mit dem Verb der Aktion in der aktiven Sprache (`ui-text`: `Öffnen`, `Starten`,
@@ -607,13 +615,14 @@ Sitzungsliste zurückkehren und den Hinweis `Du wurdest aus der Spielsitzung ent
   Teilnehmer: `{ username: "sam", alias: "Gandalf der Graue" }` und `{ username: "meister" }`
   ohne Alias
 - **WHEN** die Raumansicht gerendert wird und der Reiter `Teilnehmer` geklickt wird
-- **THEN** zeigt die Teilnehmerliste `Gandalf der Graue` und `meister`, aber nicht `sam`
+- **THEN** zeigen die Teilnehmerkarten `Gandalf der Graue` und `meister`, aber nicht `sam`
 
 #### Scenario: Eigener Alias wird als Absicht gesendet und folgt dem Server
 
 - **GIVEN** die Raumansicht eines angemeldeten Nutzers mit `userId` `U` und Nutzernamen
   `sam`, dessen Mitgliedschaft keinen Alias trägt, ist geöffnet
-- **WHEN** der Nutzer im Alias-Feld seiner eigenen Zeile `Gandalf` eingibt und absendet
+- **WHEN** der Reiter `Teilnehmer` aktiviert wird, der Nutzer auf seiner eigenen Karte
+  `Alias ändern` auslöst und im Feld `Alias` des Modals `Gandalf` eingibt und absendet
 - **THEN** sendet die Anwendung `session:alias` mit `{ sessionId, alias: "Gandalf" }`, zeigt
   ihn weiterhin als `sam`, bis sie ein `session:participants` erhält, das ihn mit
   `alias: "Gandalf"` nennt, und zeigt ihn danach als `Gandalf`
@@ -621,8 +630,11 @@ Sitzungsliste zurückkehren und den Hinweis `Du wurdest aus der Spielsitzung ent
 #### Scenario: Abgelehnter Alias wird angezeigt
 
 - **GIVEN** die Raumansicht eines angemeldeten Nutzers ist geöffnet
-- **WHEN** er einen Alias absendet und das Acknowledgement `{ ok: false, message }` lautet
-- **THEN** zeigt die Anwendung diese Meldung an, und die Teilnehmerliste ist unverändert
+- **WHEN** der Reiter `Teilnehmer` aktiviert wird, er auf seiner eigenen Karte `Alias ändern`
+  auslöst, im Modal einen Alias absendet und das Acknowledgement `{ ok: false, message }`
+  lautet
+- **THEN** bleibt das Modal `Alias ändern` offen und zeigt diese Meldung als `role="alert"`,
+  und die Teilnehmerkarten sind unverändert
 
 #### Scenario: Hier weiterspielen baut eine neue Verbindung auf
 
@@ -682,23 +694,23 @@ Sitzungsliste zurückkehren und den Hinweis `Du wurdest aus der Spielsitzung ent
 #### Scenario: Spieler tritt über die eigene Zeile aus
 
 - **GIVEN** die Raumansicht eines Spielers mit Nutzernamen `sam` und `userId` `U` ist
-  geöffnet, und die Teilnehmerliste nennt `sam` (die eigene Zeile) und einen Spielleiter
+  geöffnet, und die Teilnehmerliste nennt `sam` (die eigene Karte) und einen Spielleiter
   `meister`
-- **WHEN** der Reiter `Teilnehmer` aktiviert wird und `sam` in seiner eigenen Zeile die
-  Schaltfläche `Austreten` auslöst
-- **THEN** trägt die eigene Zeile von `sam` eine Schaltfläche `Austreten`, keine Zeile trägt
-  für ihn eine Schaltfläche `Entfernen`, und das Auslösen sendet `DELETE
+- **WHEN** der Reiter `Teilnehmer` aktiviert wird, `sam` im ⋮-Menü seiner eigenen Karte
+  `Austreten` auslöst und den Bestätigungsdialog `Spielsitzung verlassen?` bestätigt
+- **THEN** bietet das ⋮-Menü der eigenen Karte von `sam` den Eintrag `Austreten`, keine Karte
+  bietet für ihn den Eintrag `Entfernen`, und das Bestätigen sendet `DELETE
   /api/sessions/:id/members/U`
 
 #### Scenario: Spielleiter entfernt über die Spielerzeile
 
-- **GIVEN** die Raumansicht des Spielleiters `meister` (die eigene Zeile) ist geöffnet, und
+- **GIVEN** die Raumansicht des Spielleiters `meister` (die eigene Karte) ist geöffnet, und
   die Teilnehmerliste nennt zusätzlich einen Spieler `sam` mit `userId` `U`
-- **WHEN** der Reiter `Teilnehmer` aktiviert wird und der Spielleiter in der Zeile von `sam`
-  die Schaltfläche `Entfernen` auslöst
-- **THEN** trägt die Zeile von `sam` eine Schaltfläche `Entfernen`, die eigene Zeile von
-  `meister` trägt weder `Entfernen` noch `Austreten`, und das Auslösen sendet `DELETE
-  /api/sessions/:id/members/U`
+- **WHEN** der Reiter `Teilnehmer` aktiviert wird, der Spielleiter im ⋮-Menü der Karte von
+  `sam` `Entfernen` auslöst und den Bestätigungsdialog `sam entfernen?` bestätigt
+- **THEN** bietet das ⋮-Menü der Karte von `sam` den Eintrag `Entfernen`, die eigene Karte von
+  `meister` bietet weder `Entfernen` noch `Austreten` (kein ⋮-Menü), und das Bestätigen sendet
+  `DELETE /api/sessions/:id/members/U`
 
 #### Scenario: Entfernt-Ereignis führt zur Sitzungsliste
 
@@ -1035,3 +1047,164 @@ Mitgliedschaft SHALL wie bei jedem Nicht-Mitglied abgelehnt werden.
 - **THEN** erhält `sam` `session:removed` mit der `sessionId`, `sam` empfängt das aus der
   Entfernung ausgelöste `session:participants` **nicht** (seine Verbindung ist nicht mehr im
   Raum), und in der Datenbank existiert die Mitgliedschaft von `sam` nicht mehr
+
+### Requirement: Teilnehmerkarten
+
+Der Reiter `Teilnehmer` SHALL je Mitglied aus der zuletzt vom Server gemeldeten
+Teilnehmerliste (`state.participants`) eine Karte `article.participant-card` rendern, in der
+Reihenfolge der Serverliste. Jede Karte SHALL enthalten: einen dekorativen Avatar-Kreis
+(`.participant-card__avatar`, ohne zugänglichen Text), den Anzeigenamen (Alias, sonst
+Nutzername), eine Rollen-Pill mit dem Text `Spielleiter` (`session.role.gm`) bzw. `Spieler`
+(`session.role.player`) als eigenes Element sowie ein Präsenzkennzeichen aus einem dekorativen
+Punkt und dem Text `anwesend` (`presence.online`) bzw. `abwesend` (`presence.offline`) je
+`online`. Das Präsenzkennzeichen einer anwesenden Karte SHALL die Klasse `presence--online`
+tragen, das einer abwesenden `presence--offline` — die Bedeutung nie allein über Farbe. Jede
+Karte SHALL die Tokens, deren `ownerId` gleich der `userId` des Mitglieds ist, als Chips mit
+dem Tokennamen zeigen (aus `state.tokens`; `ownerId` ist öffentliche Tokendarstellung,
+`constitution.md` §9.2); ein Mitglied ohne zugewiesenes Token zeigt keinen Token-Chip. Alle
+angezeigten Werte SHALL dem zuletzt vom Server gemeldeten Bestand folgen (§9.1).
+
+Die eigene Karte (das Mitglied mit der eigenen `userId`, jede Rolle) SHALL die Schaltfläche
+`Alias ändern` (`alias.edit`) tragen; eine fremde Karte MUST NOT sie tragen. `Alias ändern`
+SHALL ein Modal (`ui-dialog`) mit dem Titel `Alias ändern`, einem Feld `Alias` (`alias.label`,
+vorbelegt mit dem serverseitig gemeldeten Alias der eigenen Mitgliedschaft) und der
+Schaltfläche `Alias setzen` (`alias.submit`) öffnen; das Absenden SHALL `session:alias` senden
+(Requirement „Sitzungsoberfläche"), bei bestätigendem Acknowledgement das Modal schließen und
+bei ablehnendem das Modal offen lassen und die Meldung als `role="alert"` zeigen.
+
+Jede Karte mit Aktionen SHALL ein ⋮-Menü (`ui-menu`) mit dem zugänglichen Namen
+`Aktionen für <Anzeigename>` (`menu.rowActions`) tragen; eine Karte ohne Aktionen MUST NOT
+einen ⋮-Trigger zeigen. Die Einträge SHALL der eigenen, vom Server im `session:enter`-Ack
+gesetzten Rolle folgen (§9.3), nicht einer clientseitigen Vermutung:
+
+- Dem Spielleiter SHALL jede **fremde Spielerkarte** die Einträge `Tokens zuweisen`
+  (`menu.assignTokens`) und `Entfernen` (`session.remove`, danger) bieten.
+- Dem Spieler selbst SHALL seine **eigene Karte** den Eintrag `Austreten` (`session.leave`,
+  danger) bieten.
+- Die **eigene Spielleiter-Karte** MUST NOT ein ⋮-Menü tragen (nur `Alias ändern`).
+- Einem Spieler MUST NOT eine **fremde** Karte ein ⋮-Menü oder eine der Aktionen
+  `Tokens zuweisen`/`Entfernen`/`Austreten` zeigen.
+
+`Entfernen` SHALL vor dem Senden einen Bestätigungsdialog (`ui-dialog`, „Bestätigungsdialog")
+mit dem Titel `<Anzeigename> entfernen?` (`participant.remove.title`), der Beschreibung `Das
+Mitglied wird aus der Spielsitzung entfernt.` (`participant.remove.message`) und dem
+`danger`-Bestätigungsknopf `Entfernen` zeigen; `Austreten` einen mit dem Titel `Spielsitzung
+verlassen?` (`participant.leave.title`), der Beschreibung `Du verlässt die Spielsitzung.`
+(`participant.leave.message`) und dem `danger`-Bestätigungsknopf `Austreten`. Nur bei
+Bestätigung SHALL `DELETE /api/sessions/:id/members/:userId` mit der `userId` der Karte
+gesendet werden; bei `Abbrechen` MUST NOT etwas gesendet werden.
+
+Dem Spielleiter SHALL der Kopf des Reiters `Teilnehmer` die Schaltfläche `Einladen`
+(`invite.open`) mit einem Popover (`ui-menu`, „Popover", `role="dialog"`, Name `Einladen`)
+bieten; das Popover SHALL den Sitzungscode maskiert (`'•'` je Zeichen) zeigen und eine
+Schaltfläche `Code kopieren` (`invite.copy`), die den Klartext-Code in die Zwischenablage legt
+und bei Erfolg den Toast `Sitzungscode kopiert` (`ui-feedback`) auslöst, bei Fehlschlag keinen
+Toast. Der Klartext des Codes MUST NOT in der Ansicht des Popovers stehen (§9.2). Einem
+Spieler MUST NOT die Schaltfläche `Einladen` oder das Popover erscheinen.
+
+Der Eintrag `Tokens zuweisen` SHALL ein Modal (`ui-dialog`) mit dem Titel
+`Tokens für <Anzeigename>` (`participant.assign.title`) öffnen, das je Token aus
+`state.tokens` eine Checkbox mit dem Tokennamen als zugänglichem Namen zeigt, angehakt genau
+dann, wenn `token.ownerId` gleich der `userId` der Karte ist. Eine Umschaltung SHALL sofort
+`session:token-assign` (`session-token`, „Token zuweisen") mit `{ sessionId, tokenId,
+ownerId }` senden — beim Anhaken `ownerId` gleich der `userId` der Karte, beim Abhaken `null`;
+der Checkbox-Zustand SHALL `state.tokens` folgen (§9.1). Ein ablehnendes Acknowledgement SHALL
+als `role="alert"` im Modal erscheinen. Enthält die Sitzung keine Tokens, SHALL das Modal den
+Hinweis `Keine Tokens in dieser Sitzung.` (`participant.assign.empty`) und keine Checkbox
+zeigen.
+
+#### Scenario: Karte zeigt Rolle und Präsenz
+
+- **GIVEN** die Anwendung hat als Spielleiter `meister` (`online: true`) den Raum betreten,
+  und das Acknowledgement nennt die Teilnehmer `{ username: "meister", role: "spielleiter",
+  online: true }` und `{ username: "sam", role: "spieler", online: false }`
+- **WHEN** die Raumansicht gerendert wird und der Reiter `Teilnehmer` geklickt wird
+- **THEN** enthält das Reiterpanel `Teilnehmer` zwei `article.participant-card`; die Karte
+  `meister` zeigt die Rollen-Pill `Spielleiter` und das Präsenzkennzeichen `anwesend` mit der
+  Klasse `presence--online`; die Karte `sam` zeigt die Rollen-Pill `Spieler` und das
+  Präsenzkennzeichen `abwesend` mit der Klasse `presence--offline`
+
+#### Scenario: Zugewiesene Tokens erscheinen als Chips
+
+- **GIVEN** die Anwendung hat als Spielleiter den Raum betreten; die Teilnehmerliste nennt
+  einen Spieler `sam` mit `userId` `U`, und `state.tokens` enthält ein Token `Goblin` mit
+  `ownerId: "U"` und ein Token `Ork` mit `ownerId: null`
+- **WHEN** die Raumansicht gerendert wird und der Reiter `Teilnehmer` geklickt wird
+- **THEN** enthält die Karte `sam` einen Chip `Goblin` und keinen Chip `Ork`
+
+#### Scenario: Eigene Karte trägt Alias ändern, fremde nicht
+
+- **GIVEN** die Anwendung hat als Spielleiter `meister` mit `userId` `M` den Raum betreten;
+  die Teilnehmerliste nennt `meister` (die eigene Karte) und einen Spieler `sam`
+- **WHEN** die Raumansicht gerendert wird und der Reiter `Teilnehmer` geklickt wird
+- **THEN** trägt die Karte `meister` die Schaltfläche `Alias ändern`, und die Karte `sam`
+  trägt keine Schaltfläche `Alias ändern`
+
+#### Scenario: Alias ändern öffnet das Modal
+
+- **GIVEN** die Raumansicht eines Nutzers `sam`, dessen Mitgliedschaft keinen Alias trägt,
+  ist geöffnet, und der Reiter `Teilnehmer` ist aktiviert
+- **WHEN** der Nutzer auf seiner eigenen Karte `Alias ändern` auslöst
+- **THEN** erscheint ein Dialog `Alias ändern` mit einem Feld `Alias` (leer) und einer
+  Schaltfläche `Alias setzen`
+
+#### Scenario: Menü der fremden Spielerkarte bietet Zuweisen und Entfernen
+
+- **GIVEN** die Raumansicht des Spielleiters `meister` ist geöffnet; die Teilnehmerliste
+  nennt zusätzlich einen Spieler `sam`, und der Reiter `Teilnehmer` ist aktiviert
+- **WHEN** der Spielleiter das ⋮-Menü `Aktionen für sam` der Karte `sam` öffnet
+- **THEN** enthält das Menü die Einträge `Tokens zuweisen` und `Entfernen` und keinen Eintrag
+  `Austreten`
+
+#### Scenario: Spieler sieht an fremder Karte kein Menü
+
+- **GIVEN** die Raumansicht des Spielers `sam` ist geöffnet; die Teilnehmerliste nennt einen
+  Spielleiter `meister` und `sam`, und der Reiter `Teilnehmer` ist aktiviert
+- **WHEN** die Karten gerendert sind
+- **THEN** trägt die Karte `meister` keinen Trigger `Aktionen für meister`, und keine fremde
+  Karte bietet einen Eintrag `Entfernen` oder `Tokens zuweisen`
+
+#### Scenario: Abbrechen im Entfernen-Dialog sendet nichts
+
+- **GIVEN** die Raumansicht des Spielleiters ist geöffnet; die Teilnehmerliste nennt einen
+  Spieler `sam` mit `userId` `U`, und der Reiter `Teilnehmer` ist aktiviert
+- **WHEN** der Spielleiter im ⋮-Menü der Karte `sam` `Entfernen` auslöst und im
+  Bestätigungsdialog `sam entfernen?` `Abbrechen` auslöst
+- **THEN** wurde kein `DELETE /api/sessions/:id/members/U` gesendet, und die Karte `sam` ist
+  weiterhin vorhanden
+
+#### Scenario: Einladen-Popover zeigt maskierten Code und kopiert
+
+- **GIVEN** die Raumansicht des Spielleiters (Code `ABC234`) ist gerendert, die Zwischenablage
+  des Browsers bestätigt das Schreiben, und der Reiter `Teilnehmer` ist aktiviert
+- **WHEN** der Spielleiter `Einladen` auslöst und danach im Popover `Code kopieren` auslöst
+- **THEN** erschien ein Dialog `Einladen` mit der Maske `••••••` und ohne Textknoten `ABC234`;
+  nach `Code kopieren` wurde genau der Text `ABC234` in die Zwischenablage geschrieben, der
+  Toast-Host zeigt einen Toast `Sitzungscode kopiert`, und das Popover zeigt weiterhin die
+  Maske `••••••` und keinen Textknoten `ABC234`
+
+#### Scenario: Spieler bekommt kein Einladen
+
+- **GIVEN** die Raumansicht eines Spielers ist geöffnet, und der Reiter `Teilnehmer` ist
+  aktiviert
+- **WHEN** das Reiterpanel `Teilnehmer` gerendert ist
+- **THEN** existiert keine Schaltfläche `Einladen` und kein Dialog `Einladen`
+
+#### Scenario: Zuweisen-Modal spiegelt die aktuelle Zuweisung
+
+- **GIVEN** die Raumansicht des Spielleiters ist geöffnet; die Teilnehmerliste nennt einen
+  Spieler `sam` mit `userId` `U`, `state.tokens` enthält `Goblin` mit `ownerId: "U"` und `Ork`
+  mit `ownerId: null`, und der Reiter `Teilnehmer` ist aktiviert
+- **WHEN** der Spielleiter im ⋮-Menü der Karte `sam` `Tokens zuweisen` auslöst
+- **THEN** erscheint ein Dialog `Tokens für sam` mit einer angehakten Checkbox `Goblin` und
+  einer nicht angehakten Checkbox `Ork`
+
+#### Scenario: Umschalten im Zuweisen-Modal sendet die Zuweisung
+
+- **GIVEN** der Dialog `Tokens für sam` (Spieler `sam`, `userId` `U`) ist geöffnet;
+  `state.tokens` enthält `Goblin` (`id` `t1`, `ownerId: "U"`) und `Ork` (`id` `t2`,
+  `ownerId: null`)
+- **WHEN** die Checkbox `Ork` angehakt und danach die Checkbox `Goblin` abgehakt wird
+- **THEN** sendet die Anwendung zuerst `session:token-assign` mit
+  `{ sessionId, tokenId: "t2", ownerId: "U" }` und danach `session:token-assign` mit
+  `{ sessionId, tokenId: "t1", ownerId: null }`

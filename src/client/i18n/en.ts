@@ -124,6 +124,9 @@ export const en: Record<TextKey, string> = {
   'status.disconnected': 'Connection lost — reconnecting…',
   'status.disconnectedByServer': 'Disconnected by the server.',
 
+  'presence.online': 'online',
+  'presence.offline': 'offline',
+
   'overlay.paused.title': 'Paused',
   'overlay.paused.subline': 'The game master has paused the session.',
   'overlay.open.title': 'Not started yet',
@@ -194,6 +197,7 @@ export const en: Record<TextKey, string> = {
   'menu.rowActions': 'Actions for {name}',
   'menu.edit': 'Edit',
   'menu.assign': 'Assign…',
+  'menu.assignTokens': 'Assign tokens',
   'menu.share': 'Share…',
   'menu.center': 'Center on map',
   'menu.remove': 'Remove',
@@ -212,6 +216,20 @@ export const en: Record<TextKey, string> = {
   'token.remove.title': 'Remove token "{name}"?',
   'token.remove.message': 'The token is removed from the map.',
   'token.remove.confirm': 'Remove',
+
+  'alias.edit': 'Change alias',
+  'alias.label': 'Alias',
+  'alias.submit': 'Set alias',
+
+  'invite.open': 'Invite',
+  'invite.copy': 'Copy code',
+
+  'participant.remove.title': 'Remove {name}?',
+  'participant.remove.message': 'The member is removed from the game session.',
+  'participant.leave.title': 'Leave game session?',
+  'participant.leave.message': 'You are leaving the game session.',
+  'participant.assign.title': 'Tokens for {name}',
+  'participant.assign.empty': 'No tokens in this session.',
 
   'form.stillWorking': 'Still connecting… this may take a moment.',
 }

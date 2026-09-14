@@ -50,12 +50,12 @@ async function loadIconButton(): Promise<IconButtonComponent | null> {
   return (mod?.IconButton as IconButtonComponent | undefined) ?? null
 }
 
-// --- Erwartete Registry-Namen (spec.md "Registry-Namen", 55 in dieser Reihenfolge) ----------
+// --- Erwartete Registry-Namen (spec.md "Registry-Namen", 56 in dieser Reihenfolge (add-token-cards #95: `locate` neu zwischen `library` und `lock`)) ----------
 // add-session-bar (#93, MODIFIED "Registry"): `copy` (Lucide `Copy`) neu nach `close`.
 const EXPECTED_ICON_NAMES: readonly string[] = [
-  // Oberflaeche (30)
+  // Oberflaeche (31)
   'add', 'back', 'ban', 'check', 'chevronDown', 'close', 'copy', 'delete', 'draw', 'edit', 'end',
-  'fog', 'help', 'hide', 'info', 'library', 'lock', 'logout', 'map', 'measure', 'more',
+  'fog', 'help', 'hide', 'info', 'library', 'locate', 'lock', 'logout', 'map', 'measure', 'more',
   'pause', 'players', 'reveal', 'settings', 'start', 'token', 'upload', 'user', 'warning',
   // Symbolkatalog (10)
   'fighter', 'guardian', 'undead', 'dragon', 'mage', 'archer', 'royal', 'beast', 'vermin', 'fire',

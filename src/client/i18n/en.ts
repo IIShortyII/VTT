@@ -142,6 +142,7 @@ export const en: Record<TextKey, string> = {
   'menu.edit': 'Edit',
   'menu.assign': 'Assign…',
   'menu.share': 'Share…',
+  'menu.center': 'Center on map',
   'menu.remove': 'Remove',
   'menu.activate': 'Activate',
   'menu.unmount': 'Unmount',

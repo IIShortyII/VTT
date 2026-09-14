@@ -100,9 +100,9 @@ oder eine Serveranfrage auslösen.
 - **WHEN** der Reiter `Tokens` geklickt wird
 - **THEN** trägt `Tokens` `aria-selected="true"` und `tabindex="0"`, `Karte`
   `aria-selected="false"` und `tabindex="-1"`; das Reiterpanel `Tokens` ist sichtbar und
-  enthält die Überschrift `Tokens` der Ebene 2 und das Feld `Goblin HP`; das Reiterpanel
-  `Karte` trägt `hidden`; die Socket-Fassade hat kein weiteres `enter` gesendet, und
-  `fetch` wurde nicht erneut aufgerufen
+  enthält die Überschrift `Tokens` der Ebene 2 und die Schaltfläche `Token anlegen`; das
+  Reiterpanel `Karte` trägt `hidden`; die Socket-Fassade hat kein weiteres `enter` gesendet,
+  und `fetch` wurde nicht erneut aufgerufen
 
 #### Scenario: Server-Update erhält den aktiven Reiter
 
@@ -110,8 +110,8 @@ oder eine Serveranfrage auslösen.
 - **WHEN** die Fassade `session:tokens` mit einem neuen Token `Ork` und danach
   `session:status` mit `status: "gestartet"` meldet
 - **THEN** trägt `Tokens` weiterhin `aria-selected="true"`, das Reiterpanel `Tokens` ist
-  sichtbar und enthält das Feld `Ork HP`, und das Reiterpanel `Karte` trägt weiterhin
-  `hidden`
+  sichtbar und enthält den Eintrag `Ork` (die Karte des neuen Tokens), und das Reiterpanel
+  `Karte` trägt weiterhin `hidden`
 
 #### Scenario: Reiter Teilnehmer zeigt Liste und Alias
 
@@ -127,6 +127,7 @@ oder eine Serveranfrage auslösen.
 - **WHEN** der Reiter `Tokens` geklickt wird
 - **THEN** enthält das sichtbare Reiterpanel `Tokens` die Überschrift `Tokenwerte` der
   Ebene 2 und den Eintrag `Goblin`, aber keine Überschrift `Tokens`
+
 
 ### Requirement: Tastaturbedienung der Reiter
 

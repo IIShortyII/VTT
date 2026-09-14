@@ -930,6 +930,97 @@ main.app-shell--wide {
   margin-top: var(--space-2);
 }
 
+/* Tokenkarten (add-token-cards, #95) */
+.token-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.token-card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.token-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-3);
+  background: var(--color-panel);
+}
+
+.token-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.token-card__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.token-card__hp-bar {
+  --pct: 0;
+  position: relative;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.token-card__hp-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: calc(var(--pct) * 1%);
+  background: var(--teal);
+}
+
+.token-card__hp-bar--low::after {
+  background: var(--red);
+}
+
+.token-card dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  font-size: var(--font-size-2);
+}
+
+.token-card dt {
+  color: var(--color-text-muted);
+}
+
+.token-card dd {
+  margin: 0;
+  text-align: right;
+}
+
+.token-card__conditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.token-card__delta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .setup-cluster > summary {
   cursor: pointer;
   font-size: var(--font-size-1);

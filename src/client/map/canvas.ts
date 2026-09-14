@@ -21,7 +21,7 @@ import { conditionAbbreviation, conditionIcon } from '../session/conditions.js'
 import { iconSvg } from '../ui/icon-svg.js'
 import type { IconName } from '../ui/icons.js'
 import type { Anchor } from '../ui/menu.js'
-import { panBy, zoomAt, type View } from './viewport.js'
+import { centerOn as centerOnView, panBy, zoomAt, type View } from './viewport.js'
 
 // Die einzige Datei, die `pixi.js` importiert (design.md D8) - die Mock-Grenze der
 // Komponententests (spec.md "Testinfrastruktur"): ein Test ersetzt dieses Modul, statt
@@ -90,6 +90,9 @@ export interface MapCanvasHandle {
   setSelection(cells: Cell[]): void
   setAnnotations(list: Annotation[]): void
   setAnnotationOptions(options: AnnotationOptions): void
+  // add-token-cards (#95, design.md D7): zentriert die Sicht auf den Mittelpunkt der
+  // Zelle (Zellmittelpunkt aus dem aktuellen Raster, Buehnengroesse aus dem Canvas).
+  centerOn(cell: Cell): void
   resize(): void
   destroy(): void
 }
@@ -1049,6 +1052,11 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       setAnnotationOptions(annotationOptions: AnnotationOptions): void {
         currentAnnotationOptions = annotationOptions
         drawAnnotations()
+      },
+      centerOn(cell: Cell): void {
+        const world = cellCenter(currentGrid, cell)
+        view = centerOnView(view, world, { width: app.screen.width, height: app.screen.height })
+        applyView()
       },
       resize(): void {
         if (destroyed) {

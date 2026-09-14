@@ -159,6 +159,7 @@ export const de = {
   'menu.edit': 'Bearbeiten',
   'menu.assign': 'Zuweisen…',
   'menu.share': 'Freigeben…',
+  'menu.center': 'Auf Karte zentrieren',
   'menu.remove': 'Entfernen',
   'menu.activate': 'Aktivieren',
   'menu.unmount': 'Aushängen',

@@ -11,7 +11,7 @@
 ## 3. Wörterbücher & Stylesheet
 
 - [ ] 3.1 Schlüssel aus design.md D6 in `src/client/i18n/de.ts` und `en.ts` ergänzen; prüfen: Schlüsselgleichheit per `pnpm typecheck:src`, Texte buchstabengleich zur Tabelle
-- [ ] 3.2 Abschnitt „Werkzeugleisten (ui-toolbar, #96)" nach design.md D7 vor dem Bewegungsblock in `theme.css` ergänzen (`.toolbar`, `.tool-button(--active)`, `.chip(-group)(--active)`, `.color-chip(--*)`, ein `@media (pointer: coarse)` mit ≥ 44 px); prüfen: kein Farbwert außerhalb `:root` außer den Swatch-Werten, genau ein neues `@media`, keine `animation`/`transition` außerhalb des Bewegungsblocks, `pnpm lint` grün
+- [ ] 3.2 Abschnitt „Werkzeugleisten (ui-toolbar, #96)" nach design.md D7 vor dem Bewegungsblock in `theme.css` ergänzen (`.toolbar`, `.tool-button(--active)`, `.chip(-group)(--active)`, `.color-chip(--*)`, `.tool-button` mit `min-block-size`/`min-inline-size: 2.75rem` als Basisregel — **kein** eigenes `@media`); prüfen: kein Farbwert außerhalb `:root` außer den Swatch-Werten, **kein** neues `@media` (`theme.css` behält genau die eine Bewegungsabfrage — Stylesheet-Invariante von `ui-theme`/`session-bar`/`ui-menu`/`session-tabs`), keine `animation`/`transition` außerhalb des Bewegungsblocks, `pnpm lint` grün
 
 ## 4. Abschluss
 

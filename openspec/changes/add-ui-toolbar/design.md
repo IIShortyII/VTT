@@ -216,10 +216,14 @@ zugleich Werkzeug- und Chip-fremd ist.
 Neuer Abschnitt „Werkzeugleisten (ui-toolbar, #96)" vor dem Bewegungsblock: `.toolbar`
 (Flex-Reihe, Lücke), `.tool-button`/`.chip`/`.color-chip` (Basis), `.tool-button--active`/
 `.chip--active`/`.color-chip--active` (Gold über `var(--gold)`), `.color-chip--rot|orange|gelb|
-gruen|blau|weiss .color-chip-swatch` (Farbwerte), `.chip-group` (Flex-Reihe). Ein einziges
-`@media (pointer: coarse)` setzt `min-block-size`/`min-inline-size: 2.75rem` auf
-`.tool-button`. Kein Farbwert außerhalb `:root` (nur `var(--…)` bzw. definierte Swatch-Werte),
-keine `animation`/`transition` außerhalb des Bewegungsblocks.
+gruen|blau|weiss .color-chip-swatch` (Farbwerte), `.chip-group` (Flex-Reihe). Als Basisregel (**kein** eigenes `@media`) setzt `.tool-button`
+`min-block-size`/`min-inline-size: 2.75rem` — die ≥ 44 px-Touch-Ziele gelten damit generell,
+nicht nur unter `pointer: coarse`. Grund: `theme.css` trägt genau **eine** Medienabfrage (die
+Bewegungsabfrage `prefers-reduced-motion`), und diese Invariante prüfen die Stylesheet-Tests
+von `ui-theme`, `session-bar`, `ui-menu` und `session-tabs` (keine „fremde" Medienabfrage) —
+ein zweites `@media`, auch `pointer: coarse`, bricht sie. Kein Farbwert außerhalb `:root` (nur
+`var(--…)` bzw. definierte Swatch-Werte), keine `animation`/`transition`/`@media` außerhalb des
+Bewegungsblocks.
 
 ## Risks
 

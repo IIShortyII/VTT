@@ -12,7 +12,7 @@ wachsenden Zähler nicht vor. Beide Panels codieren ihre Beschriftungen zudem al
 Entscheidungen aus dem Issue-Text (#96, #103) und der Explore-Runde (2026-09-14):
 - **Neue Capability `ui-toolbar`** für die wiederverwendbare Werkzeugleisten-Mechanik:
   `Toolbar`/Icon-Werkzeugbuttons (`role="toolbar"`, `aria-pressed`, `title` **und**
-  `aria-label`, ≥ 44 px unter `pointer: coarse`), bereichsweite Tastenkürzel, `ChipGroup`
+  `aria-label`, ≥ 44 px generell als `min-size`-Basisregel), bereichsweite Tastenkürzel, `ChipGroup`
   (aria-pressed-Umschaltgruppe) und `ColorChipGroup` (Farbchips). `session-fog` und
   `session-annotation` verweisen nur darauf, **welche** Werkzeuge und Chips sie zeigen — die
   Mechanik ist einmal spezifiziert (Muster `ui-menu`, `ui-form`, `session-tabs`→`ui/tabs.tsx`).
@@ -65,7 +65,7 @@ Entscheidungen aus dem Issue-Text (#96, #103) und der Explore-Runde (2026-09-14)
   Menütexte und die Chrome-Wörter der Anmerkungszeilen.
 - **Stylesheet** (`theme.css`): Abschnitt „Werkzeugleisten (ui-toolbar, #96)" — `role`-neutrale
   Klassen `tool-button`/`tool-button--active`, `chip`/`chip--active`, `color-chip` und das
-  ≥ 44 px-`@media (pointer: coarse)`.
+  ≥ 44 px-Touch-Ziele als `min-size`-Basisregel ohne eigenes `@media`.
 - **Specs:** neue Capability `ui-toolbar`; MODIFIED in `session-fog` („Fog-Ansicht im Raum"),
   `session-annotation` („Anmerkungsansicht im Raum") und `ui-icons` („Registry").
 

@@ -1,7 +1,7 @@
 ## 1. Baustein `ui-toolbar`
 
 - [ ] 1.1 `src/client/ui/toolbar.tsx` nach design.md D1–D3 anlegen: `Toolbar` (`role="toolbar"`, Icon-Werkzeugbuttons über `IconButton` mit `aria-pressed`/`title` mit Kürzel/`aria-label`, `onKeyDown` an der Wurzel mit bereichsweiter Kürzel-Auflösung, kein `document`-Listener, Formularfelder ignoriert), `ChipGroup` (`role="group"`, aria-pressed-Umschalter, `disabled`) und `ColorChipGroup` (Farbchips mit Swatch + Farbname als `aria-label`); prüfen: Datei importiert nur `react`, `./Icon.js`, den Typ `IconName`; `pnpm lint` grün
-- [ ] 1.2 Registry-Namen `move`, `area`, `circle`, `angle` nach design.md in `src/client/ui/icons.ts` in die Oberfläche einordnen (alphabetisch: `move` nach `more`, `area` nach `angle` nach `add`, `circle` nach `chevronDown`) und `ICON_REGISTRY` mit `Move`/`BoxSelect`/`Circle`/`Angle` ergänzen; prüfen: `ICON_NAMES` hat 59 Einträge in der spezifizierten Reihenfolge, benannte Importe
+- [ ] 1.2 Registry-Namen `move`, `area`, `circle`, `angle` nach design.md in `src/client/ui/icons.ts` in die Oberfläche einordnen (alphabetisch: `move` nach `more`, `area` nach `angle` nach `add`, `circle` nach `chevronDown`) und `ICON_REGISTRY` mit `Move`/`BoxSelect`/`Circle`/`Angle` ergänzen; prüfen: `ICON_NAMES` hat 60 Einträge in der spezifizierten Reihenfolge (`locate` aus #95 bleibt zwischen `library` und `lock`), benannte Importe
 
 ## 2. Panels
 

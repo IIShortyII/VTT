@@ -81,7 +81,7 @@ Entscheidungen aus dem Issue-Text (#96, #103) und der Explore-Runde (2026-09-14)
 - `session-annotation`: „Anmerkungsansicht im Raum" — Werkzeugwahl als Icon-Leiste mit
   Kürzeln, Modifikatoren als Chips/Farbchips, Zeilenaktionen über ⋮-Menü, Chrome-Wörter über
   `t()`.
-- `ui-icons`: „Registry" — vier neue Namen `move`, `area`, `circle`, `angle` (59 Namen).
+- `ui-icons`: „Registry" — vier neue Namen `move`, `area`, `circle`, `angle` (60 Namen inkl. `locate`).
 
 ## Impact
 
@@ -95,7 +95,7 @@ Entscheidungen aus dem Issue-Text (#96, #103) und der Explore-Runde (2026-09-14)
   die die Darstellung der Werkzeugwahl, den Zähler oder die Zeilenaktionen betreffen, prüfen
   jetzt `aria-pressed`, `role="status"` und das ⋮-Menü statt Radios/Checkbox/Entfernen-Button;
   die verhaltensbezogenen Szenarien (Senden der Absicht, Canvas-Übergabe) bleiben unverändert.
-- Parallel zu #95 (`add-token-cards`): #95 fügt der Registry `locate` hinzu (56 Namen). Landet
-  #95 zuerst, wird die exakte Namensliste und der Zähler dieses Change beim Merge auf den dann
-  gültigen Stand nachgezogen (59 → 60).
+- #95 (`add-token-cards`) ist gemergt (`origin/main`, bff1269); der Worktree-Basisstand trägt
+  `locate` (56 Namen). Dieser Change ergänzt vier Namen (`move`, `area`, `circle`, `angle`);
+  die exakte Namensliste steht daher auf 60 — `locate` bleibt zwischen `library` und `lock`.
 - Keine neue Dependency (`Move`/`BoxSelect`/`Circle`/`Angle` sind in `lucide-react` 1.45.0).

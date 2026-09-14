@@ -22,7 +22,8 @@ Vorhanden (Stand `main`, #94):
   (`shared/annotation.ts`), das auch `canvas.ts` auf der Karte zeichnet.
 - `ui/Icon.tsx`: `IconButton({ name, label, ...rest })` rendert `<button type="button"
   aria-label={label}>` mit einzigem Kind `<Icon name label>`; `rest` (z. B. `title`,
-  `aria-pressed`, `onClick`, `className`) wird durchgereicht. `ui/icons.ts` trägt 55 Namen.
+  `aria-pressed`, `onClick`, `className`) wird durchgereicht. `ui/icons.ts` trägt 56 Namen
+  (inkl. `locate` aus dem gemergten #95).
 - `ui/menu.tsx`: `useFloating()`, `MenuTrigger`, `ActionMenu`, `ActionMenuButton({ label,
   entries, variant, icon, className })` (Trigger `⋮` mit `variant="more"` als Standard +
   eigener Schwebezustand). `MenuEntry = { id, label, icon?, onSelect }`. `menu.rowActions`
@@ -228,8 +229,9 @@ keine `animation`/`transition` außerhalb des Bewegungsblocks.
 - **Gemeinsamer Werkzeugzustand:** dieselbe `tool`-Variable speist beide Toolbars. Deshalb sind
   Kürzel bereichsweit (Handler an der Toolbar, kein `document`-Listener) — `R` in der
   Fog-Leiste und `V` in der Anmerkungsleiste stören sich nicht.
-- **Parallel zu #95:** `add-token-cards` fügt `locate` hinzu. Die exakte Namensliste/der Zähler
-  in `ui-icons` wird beim Merge auf den dann gültigen Stand nachgezogen.
+- **#95 ist gemergt:** der Worktree-Basisstand (`origin/main`, bff1269) trägt `locate`
+  (56 Namen); die Namensliste in `ui-icons` steht auf 60 (inkl. `locate` zwischen `library`
+  und `lock`).
 
 ## Testaufbau
 

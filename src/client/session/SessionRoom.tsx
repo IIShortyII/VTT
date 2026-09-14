@@ -37,7 +37,7 @@ import {
 import type { AnnotationOptions, FogLayer } from '../map/canvas.js'
 import type { TextKey } from '../i18n/de.js'
 import { useT } from '../i18n/locale.js'
-import { MapCanvas } from '../map/MapCanvas.js'
+import { MapCanvas, type MapCanvasRef } from '../map/MapCanvas.js'
 import { AnnotationPanel } from './AnnotationPanel.js'
 import { FogPanel } from './FogPanel.js'
 import { sessionMapImageUrl } from './fog-api.js'
@@ -45,11 +45,13 @@ import { MapPanel } from './MapPanel.js'
 import { RenameSessionForm, SessionBar } from './SessionBar.js'
 import { createSessionSocket, type SessionSocketFacade } from './socket.js'
 import { SESSION_OVERLAY, SESSION_STATUS_PRESENTATION } from './session-status.js'
+import { CONDITION_CATALOG, conditionIcon } from './conditions.js'
 import { PlayerTokenList } from './TokenStats.js'
 import { tokenMenuEntries, type TokenMenuAction } from './token-menu.js'
 import { TokenShareControls } from './TokenShare.js'
 import { useConfirm } from '../ui/confirm.js'
 import { Field, SubmitButton } from '../ui/form.js'
+import { Icon, IconButton } from '../ui/Icon.js'
 import { Modal } from '../ui/Modal.js'
 import { ActionMenu, useFloating, type Anchor, type MenuEntry } from '../ui/menu.js'
 import { MapOverlay, StatusBanner } from '../ui/status.js'
@@ -92,12 +94,13 @@ import { TokenPanel } from './TokenPanel.js'
 // wandern in Refs, damit `wireSocket` ohne sie als Abhaengigkeit auskommt (Goal "keine neue
 // Fassade bei einem Rendern von `App`").
 //
-// ui-menu (#92, design.md D5/D9): das Token-Menue (Bearbeiten/Zuweisen…/Freigeben…/Entfernen)
-// ersetzt Schaltflaeche, Auswahlfeld und Freigabe-Kaestchen der Zeile; `handleTokenAction`
-// baut die Verzweigung, `tokenMenuEntries` (`token-menu.ts`) die vier Eintraege je Rolle und
-// Freigabestand. Zuweisen und Freigeben oeffnen je ein Modal (`assignTokenId`/`shareTokenId`),
-// Entfernen laeuft ueber den Bestaetigungsdialog. `mapMenu`/`mapMenuTokenId` tragen dasselbe
-// Menue fuer einen Rechtsklick auf ein Token der Karte (`onTokenContextMenu`).
+// ui-menu (#92, design.md D5/D9): das Token-Menue (Bearbeiten/Zuweisen…/Freigeben…/
+// Zentrieren/Entfernen) ersetzt Schaltflaeche, Auswahlfeld und Freigabe-Kaestchen der Zeile;
+// `handleTokenAction` baut die Verzweigung, `tokenMenuEntries` (`token-menu.ts`) die fuenf
+// Eintraege je Rolle und Freigabestand. Zuweisen, Bearbeiten und Freigeben oeffnen je ein
+// Modal (`assignTokenId`/`editTokenId`/`shareTokenId`), Entfernen laeuft ueber den
+// Bestaetigungsdialog. `mapMenu`/`mapMenuTokenId` tragen dasselbe Menue fuer einen
+// Rechtsklick auf ein Token der Karte (`onTokenContextMenu`).
 //
 // session-bar (#93, design.md D6): `SessionBar` ersetzt `<h1>`, Zustandsabsatz, Code-Absatz
 // und Uebergangs-Schaltflaechen - sie traegt Name, Code, Zustand, Uebergaenge und
@@ -117,6 +120,14 @@ import { TokenPanel } from './TokenPanel.js'
 // `PlayerTokenList`, `MapPanel`, Teilnehmerliste) sind unveraendert - nur ihre Lage im
 // Dokument hat sich geaendert. `MAP_CANVAS_HEIGHT` entfaellt, die Buehnenhoehe kommt aus dem
 // Stylesheet (`.map-stage`, `session-tabs` "Stylesheet der Bereiche").
+//
+// add-token-cards (#95, design.md D1/D6/D7/D9): `TokenPanel`/`PlayerTokenList` rendern jetzt
+// Karten (`TokenStats.tsx`, `TokenCard`) statt Zeilen; das Anlege-Formular liegt in einem
+// Modal in `TokenPanel` selbst, das Werte-/Conditions-Bearbeiten in `EditTokenDialog` hier
+// (`editTokenId`, Muster `assignTokenId`/`shareTokenId`) - dieselbe Stelle bedient sowohl den
+// Zeilen-Trigger als auch das Karten-Kontextmenue. `mapCanvasRef` haelt das durchgereichte
+// Handle der aktiven Kartenansicht (`MapCanvas`, `forwardRef`) fuer den Menueeintrag
+// `Auf Karte zentrieren` (`centerOn`, `map/viewport.ts`).
 
 export interface SessionRoomProps {
   sessionId: string
@@ -133,6 +144,9 @@ const NO_ACTIVE_MAP_MESSAGE = 'Keine Karte aktiv'
 // alle zu `onEnded`, genau einmal (der Timer wird beim Verlassen geraeumt).
 const ENDED_REDIRECT_MS = 4000
 const NO_OWNER_VALUE = ''
+// add-token-cards (#95, design.md D1): Wert eines leeren Markierungs-Auswahlfelds im
+// Bearbeiten-Modal (`EditTokenDialog`).
+const NO_CONDITION_PICK_VALUE = ''
 
 // session-tabs (#94, design.md D2): die vier Bereiche der Raumansicht - `roles` entscheidet,
 // wer den Reiter ueberhaupt sieht (`Karten & Nebel` nur der Spielleiter). Eine Tabelle statt
@@ -236,11 +250,177 @@ function AssignTokenDialog({ token, players, onAssign, onClose }: AssignTokenDia
   )
 }
 
+/** Leeres Feld -> `null`, sonst die Zahl (design.md D1, Bearbeiten-Modal, Muster wie zuvor in
+ * `TokenPanel.tsx`). */
+function toStatField(value: string): number | null {
+  return value === '' ? null : Number(value)
+}
+
+interface EditTokenDialogProps {
+  token: Token
+  onSetStats: (tokenId: string, patch: TokenStatsPatch) => void
+  onSetConditions: (tokenId: string, conditions: string[]) => void
+  onClose: () => void
+}
+
+/** Bearbeiten-Modal (add-token-cards #95, design.md D1, "Bearbeiten-Modal"): eigene
+ * Komponente mit `key={token.id}` (Aufrufer) - die fuenf Wertefelder und die
+ * Markierungsbedienung (Schnellwahl, Freitext, Entfernen) als lokaler Formularzustand,
+ * vorbelegt mit dem aktuellen Bestand. Die angezeigte Markierungsliste unter der Karte
+ * bleibt IMMER die vom Server (`token.conditions`), nie dieser lokale Zwischenstand.
+ * `autoFocus` auf dem HP-Feld erfuellt "Bearbeiten setzt den Fokus in das HP-Feld" - `Modal`
+ * bewegt den Fokus nur, wenn noch kein Kind ihn traegt (`ui-dialog`, "Fokus beim Öffnen"). */
+function EditTokenDialog({ token, onSetStats, onSetConditions, onClose }: EditTokenDialogProps) {
+  const [hp, setHp] = useState(token.hp === null ? '' : String(token.hp))
+  const [hpMax, setHpMax] = useState(token.hpMax === null ? '' : String(token.hpMax))
+  const [tempHp, setTempHp] = useState(token.tempHp === null ? '' : String(token.tempHp))
+  const [ac, setAc] = useState(token.ac === null ? '' : String(token.ac))
+  const [initiative, setInitiative] = useState(token.initiative === null ? '' : String(token.initiative))
+  const [conditionInput, setConditionInput] = useState('')
+  const [conditionPick, setConditionPick] = useState(NO_CONDITION_PICK_VALUE)
+
+  const handleSaveStats = () => {
+    onSetStats(token.id, {
+      hp: toStatField(hp),
+      hpMax: toStatField(hpMax),
+      tempHp: toStatField(tempHp),
+      ac: toStatField(ac),
+      initiative: toStatField(initiative),
+    })
+  }
+
+  const handleConditionPick = (label: string) => {
+    setConditionPick(NO_CONDITION_PICK_VALUE)
+    if (label === NO_CONDITION_PICK_VALUE || token.conditions.includes(label)) {
+      return
+    }
+    onSetConditions(token.id, [...token.conditions, label])
+  }
+
+  const handleAddCondition = () => {
+    const trimmed = conditionInput.trim()
+    if (trimmed === '' || token.conditions.includes(trimmed)) {
+      return
+    }
+    onSetConditions(token.id, [...token.conditions, trimmed])
+    setConditionInput('')
+  }
+
+  const handleRemoveCondition = (label: string) => {
+    onSetConditions(
+      token.id,
+      token.conditions.filter((condition) => condition !== label),
+    )
+  }
+
+  return (
+    <Modal title={`${token.name} bearbeiten`} onClose={onClose}>
+      <div className="form-grid">
+        <label htmlFor={`edit-token-hp-${token.id}`}>{`${token.name} HP`}</label>
+        <input
+          id={`edit-token-hp-${token.id}`}
+          type="number"
+          aria-label={`${token.name} HP`}
+          value={hp}
+          onChange={(event) => setHp(event.target.value)}
+          autoFocus
+        />
+
+        <label htmlFor={`edit-token-hpmax-${token.id}`}>{`${token.name} HP-Maximum`}</label>
+        <input
+          id={`edit-token-hpmax-${token.id}`}
+          type="number"
+          aria-label={`${token.name} HP-Maximum`}
+          value={hpMax}
+          onChange={(event) => setHpMax(event.target.value)}
+        />
+
+        <label htmlFor={`edit-token-temphp-${token.id}`}>{`${token.name} Temp-HP`}</label>
+        <input
+          id={`edit-token-temphp-${token.id}`}
+          type="number"
+          aria-label={`${token.name} Temp-HP`}
+          value={tempHp}
+          onChange={(event) => setTempHp(event.target.value)}
+        />
+
+        <label htmlFor={`edit-token-ac-${token.id}`}>{`${token.name} RK`}</label>
+        <input
+          id={`edit-token-ac-${token.id}`}
+          type="number"
+          aria-label={`${token.name} RK`}
+          value={ac}
+          onChange={(event) => setAc(event.target.value)}
+        />
+
+        <label htmlFor={`edit-token-initiative-${token.id}`}>{`${token.name} Initiative`}</label>
+        <input
+          id={`edit-token-initiative-${token.id}`}
+          type="number"
+          aria-label={`${token.name} Initiative`}
+          value={initiative}
+          onChange={(event) => setInitiative(event.target.value)}
+        />
+
+        <div className="form-actions">
+          <button type="button" aria-label={`${token.name} Werte speichern`} onClick={handleSaveStats}>
+            Werte speichern
+          </button>
+        </div>
+      </div>
+
+      <div className="form-grid">
+        <label htmlFor={`edit-token-condition-pick-${token.id}`}>{`${token.name} Markierung wählen`}</label>
+        <select
+          id={`edit-token-condition-pick-${token.id}`}
+          aria-label={`${token.name} Markierung wählen`}
+          value={conditionPick}
+          onChange={(event) => handleConditionPick(event.target.value)}
+        >
+          <option value={NO_CONDITION_PICK_VALUE}>Markierung wählen</option>
+          {CONDITION_CATALOG.map((entry) => (
+            <option key={entry.label} value={entry.label}>
+              {entry.label}
+            </option>
+          ))}
+        </select>
+
+        <label htmlFor={`edit-token-condition-${token.id}`}>{`${token.name} Markierung`}</label>
+        <input
+          id={`edit-token-condition-${token.id}`}
+          aria-label={`${token.name} Markierung`}
+          value={conditionInput}
+          onChange={(event) => setConditionInput(event.target.value)}
+        />
+        <button type="button" aria-label={`${token.name} Markierung hinzufügen`} onClick={handleAddCondition}>
+          Markierung hinzufügen
+        </button>
+
+        <ul aria-label={`${token.name} Markierungen`}>
+          {token.conditions.map((label) => {
+            const icon = conditionIcon(label)
+            return (
+              <li key={label} className="chip">
+                {icon !== null && <Icon name={icon} />}
+                <span>{label}</span>
+                <IconButton name="delete" label={`${token.name} Markierung ${label} entfernen`} onClick={() => handleRemoveCondition(label)} />
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    </Modal>
+  )
+}
+
 export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpenLibrary }: SessionRoomProps) {
   const t = useT()
   const { push } = useToasts()
   const { confirm } = useConfirm()
   const socketRef = useRef<SessionSocketFacade | null>(null)
+  // add-token-cards (#95, design.md D7): Handle der aktiven Kartenansicht, nur fuer
+  // `centerOn` (Menueeintrag "Auf Karte zentrieren") - `MapCanvas` ist jetzt `forwardRef`.
+  const mapCanvasRef = useRef<MapCanvasRef>(null)
   const [state, setState] = useState<RoomState>({ status: 'lädt' })
   const [replaced, setReplaced] = useState(false)
   // Requirement "Sitzungsoberflaeche": eine gemeldete Wiederverbindung nach `session:replaced`
@@ -278,11 +458,13 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
   // DOM, sobald auch ein Spieler eine abgelehnte Bewegung sieht. add-token-sharing (#62,
   // design.md D6): dieselbe Meldung auch fuer eine abgelehnte Freigabe.
   const [tokenError, setTokenError] = useState<string | null>(null)
-  // ui-menu (#92, design.md D5/D9): `assignTokenId`/`shareTokenId` steuern die beiden Modals
-  // des Token-Menues; `mapMenu`/`mapMenuTokenId` dasselbe Menue am Rechtsklick-Punkt eines
-  // Tokens der Karte.
+  // ui-menu (#92, design.md D5/D9): `assignTokenId`/`shareTokenId` steuern die Modals des
+  // Token-Menues; `mapMenu`/`mapMenuTokenId` dasselbe Menue am Rechtsklick-Punkt eines Tokens
+  // der Karte. add-token-cards (#95, design.md D1): `editTokenId` steuert zusaetzlich das
+  // Bearbeiten-Modal (Werte + Markierungen).
   const [assignTokenId, setAssignTokenId] = useState<string | null>(null)
   const [shareTokenId, setShareTokenId] = useState<string | null>(null)
+  const [editTokenId, setEditTokenId] = useState<string | null>(null)
   const mapMenu = useFloating()
   const [mapMenuTokenId, setMapMenuTokenId] = useState<string | null>(null)
   // session-bar (#93, design.md D6): `transitionError` traegt die Bar-Meldung eines vom
@@ -513,9 +695,9 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
     return () => clearTimeout(timer)
   }, [ended])
 
-  // ui-menu (#92, design.md D5): verschwindet das Token eines offenen Zuweisen-/Freigaben-
-  // Modals aus `state.tokens` (etwa durch "Entfernen" an anderer Stelle), schliesst das
-  // jeweilige Modal.
+  // ui-menu (#92, design.md D5): verschwindet das Token eines offenen Zuweisen-/Freigaben-/
+  // Bearbeiten-Modals aus `state.tokens` (etwa durch "Entfernen" an anderer Stelle),
+  // schliesst das jeweilige Modal.
   useEffect(() => {
     if (state.status !== 'bereit') {
       return
@@ -526,7 +708,10 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
     if (shareTokenId !== null && !state.tokens.some((token) => token.id === shareTokenId)) {
       setShareTokenId(null)
     }
-  }, [state, assignTokenId, shareTokenId])
+    if (editTokenId !== null && !state.tokens.some((token) => token.id === editTokenId)) {
+      setEditTokenId(null)
+    }
+  }, [state, assignTokenId, shareTokenId, editTokenId])
 
   // add-fog-of-war (#16, design.md D7): Fog-Ebene fuer die Canvas-Fassade - nur bei Aenderung
   // von `fog`/`role` neu gebaut, damit der `setFog`-Effekt in `MapCanvas` nicht bei jedem
@@ -780,18 +965,13 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
       })
   }
 
-  // ui-menu (#92, design.md D5, "Token-Menü"): die Verzweigung der vier Eintraege. Vom
-  // Karten-Menue aus ist `document.getElementById` der einzige Weg zur Zeile der
-  // Token-Verwaltung - `scrollIntoView` nur, wenn die Methode existiert (jsdom hat sie nicht).
+  // ui-menu (#92, design.md D5, "Token-Menü"): die Verzweigung der Menue-Eintraege.
+  // add-token-cards (#95, design.md D1/D6): `bearbeiten` oeffnet jetzt das Bearbeiten-Modal
+  // statt eine Zeile zu fokussieren; `zentrieren` ruft `centerOn` der aktiven Kartenansicht
+  // mit der Ankerzelle des Tokens auf (`mapCanvasRef`, `map/viewport.ts`).
   const handleTokenAction = (token: Token, action: TokenMenuAction) => {
     if (action === 'bearbeiten') {
-      const field = document.getElementById(`token-panel-hp-${token.id}`)
-      if (field) {
-        if (typeof field.scrollIntoView === 'function') {
-          field.scrollIntoView()
-        }
-        field.focus()
-      }
+      setEditTokenId(token.id)
       return
     }
     if (action === 'zuweisen') {
@@ -800,6 +980,10 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
     }
     if (action === 'freigeben') {
       setShareTokenId(token.id)
+      return
+    }
+    if (action === 'zentrieren') {
+      mapCanvasRef.current?.centerOn({ col: token.col, row: token.row })
       return
     }
     // 'entfernen'
@@ -988,10 +1172,12 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
       <StatusBanner>{t(disconnected === 'unterbrochen' ? 'status.disconnected' : 'status.disconnectedByServer')}</StatusBanner>
     ) : null
 
-  // ui-menu (#92, design.md D5/D9): Ableitungen fuer die beiden Token-Modals und die
-  // Zielgruppe des Zuweisen-Modals - nur gueltig, wenn der Raum bereit ist, sonst `null`/`[]`.
+  // ui-menu (#92, design.md D5/D9): Ableitungen fuer die Token-Modals und die Zielgruppe des
+  // Zuweisen-Modals - nur gueltig, wenn der Raum bereit ist, sonst `null`/`[]`. add-token-cards
+  // (#95): `editToken` fuer das Bearbeiten-Modal, nach demselben Muster.
   const assignToken = state.status === 'bereit' ? (state.tokens.find((token) => token.id === assignTokenId) ?? null) : null
   const shareToken = state.status === 'bereit' ? (state.tokens.find((token) => token.id === shareTokenId) ?? null) : null
+  const editToken = state.status === 'bereit' ? (state.tokens.find((token) => token.id === editTokenId) ?? null) : null
   const players = state.status === 'bereit' ? state.participants.filter((participant) => participant.role === 'spieler') : []
 
   let content: ReactNode
@@ -1076,6 +1262,7 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
             // Stylesheet (`.map-stage`).
             <div className="map-stage">
               <MapCanvas
+                ref={mapCanvasRef}
                 imageUrl={imageUrl}
                 grid={state.map.grid}
                 tokens={state.tokens}
@@ -1141,15 +1328,15 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
             <TokenPanel
               sessionId={sessionId}
               tokens={state.tokens}
+              participants={state.participants}
               onCreate={handleTokenCreate}
               onSetStats={handleTokenStats}
-              onSetConditions={handleTokenConditions}
               menuEntries={menuEntries}
             />
           ) : (
             // add-token-stats (#61, design.md D10, Requirement "Tokenansicht im Raum"): ein
             // Spieler sieht statt der Verwaltung die eigene Werteliste.
-            <PlayerTokenList tokens={state.tokens} menuEntries={menuEntries} />
+            <PlayerTokenList tokens={state.tokens} participants={state.participants} menuEntries={menuEntries} />
           )}
         </TabPanel>
 
@@ -1253,6 +1440,17 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
             setAssignTokenId(null)
           }}
           onClose={() => setAssignTokenId(null)}
+        />
+      )}
+      {/* add-token-cards (#95, design.md D1): das Bearbeiten-Modal - derselbe Trigger-Ort
+          (Zeilenmenue oder Karten-Kontextmenue), dasselbe Muster wie `AssignTokenDialog`. */}
+      {editToken && (
+        <EditTokenDialog
+          key={editToken.id}
+          token={editToken}
+          onSetStats={handleTokenStats}
+          onSetConditions={handleTokenConditions}
+          onClose={() => setEditTokenId(null)}
         />
       )}
       {shareToken && state.status === 'bereit' && (

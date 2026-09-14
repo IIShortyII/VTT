@@ -11,6 +11,9 @@
 //
 // session-bar (#93, design.md D7): `copy` (Lucide `Copy`) nach `close` - die Registry traegt
 // jetzt 55 Namen.
+//
+// add-token-cards (#95, design.md D8): `locate` (Lucide `LocateFixed`) zwischen `library` und
+// `lock` - die Registry traegt jetzt 56 Namen.
 import {
   ArrowDownToLine,
   Ban,
@@ -40,6 +43,7 @@ import {
   Info,
   LibraryBig,
   Link,
+  LocateFixed,
   Lock,
   LogOut,
   Map,
@@ -69,7 +73,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-/** Genau die 55 Registry-Namen, in der Reihenfolge aus `specs/ui-icons/spec.md`
+/** Genau die 56 Registry-Namen, in der Reihenfolge aus `specs/ui-icons/spec.md`
  * ("Registry-Namen"): Oberflaeche, Symbolkatalog, Zustandskatalog. */
 export const ICON_NAMES = [
   // Oberflaeche
@@ -89,6 +93,7 @@ export const ICON_NAMES = [
   'hide',
   'info',
   'library',
+  'locate',
   'lock',
   'logout',
   'map',
@@ -152,6 +157,7 @@ export const ICON_REGISTRY: Record<IconName, LucideIcon> = {
   hide: EyeOff,
   info: Info,
   library: LibraryBig,
+  locate: LocateFixed,
   lock: Lock,
   logout: LogOut,
   map: Map,

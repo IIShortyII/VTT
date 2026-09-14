@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 
 import type { Annotation, AnnotationKind, CanvasTool } from '../../shared/annotation.js'
 import type { Cell, Point } from '../../shared/grid.js'
@@ -38,6 +38,12 @@ import type { AnnotationOptions, FogLayer, MapCanvasHandle } from './canvas.js'
 // waehrenddessen veraendert hat. Nur angelegt, wenn `ResizeObserver` existiert (jsdom kennt
 // ihn nicht); der Aufruf `resize?.()` ist tolerant, wie die uebrigen Setter, fuer Mocks ohne
 // diese Methode.
+//
+// add-token-cards (#95, design.md D7): `MapCanvas` ist jetzt `forwardRef` - `SessionRoom`
+// haelt ein Ref auf `centerOn`, um die Sicht ueber den Menueeintrag `Auf Karte zentrieren`
+// auf die Ankerzelle eines Tokens zu ruecken. `useImperativeHandle` liest das intern
+// gehaltene Handle ueber `handleRef` (tolerant wie `setTokens?.` oben - ein Mock ohne
+// `centerOn` bricht nichts).
 
 const DEFAULT_ANNOTATION_OPTIONS: AnnotationOptions = { mode: 'gerastert', color: 'rot', unit: 'meter' }
 
@@ -57,21 +63,28 @@ export interface MapCanvasProps {
   onAnnotationDrawn?: (kind: AnnotationKind, points: Point[]) => void
 }
 
-export function MapCanvas({
-  imageUrl,
-  grid,
-  tokens,
-  onTokenMove,
-  canMoveToken,
-  onTokenContextMenu,
-  fog,
-  tool,
-  selection,
-  onCellsSelected,
-  annotations,
-  annotationOptions,
-  onAnnotationDrawn,
-}: MapCanvasProps) {
+/** Das an `SessionRoom` durchgereichte Handle (design.md D7): mindestens `centerOn`, ein
+ * Teilausschnitt von `MapCanvasHandle`. */
+export type MapCanvasRef = Pick<MapCanvasHandle, 'centerOn'>
+
+export const MapCanvas = forwardRef<MapCanvasRef, MapCanvasProps>(function MapCanvas(
+  {
+    imageUrl,
+    grid,
+    tokens,
+    onTokenMove,
+    canMoveToken,
+    onTokenContextMenu,
+    fog,
+    tool,
+    selection,
+    onCellsSelected,
+    annotations,
+    annotationOptions,
+    onAnnotationDrawn,
+  },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const handleRef = useRef<MapCanvasHandle | null>(null)
   // App-Test Runde 2 (#14): `createMapCanvas` laeuft asynchron (`app.init`) - trifft waehrend
@@ -80,6 +93,19 @@ export function MapCanvas({
   // damit der Mount-Effekt sie nach dem Erzeugen einmalig nachziehen kann.
   const latestPropsRef = useRef({ grid, imageUrl, tokens, fog, tool, selection, annotations, annotationOptions })
   latestPropsRef.current = { grid, imageUrl, tokens, fog, tool, selection, annotations, annotationOptions }
+
+  // add-token-cards (#95, design.md D7): reicht `centerOn` an den Aufrufer durch - tolerant
+  // (`?.`), solange das Handle noch nicht erzeugt ist (`app.init` laeuft asynchron) oder ein
+  // Mock ohne `centerOn` gilt.
+  useImperativeHandle(
+    ref,
+    () => ({
+      centerOn(cell: Cell): void {
+        handleRef.current?.centerOn?.(cell)
+      },
+    }),
+    [],
+  )
 
   // Nur beim Mounten erzeugen - spaetere Aenderungen von `grid`/`imageUrl`/`tokens`/`fog`/
   // `tool`/`selection`/`annotations`/`annotationOptions` gehen ueber die Effekte darunter,
@@ -222,4 +248,4 @@ export function MapCanvas({
   }, [annotationOptions])
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-}
+})

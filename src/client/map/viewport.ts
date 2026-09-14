@@ -14,6 +14,19 @@ export interface CanvasPoint {
   y: number
 }
 
+// add-token-cards (#95, design.md D7): eigene Namen fuer die Parameter von `centerOn` - ein
+// Weltpunkt (Kartenkoordinaten, z. B. ein Zellmittelpunkt) und die Buehnengroesse (Canvas in
+// Pixeln), strukturell dasselbe Paar wie `CanvasPoint`, aber mit eigener Bedeutung.
+export interface WorldPoint {
+  x: number
+  y: number
+}
+
+export interface ScreenSize {
+  width: number
+  height: number
+}
+
 const MIN_SCALE = 0.1
 const MAX_SCALE = 8
 
@@ -38,5 +51,19 @@ export function zoomAt(view: View, cursor: CanvasPoint, factor: number): View {
     x: cursor.x - imagePoint.x * nextScale,
     y: cursor.y - imagePoint.y * nextScale,
     scale: nextScale,
+  }
+}
+
+/**
+ * Zentriert die Sicht auf einen Weltpunkt (design.md D7, add-token-cards #95, spec.md
+ * Requirement "Sicht mit Schwenken und Zoomen"): `world` liegt danach in der Mitte des
+ * Canvas (`x = screen.width / 2 - world.x * scale`, `y = screen.height / 2 - world.y *
+ * scale`), `scale` bleibt unveraendert.
+ */
+export function centerOn(view: View, world: WorldPoint, screen: ScreenSize): View {
+  return {
+    x: screen.width / 2 - world.x * view.scale,
+    y: screen.height / 2 - world.y * view.scale,
+    scale: view.scale,
   }
 }

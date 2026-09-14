@@ -57,6 +57,16 @@
   --red-border: #5a2a2a;
   --color-focus: var(--teal);
 
+  /* Anmerkungsfarben (ui-toolbar, #96) - dieselben Werte wie ANNOTATION_COLOR_HEX
+     (shared/annotation.ts), die einzige Stelle ausserhalb von :root, die sie benutzt
+     (Farbchip-Swatches). */
+  --swatch-rot: #e53935;
+  --swatch-orange: #fb8c00;
+  --swatch-gelb: #fdd835;
+  --swatch-gruen: #43a047;
+  --swatch-blau: #1e88e5;
+  --swatch-weiss: #ffffff;
+
   /* Spacing */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -1032,6 +1042,105 @@ main.app-shell--wide {
 
 .setup-cluster[open] > summary {
   margin-bottom: var(--space-2);
+}
+
+/* Werkzeugleisten (ui-toolbar, #96) */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tool-button {
+  color: var(--color-text-muted);
+  min-block-size: 2.75rem;
+  min-inline-size: 2.75rem;
+}
+
+.tool-button:hover:not(:disabled) {
+  color: var(--color-text);
+}
+
+.tool-button--active {
+  border-color: var(--gold-border);
+  background: var(--gold-grad);
+  color: var(--gold-dark);
+}
+
+.tool-button--active:hover:not(:disabled) {
+  border-color: var(--gold-border);
+  background: var(--gold-grad);
+  color: var(--gold-dark);
+  filter: brightness(1.08);
+}
+
+.chip--active {
+  border-color: var(--gold-border);
+  background: var(--gold-grad);
+  color: var(--gold-dark);
+  font-weight: 600;
+}
+
+.chip--active:hover:not(:disabled) {
+  border-color: var(--gold-border);
+  background: var(--gold-grad);
+  color: var(--gold-dark);
+  filter: brightness(1.08);
+}
+
+.color-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+}
+
+.color-chip-swatch {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: var(--radius-pill);
+}
+
+.color-chip--rot .color-chip-swatch {
+  background: var(--swatch-rot);
+}
+
+.color-chip--orange .color-chip-swatch {
+  background: var(--swatch-orange);
+}
+
+.color-chip--gelb .color-chip-swatch {
+  background: var(--swatch-gelb);
+}
+
+.color-chip--gruen .color-chip-swatch {
+  background: var(--swatch-gruen);
+}
+
+.color-chip--blau .color-chip-swatch {
+  background: var(--swatch-blau);
+}
+
+.color-chip--weiss .color-chip-swatch {
+  background: var(--swatch-weiss);
+  border: 1px solid var(--color-border-strong);
+}
+
+.color-chip--active {
+  border-color: var(--gold-border);
+  box-shadow: 0 0 0 2px var(--gold-border);
 }
 
 @media (prefers-reduced-motion: no-preference) {

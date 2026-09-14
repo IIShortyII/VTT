@@ -439,30 +439,35 @@ Raster und unter den Tokens — deckend für Spieler, halbtransparent für den S
 das Aussehen nimmt der menschliche App-Test ab.
 
 Dem Spielleiter SHALL die Raumansicht bei aktiver Karte zusätzlich eine Fog-Verwaltung
-anbieten: eine Werkzeugwahl `Schwenken` (Standard), `Aufdecken`, `Verdecken` und `Bereich
-markieren`, die sie der Canvas-Fassade per `setTool` übergibt; Schaltflächen `Alles
-aufdecken` und `Alles verdecken`; ein Feld `Bereichsname` mit einer Schaltfläche `Bereich
-speichern`, eine Anzeige `Auswahl: <n> Zellen` und eine Schaltfläche `Auswahl leeren`; sowie — ohne
-Bereiche — statt der Bereichsliste den Leerzustand von `ui-status` mit dem Titel
-`Noch keine Bereiche` und dem Hinweis
-`Markiere Zellen auf der Karte und speichere sie als Bereich.`, sonst je Bereich ein
-Kontrollkästchen `<Name> aufgedeckt`, dessen Zustand `revealed` der Bereichsdarstellung
-folgt, und eine Schaltfläche `<Name> löschen`. Die Canvas-Fassade SHALL
-in den Werkzeugen `Aufdecken`, `Verdecken` und `Bereich markieren` statt zu schwenken beim
-Ziehen einen Zellbereich auswählen und die ausgewählten Zellen beim Loslassen per
-`onCellsSelected` melden (Aussehen und Ziehen im App-Test). Gemeldete Zellen SHALL im
-Werkzeug `Aufdecken` als `session:fog-set` mit `revealed: true` und Ziel `zellen`, im
+anbieten: eine Werkzeugleiste `Nebelwerkzeug` (`ui-toolbar`, „Werkzeugleiste") mit den
+Icon-Werkzeugbuttons `Schwenken` (Standard), `Aufdecken` (Tastenkürzel `R`), `Verdecken`
+(Tastenkürzel `H`) und `Bereich markieren`, deren aktives Werkzeug sie der Canvas-Fassade per
+`setTool` übergibt; Schaltflächen `Alles aufdecken` und `Alles verdecken`; ein Feld
+`Bereichsname` mit einer Schaltfläche `Bereich speichern`; eine Statusanzeige (`role="status"`)
+`<n> Zellen markiert` und eine Schaltfläche `Auswahl leeren`; sowie — ohne Bereiche — statt
+der Bereichsliste den Leerzustand von `ui-status` mit dem Titel `Noch keine Bereiche` und dem
+Hinweis `Markiere Zellen auf der Karte und speichere sie als Bereich.`, sonst je Bereich einen
+Umschalter `<Name> aufgedeckt` (`aria-pressed`), dessen Zustand `revealed` der
+Bereichsdarstellung folgt, und ein ⋮-Menü `Aktionen für <Name>` (`ui-menu`) mit dem Eintrag
+`Löschen`. Die sichtbaren Beschriftungen der Fog-Verwaltung bezieht die Raumansicht über das
+Nachschlagen `t()` (`ui-text`). Die Werkzeugkürzel wirken, während der Fokus in der
+Werkzeugleiste liegt (`ui-toolbar`, „Tastenkürzel der Werkzeugleiste").
+
+Die Canvas-Fassade SHALL in den Werkzeugen `Aufdecken`, `Verdecken` und `Bereich markieren`
+statt zu schwenken beim Ziehen einen Zellbereich auswählen und die ausgewählten Zellen beim
+Loslassen per `onCellsSelected` melden (Aussehen und Ziehen im App-Test). Gemeldete Zellen
+SHALL im Werkzeug `Aufdecken` als `session:fog-set` mit `revealed: true` und Ziel `zellen`, im
 Werkzeug `Verdecken` mit `revealed: false` gesendet werden; im Werkzeug `Bereich markieren`
 SHALL die Raumansicht sie zur lokalen Auswahl hinzufügen (Vereinigung, keine Doppelten), der
 Fassade per `setSelection` übergeben und nichts senden. `Bereich speichern` SHALL
 `session:fog-area-create` mit dem eingegebenen Namen und der Auswahl senden und bei
 `{ ok: true }` die Auswahl leeren; ohne Auswahl SHALL die Schaltfläche deaktiviert sein.
-Das Kontrollkästchen eines Bereichs SHALL `session:fog-set` mit dem Ziel `bereich` und
-`revealed` gleich dem neuen Kästchenzustand senden; `<Name> löschen` SHALL
-`session:fog-area-delete` senden. Der angezeigte Fog MUST NOT lokal geändert werden, bevor
-der Server `session:fog` verteilt hat (`constitution.md` §9.1). Einem Spieler MUST NOT die
-Raumansicht die Fog-Verwaltung zeigen. Eine Ablehnung des Servers (`{ ok: false,
-message }`) SHALL als Meldung sichtbar sein.
+Der Umschalter eines Bereichs SHALL `session:fog-set` mit dem Ziel `bereich` und `revealed`
+gleich dem Gegenteil seines aktuellen Zustands senden; der Eintrag `Löschen` im Menü
+`Aktionen für <Name>` SHALL `session:fog-area-delete` senden. Der angezeigte Fog MUST NOT
+lokal geändert werden, bevor der Server `session:fog` verteilt hat (`constitution.md` §9.1).
+Einem Spieler MUST NOT die Raumansicht die Fog-Verwaltung zeigen. Eine Ablehnung des Servers
+(`{ ok: false, message }`) SHALL als Meldung sichtbar sein.
 
 #### Scenario: Kartenansicht eines Spielers erhält maskiertes Bild und Fog
 
@@ -499,7 +504,7 @@ message }`) SHALL als Meldung sichtbar sein.
 - **GIVEN** die Anwendung hat den Raum betreten, und das Acknowledgement nennt `role:
   "spieler"`, eine aktive Karte und einen Fog
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** zeigt sie weder eine Werkzeugwahl `Aufdecken` noch eine Schaltfläche `Alles
+- **THEN** zeigt sie weder einen Button `Aufdecken` noch eine Schaltfläche `Alles
   aufdecken` noch ein Feld `Bereichsname`
 
 #### Scenario: Spielleiter sieht die Fog-Verwaltung
@@ -508,25 +513,34 @@ message }`) SHALL als Meldung sichtbar sein.
   "spielleiter"`, eine aktive Karte und `fog` mit `areas` gleich genau einem Bereich „Raum
   1" mit `cellCount: 2` und `revealed: false`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** zeigt sie die Werkzeugwahl mit `Schwenken` ausgewählt und `Aufdecken`,
-  `Verdecken`, `Bereich markieren` nicht ausgewählt, die Schaltflächen `Alles aufdecken` und
+- **THEN** zeigt sie die Werkzeugleiste `Nebelwerkzeug` mit dem Button `Schwenken` als aktivem
+  Werkzeug (`aria-pressed="true"`) und den Buttons `Aufdecken`, `Verdecken`, `Bereich
+  markieren` nicht aktiv (`aria-pressed="false"`), die Schaltflächen `Alles aufdecken` und
   `Alles verdecken`, das Feld `Bereichsname`, die deaktivierte Schaltfläche `Bereich
-  speichern`, die Anzeige `Auswahl: 0 Zellen`, das nicht angekreuzte Kontrollkästchen `Raum 1
-  aufgedeckt` und die Schaltfläche `Raum 1 löschen`
+  speichern`, die Statusanzeige `0 Zellen markiert`, den nicht gedrückten Umschalter `Raum 1
+  aufgedeckt` (`aria-pressed="false"`) und den ⋮-Trigger `Aktionen für Raum 1`
 
 #### Scenario: Ohne aktive Karte keine Fog-Verwaltung
 
 - **GIVEN** die Anwendung hat den Raum betreten, und das Acknowledgement nennt `role:
   "spielleiter"`, `map: null` und `fog: null`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** zeigt sie keine Werkzeugwahl `Aufdecken` und keine Schaltfläche `Alles aufdecken`
+- **THEN** zeigt sie keinen Button `Aufdecken` und keine Schaltfläche `Alles aufdecken`
 
 #### Scenario: Werkzeugwahl erreicht die Kartenansicht
 
 - **GIVEN** die Raumansicht des Spielleiters zeigt die Fog-Verwaltung mit der Kartenansicht
-- **WHEN** er das Werkzeug `Aufdecken` wählt
+- **WHEN** er den Button `Aufdecken` betätigt
 - **THEN** übergibt die Anwendung der Kartenansicht per `setTool` das Werkzeug `aufdecken`,
-  und `Aufdecken` ist ausgewählt
+  und der Button `Aufdecken` trägt `aria-pressed="true"`
+
+#### Scenario: Tastenkürzel wechselt das Werkzeug
+
+- **GIVEN** die Raumansicht des Spielleiters zeigt die Fog-Verwaltung mit der Kartenansicht,
+  und der Fokus liegt auf einem Button der Werkzeugleiste `Nebelwerkzeug`
+- **WHEN** die Taste `R` gedrückt wird
+- **THEN** übergibt die Anwendung der Kartenansicht per `setTool` das Werkzeug `aufdecken`,
+  und der Button `Aufdecken` trägt `aria-pressed="true"`
 
 #### Scenario: Aufdecken sendet die Auswahl
 
@@ -551,7 +565,7 @@ message }`) SHALL als Meldung sichtbar sein.
   (2,0) meldet
 - **THEN** hat die Anwendung kein `session:fog-set` gesendet, der Kartenansicht per
   `setSelection` zuletzt genau die drei Zellen (0,0), (1,0) und (2,0) übergeben, zeigt
-  `Auswahl: 3 Zellen`, und `Bereich speichern` ist aktiviert
+  `3 Zellen markiert`, und `Bereich speichern` ist aktiviert
 
 #### Scenario: Bereich speichern sendet die Absicht und leert die Auswahl
 
@@ -560,7 +574,7 @@ message }`) SHALL als Meldung sichtbar sein.
 - **WHEN** er im Feld `Bereichsname` „Raum 1" eingibt, `Bereich speichern` betätigt und das
   Acknowledgement `{ ok: true, fog }` lautet
 - **THEN** hat die Anwendung `session:fog-area-create` mit `{ sessionId: "s1", name: "Raum
-  1", cells }` mit genau diesen drei Zellen gesendet, zeigt danach `Auswahl: 0 Zellen`, hat
+  1", cells }` mit genau diesen drei Zellen gesendet, zeigt danach `0 Zellen markiert`, hat
   der Kartenansicht per `setSelection` die leere Liste übergeben, und `Bereich speichern` ist
   deaktiviert
 
@@ -568,24 +582,24 @@ message }`) SHALL als Meldung sichtbar sein.
 
 - **GIVEN** die Raumansicht des Spielleiters mit einer Auswahl aus zwei Zellen
 - **WHEN** er `Auswahl leeren` betätigt
-- **THEN** zeigt die Anwendung `Auswahl: 0 Zellen`, hat der Kartenansicht per `setSelection`
+- **THEN** zeigt die Anwendung `0 Zellen markiert`, hat der Kartenansicht per `setSelection`
   die leere Liste übergeben, und hat nichts gesendet
 
 #### Scenario: Bereich umschalten sendet die Absicht und folgt dem Server
 
 - **GIVEN** die Raumansicht des Spielleiters im Raum `s1` zeigt den Bereich „Raum 1" (`id`
-  `a1`) mit nicht angekreuztem Kontrollkästchen
-- **WHEN** er `Raum 1 aufgedeckt` ankreuzt
+  `a1`) mit nicht gedrücktem Umschalter `Raum 1 aufgedeckt`
+- **WHEN** er den Umschalter `Raum 1 aufgedeckt` betätigt
 - **THEN** sendet die Anwendung `session:fog-set` mit `{ sessionId: "s1", revealed: true,
-  target: { kind: "bereich", areaId: "a1" } }`, das Kontrollkästchen bleibt nicht
-  angekreuzt, bis `session:fog` mit `revealed: true` für „Raum 1" eintrifft, und ist danach
-  angekreuzt
+  target: { kind: "bereich", areaId: "a1" } }`, der Umschalter bleibt nicht gedrückt
+  (`aria-pressed="false"`), bis `session:fog` mit `revealed: true` für „Raum 1" eintrifft,
+  und ist danach gedrückt (`aria-pressed="true"`)
 
 #### Scenario: Bereich löschen sendet die Absicht
 
 - **GIVEN** die Raumansicht des Spielleiters im Raum `s1` zeigt den Bereich „Raum 1" (`id`
   `a1`)
-- **WHEN** er `Raum 1 löschen` betätigt
+- **WHEN** er im Menü `Aktionen für Raum 1` den Eintrag `Löschen` wählt
 - **THEN** sendet die Anwendung `session:fog-area-delete` mit `{ sessionId: "s1", areaId:
   "a1" }`, und „Raum 1" bleibt gelistet, bis `session:fog` ohne „Raum 1" eintrifft
 
@@ -613,5 +627,5 @@ message }`) SHALL als Meldung sichtbar sein.
 - **THEN** zeigt die Gruppe `Fog of War` einen Absatz der Klasse `empty-state` mit dem Titel
   `Noch keine Bereiche` und dem Hinweis
   `Markiere Zellen auf der Karte und speichere sie als Bereich.`, kein Element der Rolle
-  `listitem` und kein Kontrollkästchen, dessen Name auf `aufgedeckt` endet, aber weiterhin
+  `listitem` und keinen Umschalter, dessen Name auf `aufgedeckt` endet, aber weiterhin
   die Schaltflächen `Alles aufdecken` und `Alles verdecken`

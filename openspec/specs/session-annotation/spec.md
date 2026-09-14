@@ -398,22 +398,30 @@ und unter den Tokens, Messungen mit ihrem Etikett über den Tokens; keines reagi
 Zeiger; das Aussehen nimmt der menschliche App-Test ab.
 
 Bei aktiver Karte SHALL die Raumansicht jeder Rolle ein Panel `Messen & Zeichnen`
-anbieten: die Werkzeugwahl `Bewegen` (Standard, dasselbe Werkzeug wie `Schwenken` der
-Fog-Verwaltung), `Strecke`, `Kreis`, `Winkel`, `Zeichnen`, die sie der Canvas-Fassade per
-`setTool` übergibt — es gibt genau einen Werkzeugzustand, den sich beide Verwaltungen
-teilen; die Moduswahl `Gerastert` (Standard) und `Frei`, nur bei `Strecke`, `Kreis` und
-`Winkel` aktiviert; die Sichtbarkeitswahl `Privat` (Standard) und `Geteilt`; die Farbwahl
-`Rot` (Standard), `Orange`, `Gelb`, `Grün`, `Blau`, `Weiß`, nur bei `Zeichnen` aktiviert;
-die Einheitenwahl `Meter` (Standard) und `Fuß`, die sofort auf jedes Etikett wirkt und im
-Browser gemerkt wird (beim nächsten Betreten vorbelegt); eine Liste der sichtbaren
-Anmerkungen in Bestandsreihenfolge (ohne Anmerkungen statt der Liste der Leerzustand von
-`ui-status` mit dem Titel `Noch keine Anmerkungen` und dem Hinweis
-`Miss eine Strecke oder zeichne auf der Karte.`), je Eintrag Art, Etikett (außer bei Zeichnung),
-Sichtbarkeit und Urheber (Alias oder Nutzername aus der Teilnehmerliste, sonst
-`unbekannt`), mit einer Schaltfläche `Entfernen` genau dann, wenn der Betrachter die
-Anmerkung nach „Begriffe" entfernen darf; eine Schaltfläche `Meine entfernen`; und für
-Rolle `spielleiter` zusätzlich `Alle geteilten entfernen`. Ohne aktive Karte MUST NOT das
-Panel erscheinen.
+anbieten: eine Werkzeugleiste `Anmerkungswerkzeug` (`ui-toolbar`, „Werkzeugleiste") mit den
+Icon-Werkzeugbuttons `Bewegen` (Standard, Tastenkürzel `V`, dasselbe Werkzeug wie `Schwenken`
+der Fog-Verwaltung), `Strecke` (Tastenkürzel `M`), `Kreis`, `Winkel`, `Zeichnen`
+(Tastenkürzel `D`), deren aktives Werkzeug sie der Canvas-Fassade per `setTool` übergibt — es
+gibt genau einen Werkzeugzustand, den sich beide Verwaltungen teilen; die Moduswahl als Chips
+(`ui-toolbar`, „Umschalt-Chips") `Gerastert` (Standard) und `Frei`, nur bei `Strecke`, `Kreis`
+und `Winkel` aktiviert; die Sichtbarkeitswahl als Chips `Privat` (Standard) und `Geteilt`; die
+Farbwahl als Farbchips (`ui-toolbar`, „Farbchips") `Rot` (Standard), `Orange`, `Gelb`, `Grün`,
+`Blau`, `Weiß`, nur bei `Zeichnen` aktiviert; die Einheitenwahl als Chips `Meter` (Standard)
+und `Fuß`, die sofort auf jedes Etikett wirkt und im Browser gemerkt wird (beim nächsten
+Betreten vorbelegt); eine Liste der sichtbaren Anmerkungen in Bestandsreihenfolge (ohne
+Anmerkungen statt der Liste der Leerzustand von `ui-status` mit dem Titel
+`Noch keine Anmerkungen` und dem Hinweis `Miss eine Strecke oder zeichne auf der Karte.`), je
+Eintrag Art, Etikett (außer bei Zeichnung), Sichtbarkeit und Urheber (Alias oder Nutzername
+aus der Teilnehmerliste, sonst `unbekannt`), und — genau dann, wenn der Betrachter die
+Anmerkung nach „Begriffe" entfernen darf — ein ⋮-Menü `Aktionen für <Eintrag>` (`ui-menu`) mit
+dem Eintrag `Entfernen`; eine Schaltfläche `Meine entfernen`; und für Rolle `spielleiter`
+zusätzlich `Alle geteilten entfernen`. Ohne aktive Karte MUST NOT das Panel erscheinen.
+
+Die vom Client komponierten Wörter der Einträge (Art-Präfix, Sichtbarkeit, Urheber-Fallback
+`unbekannt`) und die Beschriftungen der Bedienelemente bezieht die Raumansicht über das
+Nachschlagen `t()` (`ui-text`); das Mess-Etikett stammt unverändert aus `annotationLabel`
+(„Messgeometrie"). Die Werkzeugkürzel wirken, während der Fokus in der Werkzeugleiste liegt
+(`ui-toolbar`, „Tastenkürzel der Werkzeugleiste").
 
 Die Canvas-Fassade SHALL in den Werkzeugen `Strecke`, `Kreis`, `Winkel` und `Zeichnen`
 statt zu schwenken eine Geste aufnehmen (Ziehen bei Strecke, Kreis und Zeichnen; drei
@@ -423,10 +431,10 @@ SHALL die Raumansicht als `session:annotation-create` mit dem gewählten Modus, 
 gewählten Sichtbarkeit und — nur bei `Zeichnen` — der gewählten Farbe senden; bei Modus
 `gerastert` mit den auf Zellmitten eingerasteten Punkten. Der angezeigte Bestand MUST NOT
 lokal geändert werden, bevor der Server `session:annotations` verteilt hat
-(`constitution.md` §9.1). `Entfernen` SHALL `session:annotation-delete` mit dem Ziel
-`eine`, `Meine entfernen` mit dem Ziel `meine` und `Alle geteilten entfernen` mit dem Ziel
-`geteilte` senden. Eine Ablehnung des Servers (`{ ok: false, message }`) SHALL als Meldung
-sichtbar sein.
+(`constitution.md` §9.1). Der Eintrag `Entfernen` im Menü `Aktionen für <Eintrag>` SHALL
+`session:annotation-delete` mit dem Ziel `eine`, `Meine entfernen` mit dem Ziel `meine` und
+`Alle geteilten entfernen` mit dem Ziel `geteilte` senden. Eine Ablehnung des Servers
+(`{ ok: false, message }`) SHALL als Meldung sichtbar sein.
 
 #### Scenario: Raumansicht übergibt Bestand und Optionen an die Kartenansicht
 
@@ -443,12 +451,13 @@ sichtbar sein.
 - **GIVEN** die Anwendung hat den Raum betreten, und das Acknowledgement nennt `role:
   "spieler"` und eine aktive Karte
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** zeigt sie das Panel `Messen & Zeichnen` mit der Werkzeugwahl `Bewegen`
-  ausgewählt und `Strecke`, `Kreis`, `Winkel`, `Zeichnen` nicht ausgewählt, der Moduswahl
-  `Gerastert` ausgewählt und beide Modi deaktiviert, der Sichtbarkeitswahl `Privat`
-  ausgewählt, der Farbwahl `Rot` ausgewählt und alle Farben deaktiviert, der Einheitenwahl
-  `Meter` ausgewählt, der Schaltfläche `Meine entfernen` und keiner Schaltfläche `Alle
-  geteilten entfernen`
+- **THEN** zeigt sie das Panel `Messen & Zeichnen` mit der Werkzeugleiste
+  `Anmerkungswerkzeug`, in der der Button `Bewegen` aktiv ist (`aria-pressed="true"`) und
+  `Strecke`, `Kreis`, `Winkel`, `Zeichnen` nicht (`aria-pressed="false"`), dem Modus-Chip
+  `Gerastert` aktiv (`aria-pressed="true"`) und beiden Modus-Chips `disabled`, dem
+  Sichtbarkeits-Chip `Privat` aktiv, dem Farbchip `Rot` aktiv und allen Farbchips `disabled`,
+  dem Einheiten-Chip `Meter` aktiv, der Schaltfläche `Meine entfernen` und keiner
+  Schaltfläche `Alle geteilten entfernen`
 
 #### Scenario: Spielleiter sieht zusätzlich die Sammelaktion für geteilte
 
@@ -461,32 +470,41 @@ sichtbar sein.
 
 - **GIVEN** die Anwendung hat den Raum betreten, und das Acknowledgement nennt `map: null`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** zeigt sie weder eine Werkzeugwahl `Strecke` noch eine Schaltfläche `Meine
+- **THEN** zeigt sie weder einen Button `Strecke` noch eine Schaltfläche `Meine
   entfernen`
 
 #### Scenario: Werkzeugwahl erreicht die Kartenansicht
 
 - **GIVEN** die Raumansicht eines Spielers zeigt das Panel mit der Kartenansicht
-- **WHEN** er das Werkzeug `Strecke` wählt
+- **WHEN** er den Button `Strecke` betätigt
 - **THEN** übergibt die Anwendung der Kartenansicht per `setTool` das Werkzeug `strecke`,
-  `Strecke` ist ausgewählt, `Bewegen` nicht, die Moduswahl ist aktiviert und die Farbwahl
-  deaktiviert
+  der Button `Strecke` trägt `aria-pressed="true"`, `Bewegen` nicht, die Modus-Chips sind
+  aktiviert und die Farbchips deaktiviert
+
+#### Scenario: Tastenkürzel wechselt das Werkzeug
+
+- **GIVEN** die Raumansicht eines Spielers zeigt das Panel mit der Kartenansicht, und der
+  Fokus liegt auf einem Button der Werkzeugleiste `Anmerkungswerkzeug`
+- **WHEN** die Taste `M` gedrückt wird
+- **THEN** übergibt die Anwendung der Kartenansicht per `setTool` das Werkzeug `strecke`,
+  und der Button `Strecke` trägt `aria-pressed="true"`
 
 #### Scenario: Mess- und Fog-Werkzeug teilen sich den Zustand
 
 - **GIVEN** die Raumansicht des Spielleiters zeigt die Fog-Verwaltung und das Panel `Messen
   & Zeichnen` mit der Kartenansicht
-- **WHEN** er in der Fog-Verwaltung `Aufdecken` wählt, danach im Panel `Strecke`, und
-  danach in der Fog-Verwaltung `Schwenken`
+- **WHEN** er in der Fog-Verwaltung den Button `Aufdecken` betätigt, danach im Panel den
+  Button `Strecke`, und danach in der Fog-Verwaltung den Button `Schwenken`
 - **THEN** hat die Anwendung der Kartenansicht per `setTool` nacheinander `aufdecken`,
-  `strecke` und `schwenken` übergeben; nach dem zweiten Schritt war `Aufdecken` nicht
-  ausgewählt, und nach dem dritten ist `Bewegen` ausgewählt und `Strecke` nicht
+  `strecke` und `schwenken` übergeben; nach dem zweiten Schritt trug der Button `Aufdecken`
+  `aria-pressed="false"`, und nach dem dritten trägt der Button `Bewegen`
+  `aria-pressed="true"` und `Strecke` `aria-pressed="false"`
 
 #### Scenario: Zeichnen aktiviert die Farbwahl
 
 - **GIVEN** die Raumansicht eines Spielers zeigt das Panel
-- **WHEN** er das Werkzeug `Zeichnen` wählt
-- **THEN** ist die Farbwahl aktiviert und die Moduswahl deaktiviert, und die Kartenansicht
+- **WHEN** er den Button `Zeichnen` betätigt
+- **THEN** sind die Farbchips aktiviert und die Modus-Chips deaktiviert, und die Kartenansicht
   hat per `setTool` das Werkzeug `zeichnung` erhalten
 
 #### Scenario: Gemessene Strecke wird gesendet
@@ -547,8 +565,8 @@ sichtbar sein.
   "spieler"`, eine aktive Karte und `annotations` mit einer geteilten Strecke von `sam` und
   einer geteilten Strecke von `meister`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** trägt der Eintrag der Strecke von `sam` eine Schaltfläche `Entfernen`, und der
-  Eintrag der Strecke von `meister` trägt keine
+- **THEN** trägt der Eintrag der Strecke von `sam` einen ⋮-Trigger, dessen zugänglicher Name
+  mit `Aktionen für ` beginnt, und der Eintrag der Strecke von `meister` trägt keinen
 
 #### Scenario: Spielleiter darf fremde geteilte entfernen
 
@@ -556,13 +574,14 @@ sichtbar sein.
   `role: "spielleiter"`, eine aktive Karte und `annotations` mit einer geteilten Strecke
   von `sam`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** trägt der Eintrag dieser Strecke eine Schaltfläche `Entfernen`
+- **THEN** trägt der Eintrag dieser Strecke einen ⋮-Trigger, dessen zugänglicher Name mit
+  `Aktionen für ` beginnt
 
 #### Scenario: Entfernen sendet die Absicht
 
 - **GIVEN** die Raumansicht von `sam` im Raum `s1` zeigt den Eintrag seiner geteilten
-  Strecke `a1` mit der Schaltfläche `Entfernen`
-- **WHEN** er `Entfernen` in diesem Eintrag betätigt
+  Strecke `a1` mit einem ⋮-Trigger für Zeilenaktionen
+- **WHEN** er im Menü dieses Eintrags den Eintrag `Entfernen` wählt
 - **THEN** sendet die Anwendung `session:annotation-delete` mit `{ sessionId: "s1", target:
   { kind: "eine", annotationId: "a1" } }` und zeigt den Eintrag weiterhin, bis
   `session:annotations` eintrifft
@@ -579,7 +598,7 @@ sichtbar sein.
 
 - **GIVEN** die Raumansicht eines Spielers zeigt den Eintrag `Strecke: 3 Felder (4,5 m) ·
   geteilt · sam`
-- **WHEN** er die Einheit `Fuß` wählt
+- **WHEN** er den Chip `Fuß` betätigt
 - **THEN** zeigt die Liste den Eintrag `Strecke: 3 Felder (15 ft) · geteilt · sam`, die
   Anwendung hat der Kartenansicht per `setAnnotationOptions` `{ mode: "gerastert", color:
   "rot", unit: "fuss" }` übergeben, und im Browserspeicher steht unter `vtt.distanceUnit`
@@ -590,8 +609,8 @@ sichtbar sein.
 - **GIVEN** im Browserspeicher steht unter `vtt.distanceUnit` der Wert `fuss`, und die
   Anwendung hat den Raum mit aktiver Karte betreten
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** ist `Fuß` ausgewählt, und die Kartenansicht wurde mit `annotationOptions.unit`
-  gleich `fuss` erzeugt
+- **THEN** trägt der Chip `Fuß` `aria-pressed="true"`, und die Kartenansicht wurde mit
+  `annotationOptions.unit` gleich `fuss` erzeugt
 
 #### Scenario: Abgelehntes Anlegen wird angezeigt
 

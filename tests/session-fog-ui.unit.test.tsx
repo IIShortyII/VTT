@@ -1,10 +1,19 @@
 /** @jest-environment jsdom */
-// Komponententests zum Requirement "Fog-Ansicht im Raum" aus
-// openspec/changes/add-fog-of-war/specs/session-fog/spec.md (tasks.md 1.5). Ein Test je
-// GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname (16 Szenarien).
+// Komponententests zum MODIFIED-Requirement "Fog-Ansicht im Raum" aus
+// openspec/changes/add-ui-toolbar/specs/session-fog/spec.md (Issue #96). Ein Test je
+// GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname (18 Szenarien; die
+// beiden Leerzustand-/Nicht-Bereiche-Szenarien "Ohne Bereiche zeigt die Fog-Verwaltung den
+// Leerzustand" liegt in tests/ui-status-empty.unit.test.tsx — ein Test je Szenario).
+//
+// Umbau durch add-ui-toolbar: die Werkzeugwahl ist jetzt eine `Toolbar` (`role="toolbar"`) mit
+// Icon-Werkzeugbuttons statt Radios — das aktive Werkzeug traegt `aria-pressed="true"`; der
+// Auswahlzaehler ist eine Live-Region (`role="status"`, Text `<n> Zellen markiert`) statt
+// `Auswahl: <n> Zellen`; der Aufdeck-Zustand eines Bereichs ist ein Inline-Umschalter
+// (`aria-pressed`, `<Name> aufgedeckt`) statt einer Checkbox; und `Löschen` liegt in einem
+// ⋮-Menü `Aktionen für <Name>` statt in einem Button `<Name> löschen`.
 //
 // Geprueft wird, *was* die Anwendung anbietet, anfordert und anzeigt — nicht, wie es aussieht
-// (AGENTS.md: Rendering nimmt der menschliche App-Test ab). Drei Mock-Grenzen (design.md D8/D9):
+// (AGENTS.md: Rendering nimmt der menschliche App-Test ab). Drei Mock-Grenzen (design.md):
 //  - die Socket-Fassade `src/client/session/socket.ts` mit aufzeichnenden
 //    `setFog`/`createFogArea`/`deleteFogArea` (Standard `{ ok: true }`) und einem von aussen
 //    ausloesbaren `fog`-Handler; das `enter`-Acknowledgement traegt `map`, `tokens` und `fog`,
@@ -13,14 +22,11 @@
 //    auf und liefert ein Handle mit `setGrid`/`setImage`/`setTokens`/`setFog`/`setTool`/
 //    `setSelection`/`destroy`; kein Test importiert `pixi.js`,
 //  - `fetch`, nach Pfad und Methode.
-// Elemente ausschliesslich ueber getByRole/getByLabelText/getByText (D8-Schnittstellentabelle);
-// keine `must()`-Helfer mit Kurzmeldung fuer Bedienelemente.
+// Elemente ausschliesslich ueber getByRole/getByLabelText/getByText.
 //
-// Rote Phase (tasks.md 1.5): `SessionRoom` kennt weder die Fog-Ebene noch die Bild-URL ueber
-// `/api/sessions/<id>/map-image` noch die Fog-Verwaltung (`FogPanel`), und die Fassaden-Methoden
-// `setFog`/`createFogArea`/`deleteFogArea` werden nicht aufgerufen. Die Szenarien scheitern daher
-// am fehlenden Bedienelement/Aufruf/an der falschen Bild-URL — der erwartete rote Grund, kein
-// Compile-/Setup-Fehler.
+// Rote Phase: `FogPanel` nutzt heute Radios, einen Text `Auswahl: <n> Zellen`, eine Checkbox
+// und einen `<Name> löschen`-Button; die Toolbar-/Status-/Menü-Abfragen scheitern daher am
+// fehlenden Bedienelement — der erwartete rote Grund, kein Compile-/Setup-Fehler.
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
@@ -34,7 +40,7 @@ function keysOf(cells: Cell[]): string[] {
   return cells.map((c) => `${c.col},${c.row}`).sort()
 }
 
-// --- Mock der Socket-Fassade (design.md D8) -------------------------------------------------
+// --- Mock der Socket-Fassade ----------------------------------------------------------------
 jest.mock('../src/client/session/socket.js', () => {
   const handlers: Record<string, (payload: unknown) => void> = {}
   const facade = {
@@ -83,7 +89,7 @@ type SocketTestApi = {
 }
 const socketMock = sessionSocketModule as unknown as SocketTestApi
 
-// --- Mock der Canvas-Fassade (design.md D8/D9) ----------------------------------------------
+// --- Mock der Canvas-Fassade ----------------------------------------------------------------
 jest.mock('../src/client/map/canvas.js', () => {
   const handle = {
     setGrid: jest.fn(),
@@ -106,7 +112,7 @@ type CanvasMock = {
 }
 const canvasMock = jest.requireMock('../src/client/map/canvas.js') as CanvasMock
 
-/** Optionen, mit denen `createMapCanvas` zuletzt erzeugt wurde (2. Argument, design.md D6). */
+/** Optionen, mit denen `createMapCanvas` zuletzt erzeugt wurde (2. Argument). */
 function letzteCanvasOptions(): Record<string, unknown> {
   const calls = canvasMock.createMapCanvas.mock.calls
   if (calls.length === 0) throw new Error('createMapCanvas wurde nicht aufgerufen')
@@ -121,6 +127,20 @@ function letzteSetSelection(): Cell[] {
   const calls = canvasMock.__handle.setSelection.mock.calls
   if (calls.length === 0) throw new Error('setSelection wurde nicht aufgerufen')
   return calls[calls.length - 1][0] as Cell[]
+}
+
+// --- Werkzeug-/Zustands-Helfer (Toolbar statt Radios) ---------------------------------------
+/** Ein Icon-Werkzeugbutton der Werkzeugleiste ueber seinen zugaenglichen Namen (= Label). */
+function werkzeug(name: string): HTMLButtonElement {
+  return screen.getByRole('button', { name }) as HTMLButtonElement
+}
+function ariaPressed(el: Element): string | null {
+  return el.getAttribute('aria-pressed')
+}
+async function waehle(name: string): Promise<void> {
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name }))
+  })
 }
 
 // --- fetch-Mock (nach Pfad und Methode) -----------------------------------------------------
@@ -208,6 +228,16 @@ async function betreten(): Promise<void> {
   })
 }
 
+/** Oeffnet ein ⋮-Menü (`Aktionen für …`) und waehlt einen Eintrag. */
+async function menuAktion(triggerName: string | RegExp, itemName: string): Promise<void> {
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: triggerName }))
+  })
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('menuitem', { name: itemName }))
+  })
+}
+
 beforeEach(() => {
   jest.clearAllMocks()
   for (const key of Object.keys(socketMock.__handlers)) delete socketMock.__handlers[key]
@@ -278,7 +308,7 @@ test('Spieler sieht keine Fog-Verwaltung', async () => {
   await betreten()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
-  expect(screen.queryByRole('radio', { name: 'Aufdecken' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Aufdecken' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Alles aufdecken' })).toBeNull()
   expect(screen.queryByLabelText('Bereichsname')).toBeNull()
 })
@@ -291,17 +321,18 @@ test('Spielleiter sieht die Fog-Verwaltung', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
-  expect((await screen.findByRole('radio', { name: 'Schwenken' })) as HTMLInputElement).toHaveProperty('checked', true)
-  expect((screen.getByRole('radio', { name: 'Aufdecken' }) as HTMLInputElement).checked).toBe(false)
-  expect((screen.getByRole('radio', { name: 'Verdecken' }) as HTMLInputElement).checked).toBe(false)
-  expect((screen.getByRole('radio', { name: 'Bereich markieren' }) as HTMLInputElement).checked).toBe(false)
+  expect(ariaPressed(await screen.findByRole('button', { name: 'Schwenken' }))).toBe('true')
+  expect(ariaPressed(werkzeug('Aufdecken'))).toBe('false')
+  expect(ariaPressed(werkzeug('Verdecken'))).toBe('false')
+  expect(ariaPressed(werkzeug('Bereich markieren'))).toBe('false')
   expect(screen.getByRole('button', { name: 'Alles aufdecken' })).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Alles verdecken' })).toBeTruthy()
   expect(screen.getByLabelText('Bereichsname')).toBeTruthy()
   expect((screen.getByRole('button', { name: 'Bereich speichern' }) as HTMLButtonElement).disabled).toBe(true)
-  expect(screen.getByText('Auswahl: 0 Zellen')).toBeTruthy()
-  expect((screen.getByRole('checkbox', { name: 'Raum 1 aufgedeckt' }) as HTMLInputElement).checked).toBe(false)
-  expect(screen.getByRole('button', { name: 'Raum 1 löschen' })).toBeTruthy()
+  const status = screen.getByText('0 Zellen markiert')
+  expect(status.closest('[role="status"]')).not.toBeNull()
+  expect(ariaPressed(screen.getByRole('button', { name: 'Raum 1 aufgedeckt' }))).toBe('false')
+  expect(screen.getByRole('button', { name: 'Aktionen für Raum 1' })).toBeTruthy()
 })
 
 test('Ohne aktive Karte keine Fog-Verwaltung', async () => {
@@ -313,7 +344,7 @@ test('Ohne aktive Karte keine Fog-Verwaltung', async () => {
   await betreten()
   await screen.findByText('Keine Karte aktiv')
 
-  expect(screen.queryByRole('radio', { name: 'Aufdecken' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Aufdecken' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Alles aufdecken' })).toBeNull()
 })
 
@@ -328,12 +359,30 @@ test('Werkzeugwahl erreicht die Kartenansicht', async () => {
   await betreten()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
+  await waehle('Aufdecken')
+
+  await waitFor(() => expect(canvasMock.__handle.setTool).toHaveBeenCalledWith('aufdecken'))
+  expect(ariaPressed(werkzeug('Aufdecken'))).toBe('true')
+})
+
+test('Tastenkürzel wechselt das Werkzeug', async () => {
+  fetchFuer('spielleiter')
+  enterAck('spielleiter', { map: MAP, fog: fogState(0, [], []) })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
+
+  // Fokus liegt auf einer Schaltflaeche der Werkzeugleiste `Nebelwerkzeug`.
+  const knopf = await screen.findByRole('button', { name: 'Schwenken' })
+  knopf.focus()
   await act(async () => {
-    fireEvent.click(await screen.findByRole('radio', { name: 'Aufdecken' }))
+    fireEvent.keyDown(knopf, { key: 'R' })
   })
 
   await waitFor(() => expect(canvasMock.__handle.setTool).toHaveBeenCalledWith('aufdecken'))
-  expect((screen.getByRole('radio', { name: 'Aufdecken' }) as HTMLInputElement).checked).toBe(true)
+  expect(ariaPressed(werkzeug('Aufdecken'))).toBe('true')
 })
 
 test('Aufdecken sendet die Auswahl', async () => {
@@ -344,9 +393,7 @@ test('Aufdecken sendet die Auswahl', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
-  await act(async () => {
-    fireEvent.click(await screen.findByRole('radio', { name: 'Aufdecken' }))
-  })
+  await waehle('Aufdecken')
 
   await act(async () => {
     onCellsSelected()([C(0, 0), C(1, 0)])
@@ -369,9 +416,7 @@ test('Verdecken sendet die Auswahl', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
-  await act(async () => {
-    fireEvent.click(await screen.findByRole('radio', { name: 'Verdecken' }))
-  })
+  await waehle('Verdecken')
 
   await act(async () => {
     onCellsSelected()([C(0, 0)])
@@ -388,9 +433,7 @@ test('Bereich markieren sammelt die Auswahl', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
-  await act(async () => {
-    fireEvent.click(await screen.findByRole('radio', { name: 'Bereich markieren' }))
-  })
+  await waehle('Bereich markieren')
 
   await act(async () => {
     onCellsSelected()([C(0, 0), C(1, 0)])
@@ -401,7 +444,7 @@ test('Bereich markieren sammelt die Auswahl', async () => {
 
   expect(socketMock.__facade.setFog).not.toHaveBeenCalled()
   await waitFor(() => expect(keysOf(letzteSetSelection())).toEqual(keysOf([C(0, 0), C(1, 0), C(2, 0)])))
-  expect(screen.getByText('Auswahl: 3 Zellen')).toBeTruthy()
+  expect(screen.getByText('3 Zellen markiert')).toBeTruthy()
   expect((screen.getByRole('button', { name: 'Bereich speichern' }) as HTMLButtonElement).disabled).toBe(false)
 })
 
@@ -414,9 +457,7 @@ test('Bereich speichern sendet die Absicht und leert die Auswahl', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
-  await act(async () => {
-    fireEvent.click(await screen.findByRole('radio', { name: 'Bereich markieren' }))
-  })
+  await waehle('Bereich markieren')
   await act(async () => {
     onCellsSelected()([C(0, 0), C(1, 0), C(2, 0)])
   })
@@ -431,7 +472,7 @@ test('Bereich speichern sendet die Absicht und leert die Auswahl', async () => {
   expect(sessionId).toBe('s1')
   expect(name).toBe('Raum 1')
   expect(keysOf(cells)).toEqual(keysOf([C(0, 0), C(1, 0), C(2, 0)]))
-  await waitFor(() => expect(screen.getByText('Auswahl: 0 Zellen')).toBeTruthy())
+  await waitFor(() => expect(screen.getByText('0 Zellen markiert')).toBeTruthy())
   expect(letzteSetSelection()).toEqual([])
   expect((screen.getByRole('button', { name: 'Bereich speichern' }) as HTMLButtonElement).disabled).toBe(true)
 })
@@ -444,19 +485,17 @@ test('Auswahl leeren', async () => {
   await screen.findByText(/Freitagsrunde/)
   await betreten()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
-  await act(async () => {
-    fireEvent.click(await screen.findByRole('radio', { name: 'Bereich markieren' }))
-  })
+  await waehle('Bereich markieren')
   await act(async () => {
     onCellsSelected()([C(0, 0), C(1, 0)])
   })
-  await waitFor(() => expect(screen.getByText('Auswahl: 2 Zellen')).toBeTruthy())
+  await waitFor(() => expect(screen.getByText('2 Zellen markiert')).toBeTruthy())
 
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Auswahl leeren' }))
   })
 
-  await waitFor(() => expect(screen.getByText('Auswahl: 0 Zellen')).toBeTruthy())
+  await waitFor(() => expect(screen.getByText('0 Zellen markiert')).toBeTruthy())
   expect(letzteSetSelection()).toEqual([])
   expect(socketMock.__facade.setFog).not.toHaveBeenCalled()
   expect(socketMock.__facade.createFogArea).not.toHaveBeenCalled()
@@ -471,22 +510,22 @@ test('Bereich umschalten sendet die Absicht und folgt dem Server', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
-  const kaestchen = (await screen.findByRole('checkbox', { name: 'Raum 1 aufgedeckt' })) as HTMLInputElement
-  expect(kaestchen.checked).toBe(false)
+  const umschalter = (await screen.findByRole('button', { name: 'Raum 1 aufgedeckt' }))
+  expect(ariaPressed(umschalter)).toBe('false')
 
   await act(async () => {
-    fireEvent.click(kaestchen)
+    fireEvent.click(umschalter)
   })
 
   await waitFor(() => expect(socketMock.__facade.setFog).toHaveBeenCalledWith('s1', true, { kind: 'bereich', areaId: 'a1' }))
-  // Bis session:fog eintrifft, bleibt das Kaestchen nicht angekreuzt (constitution.md §9.1).
-  expect((screen.getByRole('checkbox', { name: 'Raum 1 aufgedeckt' }) as HTMLInputElement).checked).toBe(false)
+  // Bis session:fog eintrifft, bleibt der Umschalter nicht gedrueckt (constitution.md §9.1).
+  expect(ariaPressed(screen.getByRole('button', { name: 'Raum 1 aufgedeckt' }))).toBe('false')
 
   await act(async () => {
     socketMock.__emit('fog', { sessionId: 's1', fog: fogState(0, [C(0, 0), C(1, 0)], [{ id: 'a1', name: 'Raum 1', cellCount: 2, revealed: true }]) })
   })
 
-  await waitFor(() => expect((screen.getByRole('checkbox', { name: 'Raum 1 aufgedeckt' }) as HTMLInputElement).checked).toBe(true))
+  await waitFor(() => expect(ariaPressed(screen.getByRole('button', { name: 'Raum 1 aufgedeckt' }))).toBe('true'))
 })
 
 test('Bereich löschen sendet die Absicht', async () => {
@@ -496,20 +535,19 @@ test('Bereich löschen sendet die Absicht', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  await screen.findByRole('button', { name: 'Aktionen für Raum 1' })
 
-  await act(async () => {
-    fireEvent.click(await screen.findByRole('button', { name: 'Raum 1 löschen' }))
-  })
+  await menuAktion('Aktionen für Raum 1', 'Löschen')
 
   await waitFor(() => expect(socketMock.__facade.deleteFogArea).toHaveBeenCalledWith('s1', 'a1'))
   // Bis session:fog ohne Raum 1 eintrifft, bleibt der Bereich gelistet.
-  expect(screen.getByRole('button', { name: 'Raum 1 löschen' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Aktionen für Raum 1' })).toBeTruthy()
 
   await act(async () => {
     socketMock.__emit('fog', { sessionId: 's1', fog: fogState(0, [], []) })
   })
 
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Raum 1 löschen' })).toBeNull())
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Aktionen für Raum 1' })).toBeNull())
 })
 
 // --- Alles aufdecken/verdecken und Meldung --------------------------------------------------

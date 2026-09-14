@@ -90,6 +90,7 @@ export interface MapCanvasHandle {
   setSelection(cells: Cell[]): void
   setAnnotations(list: Annotation[]): void
   setAnnotationOptions(options: AnnotationOptions): void
+  resize(): void
   destroy(): void
 }
 
@@ -1048,6 +1049,12 @@ export async function createMapCanvas(container: HTMLElement, options: MapCanvas
       setAnnotationOptions(annotationOptions: AnnotationOptions): void {
         currentAnnotationOptions = annotationOptions
         drawAnnotations()
+      },
+      resize(): void {
+        if (destroyed) {
+          return
+        }
+        app.resize()
       },
       destroy(): void {
         if (destroyed) {

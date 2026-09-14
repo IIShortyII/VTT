@@ -30,6 +30,14 @@ import type { AnnotationOptions, FogLayer, MapCanvasHandle } from './canvas.js'
 // Rueckruf. add-measure-draw (#11, design.md D4): `onAnnotationDrawn` ebenso nur beim
 // Erzeugen gelesen (Muster `onCellsSelected`). ui-menu (#92, design.md D5, "Karte"):
 // `onTokenContextMenu` ebenso nur beim Erzeugen gelesen.
+//
+// session-tabs (#94, design.md D5): die Kartenansicht liegt jetzt in einem Reiterpanel, das
+// beim Inaktivsein `hidden` traegt und 0x0 misst - ein `ResizeObserver` auf dem Container
+// ruft `handle.resize()` bei jeder sichtbaren Groessenaenderung auf, damit der Renderer beim
+// Zurueckwechseln auf `Karte` wieder in Buehnengroesse zeichnet, auch wenn sich das Fenster
+// waehrenddessen veraendert hat. Nur angelegt, wenn `ResizeObserver` existiert (jsdom kennt
+// ihn nicht); der Aufruf `resize?.()` ist tolerant, wie die uebrigen Setter, fuer Mocks ohne
+// diese Methode.
 
 const DEFAULT_ANNOTATION_OPTIONS: AnnotationOptions = { mode: 'gerastert', color: 'rot', unit: 'meter' }
 
@@ -85,6 +93,9 @@ export function MapCanvas({
     // verwaisten Canvas hinterlassen: das `cancelled`-Flag laesst die dann verspaetet
     // ankommende Instanz sofort wieder zerstoeren, statt sie zu behalten.
     let cancelled = false
+    // session-tabs (#94, design.md D5): der `ResizeObserver` wird erst nach dem Erzeugen des
+    // Handles angelegt (unten) - diese Referenz haelt ihn fuer das Cleanup fest.
+    let resizeObserver: ResizeObserver | null = null
     const initialGrid = grid
     const initialImageUrl = imageUrl
     const initialTokens = tokens
@@ -148,12 +159,24 @@ export function MapCanvas({
         if ((latest.annotationOptions ?? DEFAULT_ANNOTATION_OPTIONS) !== initialAnnotationOptions) {
           handle.setAnnotationOptions?.(latest.annotationOptions ?? DEFAULT_ANNOTATION_OPTIONS)
         }
+        // session-tabs (#94, design.md D5): nur anlegen, wenn der Browser `ResizeObserver`
+        // kennt (jsdom nicht) - der Rueckruf ueberspringt eine gemessene Groesse von 0x0 (ein
+        // verstecktes Reiterpanel), sonst zeichnet Pixi in eine leere Flaeche.
+        if (typeof ResizeObserver !== 'undefined') {
+          resizeObserver = new ResizeObserver(() => {
+            if (container.clientWidth > 0 && container.clientHeight > 0) {
+              handleRef.current?.resize?.()
+            }
+          })
+          resizeObserver.observe(container)
+        }
       })
       .catch((error: unknown) => {
         console.error(error)
       })
     return () => {
       cancelled = true
+      resizeObserver?.disconnect()
       handleRef.current?.destroy()
       handleRef.current = null
     }

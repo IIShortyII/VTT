@@ -21,6 +21,8 @@ import { displayName, type Participant } from '../../shared/session.js'
 // "Anmerkungsansicht im Raum"). Reine React-Komponente ohne Pixi-Import, kein lokaler
 // Zustand - alles folgt den Props (Muster `FogPanel`). Bei jeder Rolle gerendert, nur wenn
 // eine Karte aktiv ist (`SessionRoom.tsx`).
+// session-tabs (#94, design.md D4): das Wurzelelement traegt jetzt die Klasse `panel` (das
+// umgebende Reiterpanel `Karte` ist ein Raster, `.panel` spannt darin eine Spalte).
 
 export interface AnnotationPanelProps {
   annotations: Annotation[]
@@ -116,7 +118,7 @@ export function AnnotationPanel({
   const colorDisabled = tool !== 'zeichnung'
 
   return (
-    <fieldset>
+    <fieldset className="panel">
       <legend>Messen & Zeichnen</legend>
 
       {TOOL_VALUES.map((value) => (

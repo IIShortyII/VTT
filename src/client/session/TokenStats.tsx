@@ -63,11 +63,13 @@ function PlayerTokenRow({ token, menuEntries }: PlayerTokenRowProps) {
 
 /** Tokenliste fuer Spieler (design.md D8, spec.md Requirement "Tokenansicht im Raum"): die
  * Ueberschrift ist bewusst NICHT "Tokens" - das Szenario "Spieler sieht keine
- * Token-Verwaltung" verbietet diese Ueberschrift beim Spieler. */
+ * Token-Verwaltung" verbietet diese Ueberschrift beim Spieler. session-tabs (#94, design.md
+ * D2/D4): das Wurzelelement traegt die Klasse `panel` (nicht `panel--wide` - anders als die
+ * Token-Verwaltung des Spielleiters). */
 export function PlayerTokenList({ tokens, menuEntries }: PlayerTokenListProps) {
   const t = useT()
   return (
-    <div>
+    <div className="panel">
       <h2>Tokenwerte</h2>
       {tokens.length === 0 ? (
         <EmptyState title={t('empty.tokens.title')} hint={t('empty.tokenValues.hint')} />

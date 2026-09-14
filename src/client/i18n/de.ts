@@ -17,6 +17,10 @@
 // `menu.rename`/`menu.library`/`menu.leave` am Ende von `menu.*`; `session.rename.*`/
 // `session.end.*` bei den Sitzungsschluesseln; `toast.sessionRenamed` bei den Toasts;
 // `session.copyCode` entfaellt (die Session-Bar kopiert ueber `bar.copyCode`).
+//
+// session-tabs (#94, design.md D7): `tabs.*` und `setup.*` als neue Gruppen nach `bar.*` - die
+// Reiterbeschriftungen der Raumansicht und der Cluster `Bibliothek & Einrichtung` der
+// Kartenverwaltung.
 
 export const de = {
   'shell.back': 'Zurück',
@@ -107,6 +111,15 @@ export const de = {
   'bar.copyCode': 'Sitzungscode kopieren',
   'bar.transport': 'Steuerung',
   'bar.settings': 'Sitzungsverwaltung',
+
+  'tabs.label': 'Bereiche',
+  'tabs.map': 'Karte',
+  'tabs.tokens': 'Tokens',
+  'tabs.mapsFog': 'Karten & Nebel',
+  'tabs.participants': 'Teilnehmer',
+
+  'setup.title': 'Bibliothek & Einrichtung',
+  'setup.openLibrary': 'Kartenbibliothek öffnen',
 
   'toast.codeCopied': 'Sitzungscode kopiert',
   'toast.tokenCreated': 'Token angelegt',

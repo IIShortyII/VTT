@@ -19,12 +19,18 @@ import { listSessionMaps, mountMap, unmountMap } from './maps-api.js'
 // ui-menu (#92, design.md D6): die Schaltflaechen `<Name> aktivieren`/`<Name> aushängen`
 // entfallen zugunsten eines ⋮-Menues `Aktionen für <Name>` (`MapInstanceRow`), das auch ein
 // Rechtsklick auf die Zeile oeffnet.
+// session-tabs (#94, design.md D3): das Wurzelelement traegt jetzt die Klasse `panel`;
+// Einhaenge-Formular und `Kartenbibliothek öffnen` liegen im zugeklappten Cluster
+// `Bibliothek & Einrichtung` (`<details class="setup-cluster">`) nach der Instanzliste bzw.
+// dem Leerzustand und der Schaltflaeche `Keine Karte anzeigen` - beide bleiben ausserhalb des
+// Clusters, immer sichtbar (der laufende Bestand hat Vorrang).
 
 export interface MapPanelProps {
   sessionId: string
   activeInstanceId: string | null
   onActivate: (instanceId: string | null) => void
   activateError: string | null
+  onOpenLibrary: () => void
 }
 
 const LOAD_FAILURE_MESSAGE = 'Die Karten konnten nicht geladen werden.'
@@ -58,7 +64,7 @@ function MapInstanceRow({ instance, active, onActivate, onUnmount }: MapInstance
   )
 }
 
-export function MapPanel({ sessionId, activeInstanceId, onActivate, activateError }: MapPanelProps) {
+export function MapPanel({ sessionId, activeInstanceId, onActivate, activateError, onOpenLibrary }: MapPanelProps) {
   const t = useT()
   const { push } = useToasts()
   // ui-status (#91, design.md D6): `null` bis die Instanzliste geantwortet hat - erst danach
@@ -156,7 +162,7 @@ export function MapPanel({ sessionId, activeInstanceId, onActivate, activateErro
   }
 
   return (
-    <div>
+    <div className="panel">
       <h2>Karten</h2>
       {loadError !== null && <p role="alert">{loadError}</p>}
       {activateError !== null && <p role="alert">{activateError}</p>}
@@ -180,23 +186,29 @@ export function MapPanel({ sessionId, activeInstanceId, onActivate, activateErro
         </ul>
       )}
 
-      <form onSubmit={handleMount}>
-        <label htmlFor="map-panel-mapId">Karte aus der Bibliothek</label>
-        <select id="map-panel-mapId" name="mapId" value={selectedMapId} onChange={(event) => setSelectedMapId(event.target.value)}>
-          {availableMaps.map((map) => (
-            <option key={map.id} value={map.id}>
-              {map.name}
-            </option>
-          ))}
-        </select>
-        <button type="submit" disabled={mounting || !selectedMapId}>
-          Einhängen
-        </button>
-      </form>
-
       <button type="button" onClick={() => onActivate(null)}>
         Keine Karte anzeigen
       </button>
+
+      <details className="setup-cluster">
+        <summary>{t('setup.title')}</summary>
+        <form onSubmit={handleMount}>
+          <label htmlFor="map-panel-mapId">Karte aus der Bibliothek</label>
+          <select id="map-panel-mapId" name="mapId" value={selectedMapId} onChange={(event) => setSelectedMapId(event.target.value)}>
+            {availableMaps.map((map) => (
+              <option key={map.id} value={map.id}>
+                {map.name}
+              </option>
+            ))}
+          </select>
+          <button type="submit" disabled={mounting || !selectedMapId}>
+            Einhängen
+          </button>
+        </form>
+        <button type="button" onClick={onOpenLibrary}>
+          {t('setup.openLibrary')}
+        </button>
+      </details>
     </div>
   )
 }

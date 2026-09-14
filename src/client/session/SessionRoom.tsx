@@ -54,10 +54,12 @@ import { useConfirm } from '../ui/confirm.js'
 import { Field, SubmitButton } from '../ui/form.js'
 import { Icon, IconButton } from '../ui/Icon.js'
 import { Modal } from '../ui/Modal.js'
-import { ActionMenu, useFloating, type Anchor, type MenuEntry } from '../ui/menu.js'
+import { ActionMenu, MenuTrigger, Popover, useFloating, type Anchor, type MenuEntry } from '../ui/menu.js'
 import { MapOverlay, StatusBanner } from '../ui/status.js'
 import { TabList, TabPanel } from '../ui/tabs.js'
 import { useToasts } from '../ui/toast.js'
+import { AliasForm, AssignTokensForm, ParticipantCard } from './ParticipantCard.js'
+import { participantMenuEntries, type ParticipantMenuAction } from './participant-menu.js'
 import { TokenPanel } from './TokenPanel.js'
 
 // Raumansicht (design.md D10, Requirement "Sitzungsoberflaeche"; session-map #50, Requirement
@@ -136,6 +138,19 @@ import { TokenPanel } from './TokenPanel.js'
 // Bestaetigungsdialog (design.md D4, Non-Goal). `session:removed` wird wie `session:ended`
 // verdrahtet, aber ohne Dialog und ohne Timer - `onRemoved` (Ref wie `onEnded`/`onLeave`)
 // fuehrt sofort zurueck zur Sitzungsliste.
+//
+// add-participant-cards (#97, design.md D1-D9): der Reiter `Teilnehmer` traegt jetzt Karten
+// (`ParticipantCard.tsx`, `article.participant-card`) statt der bisherigen Liste - Avatar,
+// Name, Rollen-Pill, Praesenzkennzeichen, Token-Chips (`token.ownerId === participant.userId`).
+// `Alias ändern` wandert vom Inline-Formular in ein Modal (`aliasModalOpen`, `AliasForm`); das
+// bisherige `aliasInput`/`aliasError` bedient jetzt dieses Modal. Das ⋮-Menue je Karte
+// (`participant-menu.ts`, `handleParticipantMenuAction`) buendelt `Tokens zuweisen`
+// (`assignTokensParticipantId`, `AssignTokensForm`, eigener Sendepfad
+// `handleParticipantTokenAssign`) und `Entfernen`/`Austreten` hinter dem Bestaetigungsdialog
+// (Epic #103: nie ueber einen Zwei-Klick-Button) - beide senden weiterhin ueber
+// `handleRemoveMember`. Der Panel-Kopf traegt zusaetzlich das `Einladen`-Popover
+// (`inviteMenu`) fuer den Spielleiter, das denselben Kopierweg wie die Session-Bar nutzt
+// (`handleCopyCode`).
 
 export interface SessionRoomProps {
   sessionId: string
@@ -457,6 +472,8 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
   // gesetzten Alias vorbelegt, danach eine unabhaengige Absicht - die angezeigte Benennung
   // (`displayName`) folgt ausschliesslich `state.participants`, nicht dieser Eingabe
   // (constitution.md §9.1, Requirement "Eigener Alias wird als Absicht gesendet").
+  // add-participant-cards (#97, design.md D2): bedient jetzt das Alias-Modal
+  // (`aliasModalOpen`) statt eines Inline-Formulars.
   const [aliasInput, setAliasInput] = useState('')
   const [aliasError, setAliasError] = useState<string | null>(null)
   const [activateError, setActivateError] = useState<string | null>(null)
@@ -480,6 +497,14 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
   const [editTokenId, setEditTokenId] = useState<string | null>(null)
   const mapMenu = useFloating()
   const [mapMenuTokenId, setMapMenuTokenId] = useState<string | null>(null)
+  // add-participant-cards (#97, design.md D2/D5/D6): `aliasModalOpen` steuert das Alias-Modal
+  // der eigenen Karte (ersetzt das bisherige Inline-Formular); `inviteMenu` den
+  // `Einladen`-Popover im Panel-Kopf; `assignTokensParticipantId`/`assignTokensError` das
+  // Zuweisen-Modal eines ⋮-Menue-Eintrags.
+  const [aliasModalOpen, setAliasModalOpen] = useState(false)
+  const inviteMenu = useFloating()
+  const [assignTokensParticipantId, setAssignTokensParticipantId] = useState<string | null>(null)
+  const [assignTokensError, setAssignTokensError] = useState<string | null>(null)
   // session-bar (#93, design.md D6): `transitionError` traegt die Bar-Meldung eines vom
   // Server abgelehnten Uebergangs; `renameOpen` steuert das Umbenennen-Modal.
   const [transitionError, setTransitionError] = useState<string | null>(null)
@@ -723,7 +748,9 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
 
   // ui-menu (#92, design.md D5): verschwindet das Token eines offenen Zuweisen-/Freigaben-/
   // Bearbeiten-Modals aus `state.tokens` (etwa durch "Entfernen" an anderer Stelle),
-  // schliesst das jeweilige Modal.
+  // schliesst das jeweilige Modal. add-participant-cards (#97): dasselbe fuer das
+  // Zuweisen-Modal einer Teilnehmerkarte, wenn das Mitglied aus `state.participants`
+  // verschwindet (etwa durch "Entfernen").
   useEffect(() => {
     if (state.status !== 'bereit') {
       return
@@ -737,7 +764,10 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
     if (editTokenId !== null && !state.tokens.some((token) => token.id === editTokenId)) {
       setEditTokenId(null)
     }
-  }, [state, assignTokenId, shareTokenId, editTokenId])
+    if (assignTokensParticipantId !== null && !state.participants.some((participant) => participant.userId === assignTokensParticipantId)) {
+      setAssignTokensParticipantId(null)
+    }
+  }, [state, assignTokenId, shareTokenId, editTokenId, assignTokensParticipantId])
 
   // add-fog-of-war (#16, design.md D7): Fog-Ebene fuer die Canvas-Fassade - nur bei Aenderung
   // von `fog`/`role` neu gebaut, damit der `setFog`-Effekt in `MapCanvas` nicht bei jedem
@@ -790,7 +820,8 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
   // ui-feedback (#88, design.md D4): der Sitzungscode wird ueber die Zwischenablage des
   // Browsers kopiert; gelingt das, loest die Anwendung den Toast `Sitzungscode kopiert` aus,
   // scheitert es (auch ohne `navigator.clipboard`, etwa ausserhalb eines sicheren Kontexts),
-  // bleibt es ohne Toast und ohne State.
+  // bleibt es ohne Toast und ohne State. add-participant-cards (#97, design.md D5): derselbe
+  // Weg bedient jetzt auch `Code kopieren` im `Einladen`-Popover.
   const handleCopyCode = () => {
     if (state.status !== 'bereit' || state.code === undefined) {
       return
@@ -809,6 +840,9 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
       })
   }
 
+  // add-participant-cards (#97, design.md D2): schliesst das Alias-Modal bei bestaetigendem
+  // Acknowledgement; bei ablehnendem bleibt es offen und zeigt `ack.message` (`AliasForm`,
+  // `Field` im Modal).
   const handleAliasSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const socket = socketRef.current
@@ -819,10 +853,24 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
       .alias(sessionId, aliasInput)
       .then((ack: AliasAck) => {
         setAliasError(ack.ok ? null : ack.message)
+        if (ack.ok) {
+          setAliasModalOpen(false)
+        }
       })
       .catch((error: unknown) => {
         console.error(error)
       })
+  }
+
+  // add-participant-cards (#97, design.md D2): oeffnet das Alias-Modal der eigenen Karte -
+  // vorbelegt mit dem aktuell vom Server gemeldeten Alias der eigenen Mitgliedschaft (leer,
+  // wenn keiner), nicht mit einem etwa noch stehenden, nicht abgesendeten Eintrag eines
+  // vorherigen Versuchs.
+  const openAliasModal = () => {
+    const self = state.status === 'bereit' ? state.participants.find((participant) => participant.userId === currentUserId) : undefined
+    setAliasInput(self?.alias ?? '')
+    setAliasError(null)
+    setAliasModalOpen(true)
   }
 
   // add-session-leave (#70, design.md D4): Austreten/Entfernen senden dieselbe Absicht mit der
@@ -833,6 +881,52 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
     removeMember(sessionId, userId)
       .then((result) => {
         setMemberError(result.ok ? null : result.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
+  // add-participant-cards (#97, design.md D6): eigener Sendepfad fuer das Zuweisen-Modal einer
+  // Teilnehmerkarte - dieselbe Absicht wie `handleTokenAssign` (`session:token-assign`), aber
+  // mit eigenem Fehlerzustand, der im Modal selbst erscheint (statt der geteilten Meldung
+  // `tokenError` des Zeilen-/Karten-Menues).
+  const handleParticipantTokenAssign = (tokenId: string, ownerId: string | null) => {
+    const socket = socketRef.current
+    if (!socket) {
+      return
+    }
+    socket
+      .assignToken(sessionId, tokenId, ownerId)
+      .then((ack) => {
+        setAssignTokensError(ack.ok ? null : ack.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
+  // add-participant-cards (#97, design.md D3/D4): die Verzweigung der ⋮-Menue-Eintraege einer
+  // Teilnehmerkarte (`participant-menu.ts`) - "zuweisen" oeffnet das Zuweisen-Modal,
+  // "entfernen"/"austreten" fragen zuerst ueber den Bestaetigungsdialog nach (Epic #103: nie
+  // ueber einen Zwei-Klick-Button) und senden nur bei Bestaetigung ueber `handleRemoveMember`.
+  const handleParticipantMenuAction = (participant: Participant, action: ParticipantMenuAction) => {
+    if (action === 'zuweisen') {
+      setAssignTokensError(null)
+      setAssignTokensParticipantId(participant.userId)
+      return
+    }
+    const isRemove = action === 'entfernen'
+    confirm({
+      title: isRemove ? t('participant.remove.title', { name: displayName(participant) }) : t('participant.leave.title'),
+      message: isRemove ? t('participant.remove.message') : t('participant.leave.message'),
+      confirmLabel: isRemove ? t('session.remove') : t('session.leave'),
+      danger: true,
+    })
+      .then((ok) => {
+        if (ok) {
+          handleRemoveMember(participant.userId)
+        }
       })
       .catch((error: unknown) => {
         console.error(error)
@@ -1214,11 +1308,14 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
 
   // ui-menu (#92, design.md D5/D9): Ableitungen fuer die Token-Modals und die Zielgruppe des
   // Zuweisen-Modals - nur gueltig, wenn der Raum bereit ist, sonst `null`/`[]`. add-token-cards
-  // (#95): `editToken` fuer das Bearbeiten-Modal, nach demselben Muster.
+  // (#95): `editToken` fuer das Bearbeiten-Modal, nach demselben Muster. add-participant-cards
+  // (#97): `assignTokensParticipant` fuer das Zuweisen-Modal einer Teilnehmerkarte.
   const assignToken = state.status === 'bereit' ? (state.tokens.find((token) => token.id === assignTokenId) ?? null) : null
   const shareToken = state.status === 'bereit' ? (state.tokens.find((token) => token.id === shareTokenId) ?? null) : null
   const editToken = state.status === 'bereit' ? (state.tokens.find((token) => token.id === editTokenId) ?? null) : null
   const players = state.status === 'bereit' ? state.participants.filter((participant) => participant.role === 'spieler') : []
+  const assignTokensParticipant =
+    state.status === 'bereit' ? (state.participants.find((participant) => participant.userId === assignTokensParticipantId) ?? null) : null
 
   let content: ReactNode
   if (state.status === 'lädt') {
@@ -1392,44 +1489,37 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
           </TabPanel>
         )}
 
+        {/* add-participant-cards (#97, design.md D1/D5): die Teilnehmerkarten
+            (`ParticipantCard`) ersetzen die bisherige Liste - Avatar, Name, Rollen-Pill,
+            Praesenzkennzeichen, Token-Chips, `Alias ändern` auf der eigenen Karte, ⋮-Menue je
+            Rolle (`participant-menu.ts`). Der Panel-Kopf traegt fuer den Spielleiter
+            zusaetzlich das `Einladen`-Popover mit dem maskierten Code. */}
         <TabPanel id="teilnehmer" active={activeTab} idPrefix="room">
           <div className="panel panel--wide">
-            <h2>{t('tabs.participants')}</h2>
-            <ul>
+            <div className="token-panel__head">
+              <h2>{t('tabs.participants')}</h2>
+              {state.role === 'spielleiter' && state.code !== undefined && (
+                <>
+                  <MenuTrigger floating={inviteMenu} label={t('invite.open')} haspopup="dialog" variant="text" icon="players" />
+                  <Popover floating={inviteMenu} label={t('invite.open')}>
+                    <code aria-label={t('session.code')}>{'•'.repeat(state.code.length)}</code>
+                    <IconButton name="copy" label={t('invite.copy')} onClick={handleCopyCode} />
+                  </Popover>
+                </>
+              )}
+            </div>
+            <ul className="participant-card-list">
               {state.participants.map((participant) => (
-                <li key={participant.userId}>
-                  {/* Kein Rollen-Text pro Teilnehmer (Requirement "Sitzungsoberflaeche" nennt
-                      nur Alias-oder-Nutzername und Anwesenheitskennzeichen) - "spielleiter"
-                      als sichtbarer Text wuerde jeden Nutzernamen ueberdecken, der "leiter"
-                      als Teilstring enthaelt. */}
-                  <span>{displayName(participant)}</span>
-                  <span> – {participant.online ? 'anwesend' : 'abwesend'}</span>
-                  {participant.userId === currentUserId && (
-                    <form onSubmit={handleAliasSubmit}>
-                      <label htmlFor="alias-input">Alias</label>
-                      <input id="alias-input" value={aliasInput} onChange={(event) => setAliasInput(event.target.value)} />
-                      <button type="submit">Alias setzen</button>
-                    </form>
-                  )}
-                  {/* add-session-leave (#70, design.md D4, Requirement "Sitzungsoberflaeche"):
-                      die eigene Zeile eines Spielers traegt `Austreten` - nicht die eigene
-                      Zeile des Spielleiters. */}
-                  {state.role === 'spieler' && participant.userId === currentUserId && (
-                    <button type="button" onClick={() => handleRemoveMember(participant.userId)}>
-                      {t('session.leave')}
-                    </button>
-                  )}
-                  {/* add-session-leave (#70, design.md D4): der Spielleiter sieht `Entfernen`
-                      an jeder Spielerzeile, nie an der eigenen. */}
-                  {state.role === 'spielleiter' && participant.role === 'spieler' && (
-                    <button type="button" onClick={() => handleRemoveMember(participant.userId)}>
-                      {t('session.remove')}
-                    </button>
-                  )}
-                </li>
+                <ParticipantCard
+                  key={participant.userId}
+                  participant={participant}
+                  isOwn={participant.userId === currentUserId}
+                  tokens={state.tokens}
+                  menuEntries={participantMenuEntries(participant, state.role, currentUserId, t, handleParticipantMenuAction)}
+                  onEditAlias={openAliasModal}
+                />
               ))}
             </ul>
-            {aliasError !== null && <p role="alert">{aliasError}</p>}
             {memberError !== null && <p role="alert">{memberError}</p>}
           </div>
         </TabPanel>
@@ -1480,6 +1570,30 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
               setRenameOpen(false)
               push(t('toast.sessionRenamed'))
             }}
+          />
+        </Modal>
+      )}
+      {/* add-participant-cards (#97, design.md D2): das Alias-Modal der eigenen Karte - ersetzt
+          das bisherige Inline-Formular; `aliasInput`/`aliasError` bedienen jetzt dieses Modal,
+          derselbe Sendeweg (`session:alias`) wie zuvor. */}
+      {state.status === 'bereit' && aliasModalOpen && (
+        <Modal title={t('alias.edit')} onClose={() => setAliasModalOpen(false)}>
+          <AliasForm value={aliasInput} onChange={setAliasInput} error={aliasError} onSubmit={handleAliasSubmit} />
+        </Modal>
+      )}
+      {/* add-participant-cards (#97, design.md D6): das Zuweisen-Modal einer Teilnehmerkarte -
+          derselbe Sendeweg wie das Zeilen-/Karten-Menue (`session:token-assign`), eigener
+          Fehlerzustand (`assignTokensError`), kein Absende-Knopf (jede Umschaltung sendet
+          sofort). */}
+      {assignTokensParticipant && state.status === 'bereit' && (
+        <Modal title={t('participant.assign.title', { name: displayName(assignTokensParticipant) })} onClose={() => setAssignTokensParticipantId(null)}>
+          <AssignTokensForm
+            tokens={state.tokens}
+            participantId={assignTokensParticipant.userId}
+            onToggle={function onToggleAssign(tokenId, checked) {
+              handleParticipantTokenAssign(tokenId, checked ? assignTokensParticipant.userId : null)
+            }}
+            error={assignTokensError}
           />
         </Modal>
       )}

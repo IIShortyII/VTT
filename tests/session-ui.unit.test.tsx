@@ -171,18 +171,6 @@ function codeFeld(container: HTMLElement): HTMLElement | null {
   )
 }
 
-// Das Alias-Eingabefeld der eigenen Zeile (#45, design.md D6). Die Spec verlangt „ein
-// Eingabefeld fuer den Alias" ohne Attributvorgabe; die zugaengliche Standardform ist ein per
-// <label> zugeordnetes Feld. Zuerst ueber die Beschriftung (Text „Alias") suchen, sonst auf
-// die bisherigen Selektoren zurueckfallen.
-function aliasFeld(container: HTMLElement): HTMLElement | null {
-  const perLabel = screen.queryByLabelText(/alias/i)
-  if (perLabel) return perLabel as HTMLElement
-  return container.querySelector(
-    'input[name="alias"], input#alias, input[aria-label*="lias" i], input[placeholder*="lias" i]',
-  )
-}
-
 // Der Toast-Host (`ui-feedback`) traegt `role="status"` UND die Klasse `toast-host`; das
 // Zustandsbanner (`ui-status`) traegt ebenfalls `role="status"`, aber die Klasse
 // `status-banner`. Unterschieden wird ueber die Klasse (design.md D9).
@@ -1148,14 +1136,17 @@ test('Teilnehmer werden mit Alias oder Nutzername benannt', async () => {
   render(<App />)
   await screen.findByText(/Abendrunde/)
   await betreten()
-  // MODIFIED (#94): Teilnehmerliste liegt im Reiter `Teilnehmer` (session-tabs, Testaufbau-Konvention).
+  // MODIFIED (#94/#97): Teilnehmerkarten liegen im Reiter `Teilnehmer` (session-tabs, Testaufbau-Konvention).
   await aktiviereReiter('Teilnehmer')
+  const panel = screen.getByRole('tabpanel', { name: 'Teilnehmer' })
 
-  await waitFor(() => expect(screen.getByText(/Gandalf der Graue/)).toBeTruthy())
-  // Der Teilnehmer mit Alias wird mit dem Alias benannt, der ohne Alias mit dem Nutzernamen …
-  expect(screen.getByText(/\bmeister\b/)).toBeTruthy()
+  // MODIFIED (#97): die Teilnehmerkarten benennen mit Alias, sonst Nutzername.
+  await waitFor(() => expect(within(panel).getByText(/Gandalf der Graue/)).toBeTruthy())
+  expect(within(panel).getByText(/Gandalf der Graue/).closest('article.participant-card')).not.toBeNull()
+  // Der Teilnehmer ohne Alias wird mit dem Nutzernamen benannt …
+  expect(within(panel).getByText(/\bmeister\b/).closest('article.participant-card')).not.toBeNull()
   // … und der Nutzername des Alias-Traegers erscheint nicht.
-  expect(screen.queryByText(/\bsam\b/)).toBeNull()
+  expect(within(panel).queryByText(/\bsam\b/)).toBeNull()
 })
 
 test('Eigener Alias wird als Absicht gesendet und folgt dem Server', async () => {
@@ -1173,23 +1164,31 @@ test('Eigener Alias wird als Absicht gesendet und folgt dem Server', async () =>
   })
   socketMock.__facade.alias.mockResolvedValue({ ok: true, alias: 'Gandalf' })
 
-  const { container } = render(<App />)
+  render(<App />)
   await screen.findByText(/Abendrunde/)
   await betreten()
-  // MODIFIED (#94): Alias-Formular liegt im Reiter `Teilnehmer` (session-tabs, Testaufbau-Konvention).
+  // MODIFIED (#97): der Alias liegt hinter `Alias ändern` im Modal der eigenen Karte (design.md D2/D7).
   await aktiviereReiter('Teilnehmer')
-  await waitFor(() => expect(screen.getByText(/\bsam\b/)).toBeTruthy())
+  const panel = screen.getByRole('tabpanel', { name: 'Teilnehmer' })
+  await waitFor(() => expect(within(panel).getByText(/\bsam\b/)).toBeTruthy())
 
-  const feld = must(aliasFeld(container), 'ein Alias-Eingabefeld in der eigenen Zeile')
-  fireEvent.change(feld, { target: { value: 'Gandalf' } })
+  const eigeneKarte = must(
+    within(panel).getByText(/\bsam\b/).closest('article.participant-card') as HTMLElement | null,
+    'die eigene Karte von sam',
+  )
   await act(async () => {
-    fireEvent.submit(must(feld.closest('form'), 'ein <form> um das Alias-Feld'))
+    fireEvent.click(within(eigeneKarte).getByRole('button', { name: 'Alias ändern' }))
+  })
+  const modal = screen.getByRole('dialog', { name: 'Alias ändern' })
+  fireEvent.change(within(modal).getByLabelText('Alias'), { target: { value: 'Gandalf' } })
+  await act(async () => {
+    fireEvent.click(within(modal).getByRole('button', { name: 'Alias setzen' }))
   })
 
   // Die Anwendung sendet die Absicht an den Server (design.md D6) …
   await waitFor(() => expect(socketMock.__facade.alias).toHaveBeenCalledWith('s1', 'Gandalf'))
   // … zeigt den Nutzer aber weiterhin als `sam`, bis der Server die Liste aktualisiert (§9.1).
-  expect(screen.getByText(/\bsam\b/)).toBeTruthy()
+  expect(within(panel).getByText(/\bsam\b/)).toBeTruthy()
 
   await act(async () => {
     socketMock.__emit('participants', {
@@ -1199,8 +1198,8 @@ test('Eigener Alias wird als Absicht gesendet und folgt dem Server', async () =>
   })
 
   // Nach der Server-Liste wird er als `Gandalf` benannt.
-  await waitFor(() => expect(screen.getByText(/Gandalf/)).toBeTruthy())
-  expect(screen.queryByText(/\bsam\b/)).toBeNull()
+  await waitFor(() => expect(within(panel).getByText(/Gandalf/)).toBeTruthy())
+  expect(within(panel).queryByText(/\bsam\b/)).toBeNull()
 })
 
 test('Abgelehnter Alias wird angezeigt', async () => {
@@ -1219,22 +1218,31 @@ test('Abgelehnter Alias wird angezeigt', async () => {
   })
   socketMock.__facade.alias.mockResolvedValue({ ok: false, message: ABLEHNUNG })
 
-  const { container } = render(<App />)
+  render(<App />)
   await screen.findByText(/Abendrunde/)
   await betreten()
-  // MODIFIED (#94): Alias-Formular und Fehlermeldung liegen im Reiter `Teilnehmer` (session-tabs).
+  // MODIFIED (#97): der Alias und die Fehlermeldung liegen im Modal `Alias ändern` (design.md D2/D7).
   await aktiviereReiter('Teilnehmer')
-  await waitFor(() => expect(screen.getByText(/\bsam\b/)).toBeTruthy())
+  const panel = screen.getByRole('tabpanel', { name: 'Teilnehmer' })
+  await waitFor(() => expect(within(panel).getByText(/\bsam\b/)).toBeTruthy())
 
-  const feld = must(aliasFeld(container), 'ein Alias-Eingabefeld in der eigenen Zeile')
-  fireEvent.change(feld, { target: { value: 'Gandalf' } })
+  const eigeneKarte = must(
+    within(panel).getByText(/\bsam\b/).closest('article.participant-card') as HTMLElement | null,
+    'die eigene Karte von sam',
+  )
   await act(async () => {
-    fireEvent.submit(must(feld.closest('form'), 'ein <form> um das Alias-Feld'))
+    fireEvent.click(within(eigeneKarte).getByRole('button', { name: 'Alias ändern' }))
+  })
+  const modal = screen.getByRole('dialog', { name: 'Alias ändern' })
+  fireEvent.change(within(modal).getByLabelText('Alias'), { target: { value: 'Gandalf' } })
+  await act(async () => {
+    fireEvent.click(within(modal).getByRole('button', { name: 'Alias setzen' }))
   })
 
-  // Die Meldung des Servers wird angezeigt …
-  await waitFor(() => expect(screen.getAllByText(ABLEHNUNG).length).toBeGreaterThan(0))
-  // … und die Teilnehmerliste ist unveraendert (weiterhin `sam`, kein `Gandalf`).
-  expect(screen.getByText(/\bsam\b/)).toBeTruthy()
-  expect(screen.queryByText(/Gandalf/)).toBeNull()
+  // Das Modal `Alias ändern` bleibt offen und zeigt die Meldung des Servers als `role="alert"` …
+  const modalDanach = screen.getByRole('dialog', { name: 'Alias ändern' })
+  await waitFor(() => expect(within(modalDanach).getByRole('alert').textContent).toContain(ABLEHNUNG))
+  // … und die Teilnehmerkarten sind unveraendert (weiterhin `sam`, kein `Gandalf`).
+  expect(within(panel).getByText(/\bsam\b/)).toBeTruthy()
+  expect(within(panel).queryByText(/Gandalf/)).toBeNull()
 })

@@ -32,6 +32,12 @@
 //
 // add-session-leave (#70, design.md D6): `session.leave`/`session.remove`/`session.removed`
 // nach `session.end.*` - die Teilnehmerzeilen-Aktionen und der Hinweis nach `session:removed`.
+//
+// add-participant-cards (#97, design.md D8): `presence.*` nach `status.*`; `alias.*` und
+// `menu.assignTokens` bei den bestehenden `menu.*`-Schluesseln; `invite.*` als neue Gruppe;
+// `participant.*` nach `token.*` - die Teilnehmerkarten des Reiters `Teilnehmer` (Praesenz,
+// Alias-Modal, ⋮-Menue-Eintrag, Einladen-Popover, Entfernen-/Austreten-Bestaetigung,
+// Zuweisen-Modal).
 
 export const de = {
   'shell.back': 'Zurück',
@@ -152,6 +158,9 @@ export const de = {
   'status.disconnected': 'Verbindung unterbrochen — verbinde neu…',
   'status.disconnectedByServer': 'Verbindung vom Server getrennt.',
 
+  'presence.online': 'anwesend',
+  'presence.offline': 'abwesend',
+
   'overlay.paused.title': 'Pausiert',
   'overlay.paused.subline': 'Die Spielleitung hat die Sitzung angehalten.',
   'overlay.open.title': 'Noch nicht gestartet',
@@ -222,6 +231,7 @@ export const de = {
   'menu.rowActions': 'Aktionen für {name}',
   'menu.edit': 'Bearbeiten',
   'menu.assign': 'Zuweisen…',
+  'menu.assignTokens': 'Tokens zuweisen',
   'menu.share': 'Freigeben…',
   'menu.center': 'Auf Karte zentrieren',
   'menu.remove': 'Entfernen',
@@ -240,6 +250,20 @@ export const de = {
   'token.remove.title': 'Token „{name}" entfernen?',
   'token.remove.message': 'Das Token wird von der Karte entfernt.',
   'token.remove.confirm': 'Entfernen',
+
+  'alias.edit': 'Alias ändern',
+  'alias.label': 'Alias',
+  'alias.submit': 'Alias setzen',
+
+  'invite.open': 'Einladen',
+  'invite.copy': 'Code kopieren',
+
+  'participant.remove.title': '{name} entfernen?',
+  'participant.remove.message': 'Das Mitglied wird aus der Spielsitzung entfernt.',
+  'participant.leave.title': 'Spielsitzung verlassen?',
+  'participant.leave.message': 'Du verlässt die Spielsitzung.',
+  'participant.assign.title': 'Tokens für {name}',
+  'participant.assign.empty': 'Keine Tokens in dieser Sitzung.',
 
   'form.stillWorking': 'Verbinde noch… das kann einen Moment dauern.',
 } as const

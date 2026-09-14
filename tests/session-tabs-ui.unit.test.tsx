@@ -8,8 +8,10 @@
 // Geprueft wird, *was* die Raumansicht in Reitern anordnet — nicht, wie es aussieht (AGENTS.md:
 // Rendering nimmt der menschliche App-Test ab). Adressen ausschliesslich nach design.md D9:
 // Reiterliste `getByRole('tablist', { name: 'Bereiche' })`, Reiter `getByRole('tab', { name })`,
-// Reiterpanel `getByRole('tabpanel', { name })` (versteckt: `queryByRole` ist `null`,
-// `getByRole(..., { hidden: true })` traegt `hidden`), Inhalt gescoped per `within`. Die einzige
+// Reiterpanel `getByRole('tabpanel', { name })` (versteckt: `queryByRole` ist `null`; ein
+// verstecktes Panel hat keinen zugaenglichen Namen, daher per `aria-labelledby` = Reiter-`id` aus
+// `getAllByRole('tabpanel', { hidden: true })` herausgegriffen und dort `hidden` geprueft, design.md D9),
+// Inhalt gescoped per `within`. Die einzige
 // Klassenabfrage ist `.map-stage` (D9); `.panel`-Pruefungen laufen ueber `classList`/`closest`.
 // `App` wird mit gemocktem `fetch`, gemockter Socket- und Canvas-Fassade gerendert (Muster der
 // bestehenden Raum-Suiten session-token-ui/session-map-ui).
@@ -206,6 +208,17 @@ async function klickReiter(name: string): Promise<void> {
   })
 }
 
+/** Greift ein verstecktes Reiterpanel ueber die `id` seines Reiters heraus: ein verstecktes Panel
+ * hat keinen zugaenglichen Namen (Accessible-Name-Algorithmus, Schritt 2A), daher nicht ueber
+ * `{ name, hidden: true }`, sondern ueber `aria-labelledby` = Reiter-`id` (design.md D9). */
+function verstecktesPanel(reiterName: string): HTMLElement {
+  const tabId = screen.getByRole('tab', { name: reiterName }).id
+  const panel = screen
+    .getAllByRole('tabpanel', { hidden: true })
+    .find((p) => p.getAttribute('aria-labelledby') === tabId)
+  return must(panel, `das versteckte Reiterpanel zu ${reiterName}`)
+}
+
 beforeEach(() => {
   jest.clearAllMocks()
   for (const key of Object.keys(socketMock.__handlers)) delete socketMock.__handlers[key]
@@ -240,7 +253,7 @@ describe('Bereiche der Raumansicht', () => {
     within(screen.getByRole('tabpanel', { name: 'Karte' })).getByText('Keine Karte aktiv')
     for (const name of ['Tokens', 'Karten & Nebel', 'Teilnehmer']) {
       expect(screen.queryByRole('tabpanel', { name })).toBeNull()
-      expect(screen.getByRole('tabpanel', { name, hidden: true }).hasAttribute('hidden')).toBe(true)
+      expect(verstecktesPanel(name).hasAttribute('hidden')).toBe(true)
     }
 
     // Die Gruppe `Sitzung` liegt im Dokument vor der Reiterliste.
@@ -279,13 +292,14 @@ describe('Bereiche der Raumansicht', () => {
     within(karte).getByRole('group', { name: 'Messen & Zeichnen' })
     within(karte).getByRole('group', { name: 'Fog of War' })
 
-    // Ueber die Standardabfragen sind die Inhalte der versteckten Reiter nicht auffindbar.
-    expect(screen.queryByRole('heading', { name: 'Tokens' })).toBeNull()
-    expect(screen.queryByRole('heading', { name: 'Karten' })).toBeNull()
-    expect(screen.queryByLabelText('Alias')).toBeNull()
+    // Ueber Rollenabfragen sind die Inhalte der versteckten Reiter nicht auffindbar (versteckte
+    // Teilbaeume; nur `*ByRole` schliesst `hidden` aus, `*ByLabelText`/`*ByText` nicht, design.md D9).
+    expect(screen.queryByRole('heading', { name: 'Tokens', level: 2 })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Karten', level: 2 })).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'Alias' })).toBeNull()
 
     for (const name of ['Tokens', 'Karten & Nebel', 'Teilnehmer']) {
-      expect(screen.getByRole('tabpanel', { name, hidden: true }).hasAttribute('hidden')).toBe(true)
+      expect(verstecktesPanel(name).hasAttribute('hidden')).toBe(true)
     }
   })
 
@@ -308,7 +322,7 @@ describe('Bereiche der Raumansicht', () => {
     const tokens = screen.getByRole('tabpanel', { name: 'Tokens' })
     within(tokens).getByRole('heading', { level: 2, name: 'Tokens' })
     within(tokens).getByRole('spinbutton', { name: 'Goblin HP' })
-    expect(screen.getByRole('tabpanel', { name: 'Karte', hidden: true }).hasAttribute('hidden')).toBe(true)
+    expect(verstecktesPanel('Karte').hasAttribute('hidden')).toBe(true)
 
     expect(socketMock.__facade.enter).toHaveBeenCalledTimes(1)
     expect((globalThis.fetch as jest.Mock).mock.calls.length).toBe(fetchVorher)
@@ -330,7 +344,7 @@ describe('Bereiche der Raumansicht', () => {
     expect(screen.getByRole('tab', { name: 'Tokens' }).getAttribute('aria-selected')).toBe('true')
     const tokens = screen.getByRole('tabpanel', { name: 'Tokens' })
     within(tokens).getByRole('spinbutton', { name: 'Ork HP' })
-    expect(screen.getByRole('tabpanel', { name: 'Karte', hidden: true }).hasAttribute('hidden')).toBe(true)
+    expect(verstecktesPanel('Karte').hasAttribute('hidden')).toBe(true)
   })
 
   test('Reiter Teilnehmer zeigt Liste und Alias', async () => {
@@ -448,7 +462,7 @@ describe('Tastaturbedienung der Reiter', () => {
 
     expect(screen.getByRole('tab', { name: 'Teilnehmer' }).getAttribute('aria-selected')).toBe('true')
     screen.getByRole('tabpanel', { name: 'Teilnehmer' })
-    expect(screen.getByRole('tabpanel', { name: 'Karte', hidden: true }).hasAttribute('hidden')).toBe(true)
+    expect(verstecktesPanel('Karte').hasAttribute('hidden')).toBe(true)
   })
 })
 

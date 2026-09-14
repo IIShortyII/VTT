@@ -341,14 +341,20 @@ test('Entfernte Anmerkung wird gemeldet', async () => {
   await betreten()
   await screen.findByRole('group', { name: 'Messen & Zeichnen' })
 
-  const eintrag = screen.getByText('Strecke: 3 Felder (4,5 m) · geteilt · sam').closest('li')
-  expect(eintrag).not.toBeNull()
+  // MODIFIED (#96): Die Zeile traegt statt eines direkten `Entfernen`-Buttons ein ⋮-Menü
+  // `Aktionen für <Eintrag>` (ui-menu) mit dem Eintrag `Entfernen`.
   await act(async () => {
-    fireEvent.click(within(eintrag as HTMLElement).getByRole('button', { name: 'Entfernen' }))
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Aktionen für Strecke: 3 Felder (4,5 m) · geteilt · sam',
+      }),
+    )
+  })
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Entfernen' }))
   })
 
-  const host = await screen.findByRole('status')
-  await waitFor(() => expect(within(host).getByText('Anmerkung entfernt')).toBeTruthy())
+  await waitFor(() => expect(screen.getByText('Anmerkung entfernt')).toBeTruthy())
 })
 
 test('Entfernte eigene Anmerkungen werden gemeldet', async () => {
@@ -369,8 +375,9 @@ test('Entfernte eigene Anmerkungen werden gemeldet', async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Meine entfernen' }))
   })
 
-  const host = await screen.findByRole('status')
-  await waitFor(() => expect(within(host).getByText('Anmerkungen entfernt')).toBeTruthy())
+  // MODIFIED (#96): Neben dem Toast-Host gibt es jetzt eine zweite `role="status"`-Region
+  // (Fog-Auswahlzähler); den Toast eindeutig über seinen Text auflösen.
+  await waitFor(() => expect(screen.getByText('Anmerkungen entfernt')).toBeTruthy())
 })
 
 test('Toast-Text folgt der aktiven Sprache', async () => {

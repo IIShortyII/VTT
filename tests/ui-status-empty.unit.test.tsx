@@ -248,7 +248,7 @@ test('Ohne Bereiche zeigt die Fog-Verwaltung den Leerzustand', async () => {
   expect(titel.closest('.empty-state')).not.toBeNull()
   expect(within(scope).getByText('Markiere Zellen auf der Karte und speichere sie als Bereich.')).toBeTruthy()
   expect(within(scope).queryAllByRole('listitem')).toHaveLength(0)
-  expect(within(scope).queryByRole('checkbox', { name: /aufgedeckt$/ })).toBeNull()
+  expect(within(scope).queryByRole('button', { name: /aufgedeckt$/ })).toBeNull()
   expect(within(scope).getByRole('button', { name: 'Alles aufdecken' })).toBeTruthy()
   expect(within(scope).getByRole('button', { name: 'Alles verdecken' })).toBeTruthy()
 }, 15000)

@@ -1,10 +1,18 @@
 /** @jest-environment jsdom */
-// Komponententests zum Requirement "Anmerkungsansicht im Raum" aus
-// openspec/changes/add-measure-draw/specs/session-annotation/spec.md (tasks.md 1.4). Ein Test je
-// GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname (19 Szenarien).
+// Komponententests zum MODIFIED-Requirement "Anmerkungsansicht im Raum" aus
+// openspec/changes/add-ui-toolbar/specs/session-annotation/spec.md (Issue #96). Ein Test je
+// GIVEN/WHEN/THEN-Szenario (constitution.md §4.1), Testname = Szenarioname (das Szenario "Ohne
+// Anmerkungen zeigt das Panel den Leerzustand" liegt in tests/ui-status-empty.unit.test.tsx —
+// ein Test je Szenario).
+//
+// Umbau durch add-ui-toolbar: die Werkzeugwahl ist jetzt eine `Toolbar` (`role="toolbar"`) mit
+// Icon-Werkzeugbuttons statt Radios; Modus/Sichtbarkeit/Einheit sind aria-pressed-Chips
+// (`ChipGroup`), Farbe sind Farbchips (`ColorChipGroup`) — das aktive Element traegt
+// `aria-pressed="true"`, ein deaktivierter Chip ist `disabled`; und `Entfernen` liegt je Zeile
+// in einem ⋮-Menü `Aktionen für <Eintrag>` statt in einem Button `Entfernen`.
 //
 // Geprueft wird, *was* die Anwendung anbietet, anfordert und anzeigt — nicht, wie es aussieht
-// (AGENTS.md: Rendering nimmt der menschliche App-Test ab). Drei Mock-Grenzen (design.md D7):
+// (AGENTS.md). Drei Mock-Grenzen (design.md):
 //  - die Socket-Fassade `src/client/session/socket.ts` mit aufzeichnenden
 //    `createAnnotation`/`deleteAnnotation` (Standard `{ ok: true, annotation }` bzw.
 //    `{ ok: true }`) und einem von aussen ausloesbaren `annotations`-Handler; das
@@ -16,14 +24,11 @@
 //    `setAnnotationOptions`/`destroy`; kein Test importiert `pixi.js`,
 //  - `fetch`, nach Pfad und Methode.
 // Elemente ausschliesslich ueber getByRole/getByLabelText/getByText mit `within` fuer den
-// Entfernen-Knopf eines Eintrags (D6-Schnittstellentabelle); keine `must()`-Helfer fuer
-// Bedienelemente. `localStorage.clear()` in `beforeEach`.
+// Zeilen-Trigger eines Eintrags. `localStorage.clear()` in `beforeEach`.
 //
-// Rote Phase (tasks.md 1.4): `SessionRoom` kennt weder das Panel "Messen & Zeichnen" noch die
-// Anmerkungen im Zustand noch die Fassaden-Methoden `setAnnotations`/`setAnnotationOptions`,
-// und die Fassade kennt `createAnnotation`/`deleteAnnotation`/`on('annotations')` nicht. Die
-// Szenarien scheitern daher am fehlenden Bedienelement/Aufruf — der erwartete rote Grund, kein
-// Compile-/Setup-Fehler.
+// Rote Phase: `AnnotationPanel` nutzt heute Radios und einen `Entfernen`-Button je Zeile; die
+// Toolbar-/Chip-/Menü-Abfragen scheitern daher am fehlenden Bedienelement — der erwartete rote
+// Grund, kein Compile-/Setup-Fehler.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
@@ -31,7 +36,7 @@ import { App } from '../src/client/app/App.js'
 
 type Pt = { x: number; y: number }
 
-// --- Mock der Socket-Fassade (design.md D7) -------------------------------------------------
+// --- Mock der Socket-Fassade ----------------------------------------------------------------
 jest.mock('../src/client/session/socket.js', () => {
   const handlers: Record<string, (payload: unknown) => void> = {}
   const facade = {
@@ -81,7 +86,7 @@ type SocketTestApi = {
 }
 const socketMock = sessionSocketModule as unknown as SocketTestApi
 
-// --- Mock der Canvas-Fassade (design.md D7) -------------------------------------------------
+// --- Mock der Canvas-Fassade ----------------------------------------------------------------
 jest.mock('../src/client/map/canvas.js', () => {
   const handle = {
     setGrid: jest.fn(),
@@ -116,7 +121,7 @@ type CanvasMock = {
 }
 const canvasMock = jest.requireMock('../src/client/map/canvas.js') as CanvasMock
 
-/** Optionen, mit denen `createMapCanvas` zuletzt erzeugt wurde (2. Argument, design.md D4). */
+/** Optionen, mit denen `createMapCanvas` zuletzt erzeugt wurde (2. Argument). */
 function letzteCanvasOptions(): Record<string, unknown> {
   const calls = canvasMock.createMapCanvas.mock.calls
   if (calls.length === 0) throw new Error('createMapCanvas wurde nicht aufgerufen')
@@ -227,18 +232,31 @@ async function betreten(): Promise<void> {
     fireEvent.click(knopf)
   })
 }
-async function klick(name: string | RegExp, rolle: 'radio' | 'button' = 'radio'): Promise<void> {
+/** Klick auf einen Werkzeug-/Chip-Button (Toolbar/ChipGroup/ColorChipGroup) ueber sein Label. */
+async function klick(name: string | RegExp): Promise<void> {
   await act(async () => {
-    fireEvent.click(await screen.findByRole(rolle, { name }))
+    fireEvent.click(await screen.findByRole('button', { name }))
   })
 }
-function radio(name: string): HTMLInputElement {
-  return screen.getByRole('radio', { name }) as HTMLInputElement
+function knopf(name: string): HTMLButtonElement {
+  return screen.getByRole('button', { name }) as HTMLButtonElement
 }
-/** Das `<li>` eines Listeneintrags ueber seinen Text — fuer `within` (D6). */
+function ariaPressed(el: Element): string | null {
+  return el.getAttribute('aria-pressed')
+}
+/** Das `<li>` eines Listeneintrags ueber seinen Text — fuer `within`. */
 function eintrag(text: string): HTMLElement {
   const span = screen.getByText(text)
   return must(span.closest('li'), `das <li> zum Eintrag "${text}"`)
+}
+/** Oeffnet ein ⋮-Menü (`Aktionen für …`) und waehlt einen Eintrag. */
+async function menuAktion(triggerName: string | RegExp, itemName: string): Promise<void> {
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: triggerName }))
+  })
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('menuitem', { name: itemName }))
+  })
 }
 
 beforeEach(() => {
@@ -281,15 +299,15 @@ test('Spieler sieht das Panel', async () => {
   await betreten()
   await screen.findByRole('group', { name: 'Messen & Zeichnen' })
 
-  expect(radio('Bewegen').checked).toBe(true)
-  for (const name of ['Strecke', 'Kreis', 'Winkel', 'Zeichnen']) expect(radio(name).checked).toBe(false)
-  expect(radio('Gerastert').checked).toBe(true)
-  expect(radio('Gerastert').disabled).toBe(true)
-  expect(radio('Frei').disabled).toBe(true)
-  expect(radio('Privat').checked).toBe(true)
-  expect(radio('Rot').checked).toBe(true)
-  for (const name of ['Rot', 'Orange', 'Gelb', 'Grün', 'Blau', 'Weiß']) expect(radio(name).disabled).toBe(true)
-  expect(radio('Meter').checked).toBe(true)
+  expect(ariaPressed(knopf('Bewegen'))).toBe('true')
+  for (const name of ['Strecke', 'Kreis', 'Winkel', 'Zeichnen']) expect(ariaPressed(knopf(name))).toBe('false')
+  expect(ariaPressed(knopf('Gerastert'))).toBe('true')
+  expect(knopf('Gerastert').disabled).toBe(true)
+  expect(knopf('Frei').disabled).toBe(true)
+  expect(ariaPressed(knopf('Privat'))).toBe('true')
+  expect(ariaPressed(knopf('Rot'))).toBe('true')
+  for (const name of ['Rot', 'Orange', 'Gelb', 'Grün', 'Blau', 'Weiß']) expect(knopf(name).disabled).toBe(true)
+  expect(ariaPressed(knopf('Meter'))).toBe('true')
   expect(screen.getByRole('button', { name: 'Meine entfernen' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Alle geteilten entfernen' })).toBeNull()
 })
@@ -316,7 +334,7 @@ test('Ohne aktive Karte kein Panel', async () => {
   await betreten()
   await screen.findByText('Keine Karte aktiv')
 
-  expect(screen.queryByRole('radio', { name: 'Strecke' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Strecke' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Meine entfernen' })).toBeNull()
 })
 
@@ -334,10 +352,30 @@ test('Werkzeugwahl erreicht die Kartenansicht', async () => {
   await klick('Strecke')
 
   await waitFor(() => expect(canvasMock.__handle.setTool).toHaveBeenCalledWith('strecke'))
-  expect(radio('Strecke').checked).toBe(true)
-  expect(radio('Bewegen').checked).toBe(false)
-  expect(radio('Gerastert').disabled).toBe(false)
-  expect(radio('Rot').disabled).toBe(true)
+  expect(ariaPressed(knopf('Strecke'))).toBe('true')
+  expect(ariaPressed(knopf('Bewegen'))).toBe('false')
+  expect(knopf('Gerastert').disabled).toBe(false)
+  expect(knopf('Rot').disabled).toBe(true)
+})
+
+test('Tastenkürzel wechselt das Werkzeug', async () => {
+  fetchFuer('spieler')
+  enterAck('spieler', { map: MAP })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
+
+  // Fokus liegt auf einer Schaltflaeche der Werkzeugleiste `Anmerkungswerkzeug`.
+  const bewegen = await screen.findByRole('button', { name: 'Bewegen' })
+  bewegen.focus()
+  await act(async () => {
+    fireEvent.keyDown(bewegen, { key: 'M' })
+  })
+
+  await waitFor(() => expect(canvasMock.__handle.setTool).toHaveBeenCalledWith('strecke'))
+  expect(ariaPressed(knopf('Strecke'))).toBe('true')
 })
 
 test('Mess- und Fog-Werkzeug teilen sich den Zustand', async () => {
@@ -351,12 +389,12 @@ test('Mess- und Fog-Werkzeug teilen sich den Zustand', async () => {
 
   await klick('Aufdecken')
   await klick('Strecke')
-  expect(radio('Aufdecken').checked).toBe(false)
+  expect(ariaPressed(knopf('Aufdecken'))).toBe('false')
   await klick('Schwenken')
 
   expect(canvasMock.__handle.setTool.mock.calls.map((c) => c[0])).toEqual(['aufdecken', 'strecke', 'schwenken'])
-  expect(radio('Bewegen').checked).toBe(true)
-  expect(radio('Strecke').checked).toBe(false)
+  expect(ariaPressed(knopf('Bewegen'))).toBe('true')
+  expect(ariaPressed(knopf('Strecke'))).toBe('false')
 })
 
 test('Zeichnen aktiviert die Farbwahl', async () => {
@@ -371,8 +409,8 @@ test('Zeichnen aktiviert die Farbwahl', async () => {
   await klick('Zeichnen')
 
   await waitFor(() => expect(canvasMock.__handle.setTool).toHaveBeenCalledWith('zeichnung'))
-  expect(radio('Rot').disabled).toBe(false)
-  expect(radio('Gerastert').disabled).toBe(true)
+  expect(knopf('Rot').disabled).toBe(false)
+  expect(knopf('Gerastert').disabled).toBe(true)
 })
 
 // --- Gesten melden, Anwendung sendet --------------------------------------------------------
@@ -498,8 +536,10 @@ test('Liste zeigt Art, Etikett, Sichtbarkeit und Urheber', async () => {
   await betreten()
   const gruppe = await screen.findByRole('group', { name: 'Messen & Zeichnen' })
 
+  // Die Zeilenaktion liegt im ⋮-Menü (Icon-only-Trigger, kein sichtbarer Text) — der
+  // Eintragstext des `<li>` ist damit genau der komponierte Text.
   const liste = within(gruppe).getByRole('list')
-  const eintraege = within(liste).getAllByRole('listitem').map((li) => (li.textContent ?? '').replace(/Entfernen$/, '').trim())
+  const eintraege = within(liste).getAllByRole('listitem').map((li) => (li.textContent ?? '').trim())
   expect(eintraege).toEqual([
     'Strecke: 3 Felder (4,5 m) · geteilt · sam',
     'Kreis: r 2 Felder (3 m) · ⌀ 4 Felder (6 m) · privat · meister',
@@ -525,8 +565,8 @@ test('Entfernen nur wo erlaubt', async () => {
   await betreten()
   await screen.findByRole('group', { name: 'Messen & Zeichnen' })
 
-  expect(within(eintrag('Strecke: 3 Felder (4,5 m) · geteilt · sam')).queryByRole('button', { name: 'Entfernen' })).toBeTruthy()
-  expect(within(eintrag('Strecke: 3 Felder (4,5 m) · geteilt · meister')).queryByRole('button', { name: 'Entfernen' })).toBeNull()
+  expect(within(eintrag('Strecke: 3 Felder (4,5 m) · geteilt · sam')).queryByRole('button', { name: /^Aktionen für / })).toBeTruthy()
+  expect(within(eintrag('Strecke: 3 Felder (4,5 m) · geteilt · meister')).queryByRole('button', { name: /^Aktionen für / })).toBeNull()
 })
 
 test('Spielleiter darf fremde geteilte entfernen', async () => {
@@ -545,7 +585,7 @@ test('Spielleiter darf fremde geteilte entfernen', async () => {
   await betreten()
   await screen.findByRole('group', { name: 'Messen & Zeichnen' })
 
-  expect(within(eintrag('Strecke: 3 Felder (4,5 m) · geteilt · sam')).getByRole('button', { name: 'Entfernen' })).toBeTruthy()
+  expect(within(eintrag('Strecke: 3 Felder (4,5 m) · geteilt · sam')).getByRole('button', { name: /^Aktionen für / })).toBeTruthy()
 })
 
 // --- Absichten senden -----------------------------------------------------------------------
@@ -561,10 +601,7 @@ test('Entfernen sendet die Absicht', async () => {
   await betreten()
   await screen.findByRole('group', { name: 'Messen & Zeichnen' })
 
-  const li = eintrag('Strecke: 3 Felder (4,5 m) · geteilt · sam')
-  await act(async () => {
-    fireEvent.click(within(li).getByRole('button', { name: 'Entfernen' }))
-  })
+  await menuAktion('Aktionen für Strecke: 3 Felder (4,5 m) · geteilt · sam', 'Entfernen')
 
   await waitFor(() => expect(socketMock.__facade.deleteAnnotation).toHaveBeenCalledWith('s1', { kind: 'eine', annotationId: 'a1' }))
   // Bis session:annotations eintrifft, bleibt der Eintrag gelistet (constitution.md §9.1).
@@ -580,8 +617,8 @@ test('Sammelaktionen senden die Absicht', async () => {
   await betreten()
   await screen.findByRole('group', { name: 'Messen & Zeichnen' })
 
-  await klick('Meine entfernen', 'button')
-  await klick('Alle geteilten entfernen', 'button')
+  await klick('Meine entfernen')
+  await klick('Alle geteilten entfernen')
 
   const aufrufe = socketMock.__facade.deleteAnnotation.mock.calls
   expect(aufrufe[0]).toEqual(['s1', { kind: 'meine' }])
@@ -618,7 +655,7 @@ test('Einheit wird aus dem Browser übernommen', async () => {
   await betreten()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
-  expect(radio('Fuß').checked).toBe(true)
+  expect(ariaPressed(knopf('Fuß'))).toBe('true')
   expect((letzteCanvasOptions().annotationOptions as { unit: string }).unit).toBe('fuss')
 })
 

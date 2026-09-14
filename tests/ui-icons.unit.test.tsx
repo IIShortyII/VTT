@@ -50,13 +50,20 @@ async function loadIconButton(): Promise<IconButtonComponent | null> {
   return (mod?.IconButton as IconButtonComponent | undefined) ?? null
 }
 
-// --- Erwartete Registry-Namen (spec.md "Registry-Namen", 56 in dieser Reihenfolge (add-token-cards #95: `locate` neu zwischen `library` und `lock`)) ----------
-// add-session-bar (#93, MODIFIED "Registry"): `copy` (Lucide `Copy`) neu nach `close`.
+// --- Erwartete Registry-Namen (add-ui-toolbar #96, MODIFIED "Registry") ----------------------
+// Die Werkzeugleisten-Icons `angle`, `area`, `circle`, `move` kommen hinzu (proposal.md
+// "Vier neue Registry-Icons"): `angle` nach `add`, `area` nach `angle`, `circle` nach
+// `chevronDown`, `move` nach `more`. Der Spec-Delta nennt 59 Namen unter der Annahme des Standes
+// *vor* add-token-cards (#95); #95 ist inzwischen gemergt (`locate` zwischen `library` und
+// `lock`) und design.md "Risks" verlangt, die Liste "beim Merge auf den dann gueltigen Stand"
+// nachzuziehen — der dann gueltige Stand traegt `locate` weiterhin. Damit 60 Namen in dieser
+// Reihenfolge; `ICON_REGISTRY` hat genau diese Schluessel.
 const EXPECTED_ICON_NAMES: readonly string[] = [
-  // Oberflaeche (31)
-  'add', 'back', 'ban', 'check', 'chevronDown', 'close', 'copy', 'delete', 'draw', 'edit', 'end',
-  'fog', 'help', 'hide', 'info', 'library', 'locate', 'lock', 'logout', 'map', 'measure', 'more',
-  'pause', 'players', 'reveal', 'settings', 'start', 'token', 'upload', 'user', 'warning',
+  // Oberflaeche (35)
+  'add', 'angle', 'area', 'back', 'ban', 'check', 'chevronDown', 'circle', 'close', 'copy',
+  'delete', 'draw', 'edit', 'end', 'fog', 'help', 'hide', 'info', 'library', 'locate', 'lock',
+  'logout', 'map', 'measure', 'more', 'move', 'pause', 'players', 'reveal', 'settings', 'start',
+  'token', 'upload', 'user', 'warning',
   // Symbolkatalog (10)
   'fighter', 'guardian', 'undead', 'dragon', 'mage', 'archer', 'royal', 'beast', 'vermin', 'fire',
   // Zustandskatalog (15)

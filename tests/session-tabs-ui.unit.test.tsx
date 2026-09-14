@@ -321,7 +321,9 @@ describe('Bereiche der Raumansicht', () => {
 
     const tokens = screen.getByRole('tabpanel', { name: 'Tokens' })
     within(tokens).getByRole('heading', { level: 2, name: 'Tokens' })
-    within(tokens).getByRole('spinbutton', { name: 'Goblin HP' })
+    // MODIFIED (#95): Die Token-Verwaltung zeigt im Kopf die Schaltflaeche `Token anlegen`
+    // statt der Inline-Wertefelder (session-token).
+    within(tokens).getByRole('button', { name: 'Token anlegen' })
     expect(verstecktesPanel('Karte').hasAttribute('hidden')).toBe(true)
 
     expect(socketMock.__facade.enter).toHaveBeenCalledTimes(1)
@@ -343,7 +345,8 @@ describe('Bereiche der Raumansicht', () => {
 
     expect(screen.getByRole('tab', { name: 'Tokens' }).getAttribute('aria-selected')).toBe('true')
     const tokens = screen.getByRole('tabpanel', { name: 'Tokens' })
-    within(tokens).getByRole('spinbutton', { name: 'Ork HP' })
+    // MODIFIED (#95): Das neue Token erscheint als Karte mit dem Namen `Ork` (session-token).
+    within(tokens).getByText('Ork')
     expect(verstecktesPanel('Karte').hasAttribute('hidden')).toBe(true)
   })
 

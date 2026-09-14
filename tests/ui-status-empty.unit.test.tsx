@@ -200,12 +200,16 @@ test('Leere Token-Verwaltung zeigt den Leerzustand', async () => {
   // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
   await aktiviereReiter('Tokens')
 
-  const scope = must((await screen.findByRole('heading', { name: 'Tokens' })).parentElement, 'die Token-Verwaltung')
+  // MODIFIED (#95): Die Ueberschrift `Tokens` sitzt jetzt im Panel-Kopf neben der Schaltflaeche
+  // `Token anlegen` (session-token); der Leerzustand liegt im Panel-Rumpf, nicht im direkten
+  // Elternknoten der Ueberschrift — daher ueber den Panel-Container scopen.
+  const kopf = await screen.findByRole('heading', { name: 'Tokens' })
+  const scope = must(kopf.closest<HTMLElement>('.panel'), 'die Token-Verwaltung')
   const titel = await within(scope).findByText('Noch keine Tokens')
   expect(titel.closest('.empty-state')).not.toBeNull()
   expect(within(scope).getByText('Lege ein Token an, um es auf der Karte zu sehen.')).toBeTruthy()
   expect(within(scope).queryAllByRole('listitem')).toHaveLength(0)
-  expect(within(scope).getByRole('button', { name: 'Anlegen' })).toBeTruthy()
+  expect(within(scope).getByRole('button', { name: 'Token anlegen' })).toBeTruthy()
 }, 15000)
 
 test('Leere Tokenwerte zeigen den Leerzustand', async () => {

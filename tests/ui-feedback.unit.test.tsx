@@ -243,6 +243,11 @@ test('Angelegtes Token wird gemeldet', async () => {
   // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
   await aktiviereReiter('Tokens')
 
+  // MODIFIED (#95): Anlegen laeuft ueber das Modal `Token anlegen` (session-token):
+  // erst die Schaltflaeche `Token anlegen` im Panel-Kopf, dann Formular im Modal.
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Token anlegen' }))
+  })
   fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'Goblin' } })
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
@@ -267,6 +272,11 @@ test('Abgelehntes Token zeigt keinen Toast', async () => {
   // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
   await aktiviereReiter('Tokens')
 
+  // MODIFIED (#95): Anlegen laeuft ueber das Modal `Token anlegen` (session-token):
+  // erst die Schaltflaeche `Token anlegen` im Panel-Kopf, dann Formular im Modal.
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Token anlegen' }))
+  })
   fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'Goblin' } })
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))
@@ -380,6 +390,12 @@ test('Toast-Text folgt der aktiven Sprache', async () => {
   await betreten()
   // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
   await aktiviereReiter('Tokens')
+
+  // MODIFIED (#95): Anlegen laeuft ueber das Modal `Token anlegen` (session-token):
+  // erst die Schaltflaeche `Token anlegen` im Panel-Kopf, dann Formular im Modal.
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Token anlegen' }))
+  })
 
   await act(async () => {
     setLocale('en')

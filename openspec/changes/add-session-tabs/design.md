@@ -220,8 +220,11 @@ Nach dem Abschnitt „Session-Bar" und vor dem Bewegungsblock ein Kommentar
 `transparent`, kein Farbwert, kein neues `@media`, keine `animation`/`transition`:
 
 - `main.app-shell--wide`: `max-width: none`.
-- `.tab-list`: `display: flex`, `gap: var(--space-1)`, `margin: 0 0 var(--space-4)`,
-  `border-bottom: 1px solid var(--color-border)`, `overflow-x: auto`.
+- `.tab-list`: `display: flex`, `flex-wrap: wrap`, `gap: var(--space-1)`,
+  `margin: 0 0 var(--space-4)`, `border-bottom: 1px solid var(--color-border)`. Kein
+  `overflow` — App-Test Runde 1: `overflow-x: auto` machte die Liste zusammen mit dem um
+  1 px überstehenden Unterstrich der Reiter zu einem Scroll-Container (Scroll-Effekt am
+  Mausrad); schmale Fenster brechen die Reiter stattdessen um.
 - `.tab`: `min-height: 0`, `padding: var(--space-2) var(--space-3)`, `border: 0`,
   `border-bottom: 2px solid transparent`, `margin-bottom: -1px`, `border-radius: 0`,
   `background: transparent`, `color: var(--color-text-muted)`,

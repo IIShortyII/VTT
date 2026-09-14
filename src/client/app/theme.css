@@ -1059,6 +1059,8 @@ main.app-shell--wide {
 
 .tool-button {
   color: var(--color-text-muted);
+  min-block-size: 2.75rem;
+  min-inline-size: 2.75rem;
 }
 
 .tool-button:hover:not(:disabled) {
@@ -1139,13 +1141,6 @@ main.app-shell--wide {
 .color-chip--active {
   border-color: var(--gold-border);
   box-shadow: 0 0 0 2px var(--gold-border);
-}
-
-@media (pointer: coarse) {
-  .tool-button {
-    min-block-size: 2.75rem;
-    min-inline-size: 2.75rem;
-  }
 }
 
 @media (prefers-reduced-motion: no-preference) {

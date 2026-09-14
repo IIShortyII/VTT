@@ -4,6 +4,17 @@
 // (tasks.md 1.1). Ein Test je GIVEN/WHEN/THEN-Szenario (constitution.md §4.1),
 // Testname = Szenarioname.
 //
+// add-session-leave (#70): die neue Route `DELETE /api/sessions/:id/members/:userId`
+// (Requirement "Verlassen einer Spielsitzung und Entfernen eines Spielers") mit ihren fuenf
+// REST-Szenarien (Selbstaustritt 200, Entfernen durch den Spielleiter 200, fremdes Entfernen
+// durch einen Spieler 403, Selbstaustritt des Spielleiters 403, unbekannte Mitgliedschaft
+// 404). Das MODIFIED-Szenario "Sitzungsrouten ohne Cookie" nennt die Route zusaetzlich; sie
+// MUSS ohne Cookie mit 401 antworten und nichts schreiben. Rote Phase (constitution.md §3.1):
+// die Route ist noch nicht registriert, weshalb Fastify sie mit dem Standard-404 beantwortet
+// (Meldung `Route DELETE:… not found`) — die erwarteten 200/403/401 scheitern daran, und der
+// 404-Fall unterscheidet sich am Meldungsmuster vom Standard-404. Der erwartete rote Grund,
+// kein Setup-/Tippfehler.
+//
 // Angesprochen wird der Server ueber `app.inject()` gegen die Suite-eigene Wegwerf-DB
 // (`game-session.test.db` via setupEphemeralDb, design.md D11, constitution.md §4.3). Der
 // GIVEN-Zustand einer Spielsitzung wird direkt in die Tabellen `GameSession`/`Membership`
@@ -20,6 +31,11 @@ jest.setTimeout(120_000)
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 const PASSWORD = 'ein-sicheres-passwort'
+
+// Die Meldung eines nicht registrierten Fastify-Routings (Standard-404). Der applikative
+// 404-Fall (unbekannte Mitgliedschaft) darf diese Form NICHT tragen — daran scheitert der Test
+// in der roten Phase, in der die Route fehlt (constitution.md §3.1).
+const ROUTE_NOT_FOUND = /Route DELETE:.*not found/i
 
 type CreateApp = (typeof import('../src/server/core/app.js'))['createApp']
 type App = Awaited<ReturnType<CreateApp>>
@@ -129,6 +145,14 @@ function post(app: App, url: string, payload: Record<string, unknown>, sid?: str
 
 function get(app: App, url: string, sid?: string): Promise<Res> {
   return app.inject({ method: 'GET', url, ...(sid ? { cookies: { sid } } : {}) }) as unknown as Promise<Res>
+}
+
+function del(app: App, url: string, sid?: string): Promise<Res> {
+  return app.inject({ method: 'DELETE', url, ...(sid ? { cookies: { sid } } : {}) }) as unknown as Promise<Res>
+}
+
+function membershipCount(sessionId: string, userId: string): Promise<number> {
+  return db().membership.count({ where: { sessionId, userId } })
 }
 
 // --- Wegwerf-DB -----------------------------------------------------------------------------
@@ -304,21 +328,100 @@ test('Liste enthält nur eigene Mitgliedschaften mit Rolle', async () => {
   expect(eintraege.find((e) => e.id === c.id)).toBeUndefined()
 })
 
+// --- Verlassen einer Spielsitzung und Entfernen eines Spielers (#70) -------------------------
+
+test('Spieler verlässt die Spielsitzung', async () => {
+  const app = await makeApp()
+  const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, sam.userId, 'spieler')
+
+  const res = await del(app, `/api/sessions/${gs.id}/members/${sam.userId}`, sam.sid)
+
+  expect(res.statusCode).toBe(200)
+  expect(await membershipCount(gs.id, sam.userId)).toBe(0)
+})
+
+test('Spielleiter entfernt einen Spieler', async () => {
+  const app = await makeApp()
+  const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const tom = await registerUser(app, 'tom@example.com', 'tom')
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  await addMembership(gs.id, tom.userId, 'spieler')
+
+  const res = await del(app, `/api/sessions/${gs.id}/members/${tom.userId}`, sl.sid)
+
+  expect(res.statusCode).toBe(200)
+  expect(await membershipCount(gs.id, tom.userId)).toBe(0)
+})
+
+test('Spieler darf keinen anderen Spieler entfernen', async () => {
+  const app = await makeApp()
+  const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  const tom = await registerUser(app, 'tom@example.com', 'tom')
+  await addMembership(gs.id, sam.userId, 'spieler')
+  await addMembership(gs.id, tom.userId, 'spieler')
+
+  const res = await del(app, `/api/sessions/${gs.id}/members/${tom.userId}`, sam.sid)
+
+  expect(res.statusCode).toBe(403)
+  expect(await membershipCount(gs.id, tom.userId)).toBe(1)
+})
+
+test('Spielleiter kann über diese Route nicht selbst austreten', async () => {
+  const app = await makeApp()
+  const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+
+  const res = await del(app, `/api/sessions/${gs.id}/members/${sl.userId}`, sl.sid)
+
+  expect(res.statusCode).toBe(403)
+  expect(await membershipCount(gs.id, sl.userId)).toBe(1)
+})
+
+test('Unbekannte Mitgliedschaft', async () => {
+  const app = await makeApp()
+  const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  const sl = await registerUser(app, 'sl@example.com', 'meister')
+  const x = await registerUser(app, 'x@example.com', 'ecks')
+  await addMembership(gs.id, sl.userId, 'spielleiter')
+  // `x` ist angemeldet, aber KEIN Mitglied dieser Spielsitzung.
+  const mitgliedschaftenVorher = await db().membership.count({ where: { sessionId: gs.id } })
+
+  const res = await del(app, `/api/sessions/${gs.id}/members/${x.userId}`, sl.sid)
+
+  expect(res.statusCode).toBe(404)
+  // Der applikative 404 ist nicht der Fastify-Standard-404 einer fehlenden Route (roter Grund
+  // in der Phase ohne registrierte Route).
+  expect(String(bodyOf(res).message ?? '')).not.toMatch(ROUTE_NOT_FOUND)
+  expect(await db().membership.count({ where: { sessionId: gs.id } })).toBe(mitgliedschaftenVorher)
+})
+
 // --- Sitzungsrouten verlangen eine Anmeldung ------------------------------------------------
 
 test('Sitzungsrouten ohne Cookie', async () => {
   const app = await makeApp()
-  await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  const gs = await createGameSession({ code: 'ABC234', status: 'geoeffnet' })
+  const sam = await registerUser(app, 'sam@example.com', 'sam')
+  await addMembership(gs.id, sam.userId, 'spieler')
   const sessionsVorher = await db().gameSession.count()
   const membershipsVorher = await db().membership.count()
 
   const erstellen = await post(app, '/api/sessions', { name: 'Ohne Anmeldung' })
   const beitreten = await post(app, '/api/sessions/join', { code: 'ABC234' })
   const liste = await get(app, '/api/sessions')
+  // #70: auch die Entfernen-Route verlangt eine Anmeldung und darf ohne Cookie nichts schreiben.
+  const entfernen = await del(app, `/api/sessions/${gs.id}/members/${sam.userId}`)
 
   expect(erstellen.statusCode).toBe(401)
   expect(beitreten.statusCode).toBe(401)
   expect(liste.statusCode).toBe(401)
+  expect(entfernen.statusCode).toBe(401)
   expect(await db().gameSession.count()).toBe(sessionsVorher)
   expect(await db().membership.count()).toBe(membershipsVorher)
 })

@@ -88,6 +88,9 @@ export const en: Record<TextKey, string> = {
   'session.end.title': 'End session?',
   'session.end.message': 'All players are removed from the room.',
   'session.end.confirm': 'End',
+  'session.leave': 'Leave',
+  'session.remove': 'Remove',
+  'session.removed': 'You were removed from the game session.',
 
   'bar.label': 'Session',
   'bar.rename': 'Rename',

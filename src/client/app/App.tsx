@@ -45,6 +45,9 @@ import { Hero } from './Hero.js'
 // session-tabs (#94, design.md D6): `AppShell` bekommt `wide={sessionView.view === 'raum'}` im
 // angemeldeten Zweig - die Raumansicht sprengt die Inhaltsspalte (`session-tabs`, "Stylesheet
 // der Bereiche"); jede andere Ansicht (auch anonym) laesst die Prop weg.
+// add-session-leave (#70, design.md D5): `SessionRoom` bekommt zusaetzlich `onRemoved` - nach
+// demselben Muster wie `onEnded` (Hinweis setzen, zur Liste zurueck), aber mit dem Hinweis
+// `t('session.removed')` statt `t('session.ended.hint')`.
 type AuthState = { status: 'unbekannt' } | { status: 'anonym' } | { status: 'angemeldet'; user: UserOutput }
 
 type AuthView = 'login' | 'register'
@@ -160,6 +163,10 @@ export function App({ build = FALLBACK_BUILD }: AppProps) {
             setSessionView({ view: 'liste' })
           }}
           onLeave={() => setSessionView({ view: 'liste' })}
+          onRemoved={() => {
+            setHinweis(t('session.removed'))
+            setSessionView({ view: 'liste' })
+          }}
           onOpenLibrary={() => setSessionView({ view: 'bibliothek' })}
         />
       )

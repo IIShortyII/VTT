@@ -232,6 +232,10 @@ export const SESSION_EVENTS = {
   replaced: 'session:replaced',
   ended: 'session:ended',
   renamed: 'session:renamed',
+  // add-session-leave (#70, design.md D3): der Betroffene erhaelt dieses Ereignis unmittelbar
+  // vor dem sofortigen Verlassen des Socket.IO-Raums (Requirement "Verlassen einer
+  // Spielsitzung und Entfernen eines Spielers").
+  removed: 'session:removed',
 } as const
 
 export interface ParticipantsEvent {
@@ -249,6 +253,12 @@ export interface ReplacedEvent {
 }
 
 export interface EndedEvent {
+  sessionId: string
+}
+
+/** Payload von `session:removed` (Server an Client, add-session-leave #70, design.md D3): der
+ * Betroffene hat die Spielsitzung verlassen oder wurde entfernt und ist nicht mehr im Raum. */
+export interface RemovedEvent {
   sessionId: string
 }
 

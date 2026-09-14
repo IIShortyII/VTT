@@ -29,6 +29,9 @@
 // Chip-Beschriftung, `annotation.entryVisibility.*` das kleingeschriebene Eintragswort -
 // getrennte Schluessel fuer denselben Begriff in zwei Rollen (design.md D6, Entscheidung).
 // `menu.delete` (bestehender Schluessel) deckt den Menueeintrag `Löschen` beider Panels ab.
+//
+// add-session-leave (#70, design.md D6): `session.leave`/`session.remove`/`session.removed`
+// nach `session.end.*` - die Teilnehmerzeilen-Aktionen und der Hinweis nach `session:removed`.
 
 export const de = {
   'shell.back': 'Zurück',
@@ -113,6 +116,9 @@ export const de = {
   'session.end.title': 'Sitzung beenden?',
   'session.end.message': 'Alle Spieler werden aus dem Raum entfernt.',
   'session.end.confirm': 'Beenden',
+  'session.leave': 'Austreten',
+  'session.remove': 'Entfernen',
+  'session.removed': 'Du wurdest aus der Spielsitzung entfernt.',
 
   'bar.label': 'Sitzung',
   'bar.rename': 'Umbenennen',

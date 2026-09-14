@@ -16,6 +16,7 @@ import {
   type EnterAck,
   type EndedEvent,
   type ParticipantsEvent,
+  type RemovedEvent,
   type RenameAck,
   type RenamedEvent,
   type ReplacedEvent,
@@ -84,6 +85,9 @@ export interface SessionSocketFacade {
   on(event: 'status', handler: (payload: StatusEvent) => void): void
   on(event: 'replaced', handler: (payload: ReplacedEvent) => void): void
   on(event: 'ended', handler: (payload: EndedEvent) => void): void
+  // add-session-leave (#70, design.md D5): der Betroffene erhaelt dieses Ereignis, wenn er die
+  // Spielsitzung verlassen hat oder entfernt wurde - verdrahtet wie `ended`.
+  on(event: 'removed', handler: (payload: RemovedEvent) => void): void
   // session-bar (#93, design.md D3): Broadcast des neuen Namens, wie `status` verdrahtet.
   on(event: 'renamed', handler: (payload: RenamedEvent) => void): void
   on(event: 'map', handler: (payload: MapEvent) => void): void
@@ -114,7 +118,7 @@ function wireEventFor(event: string): string {
   if (event === 'annotations') {
     return SESSION_ANNOTATION_EVENTS.annotations
   }
-  return SESSION_EVENTS[event as 'participants' | 'status' | 'replaced' | 'ended' | 'renamed']
+  return SESSION_EVENTS[event as 'participants' | 'status' | 'replaced' | 'ended' | 'removed' | 'renamed']
 }
 
 /**

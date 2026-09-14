@@ -135,7 +135,7 @@ und MUST NOT in die Datenbank schreiben.
 
 - **GIVEN** kein Sitzungscookie
 - **WHEN** `POST /api/sessions` mit gültigem Namen, `POST /api/sessions/join` mit einem
-  gültigen Code und `GET /api/sessions` eingehen
+  gültigen Code, `GET /api/sessions` und `DELETE /api/sessions/:id/members/:userId` eingehen
 - **THEN** antwortet der Server jedes Mal mit `401`, und die Anzahl der Spielsitzungen und
   Mitgliedschaften in der Datenbank ist unverändert
 
@@ -232,7 +232,7 @@ Verbindung mit `{ ok: false, message }` abgelehnt werden und nichts verändern.
 Der Server SHALL allen Verbindungen im Raum ein `session:participants`
 `{ sessionId, participants }` senden, wenn sich Mitgliedschaft, Anwesenheit oder Alias
 ändert: bei einem Beitritt per Code, beim Betreten des Raums, beim Verlassen
-(Verbindungsabbruch oder Wechsel in einen anderen Raum) und beim Setzen oder Zurücksetzen
+(Verbindungsabbruch oder Wechsel in einen anderen Raum), beim Austritt eines Spielers oder Entfernen durch den Spielleiter und beim Setzen oder Zurücksetzen
 eines Alias. Beim Wechsel einer Verbindung in einen anderen Raum SHALL der **bisherige** Raum
 ein `session:participants` erhalten, in dem der Wechselnde `online: false` ist; der
 Wechselnde selbst MUST NOT diese Liste erhalten, weil er den Raum verlassen hat.
@@ -240,7 +240,9 @@ Wechselnde selbst MUST NOT diese Liste erhalten, weil er den Raum verlassen hat.
 `username`, `role` und `online` sowie `alias`, falls die Mitgliedschaft einen trägt. Die
 E-Mail eines Mitglieds MUST NOT enthalten sein — weder in `session:participants` noch im
 Acknowledgement von `session:enter` (`constitution.md` §9.2). Ein Mitglied, dessen Verbindung
-endet, bleibt Mitglied und wird `online: false`.
+endet, bleibt Mitglied und wird `online: false`. Ein Mitglied, das die Spielsitzung
+verlässt oder vom Spielleiter entfernt wird, verliert seine Mitgliedschaft und MUST NOT in
+der danach gesendeten Liste erscheinen — weder als `online: true` noch als `online: false`.
 
 #### Scenario: Neues Mitglied erscheint sofort in der Liste
 
@@ -286,6 +288,16 @@ endet, bleibt Mitglied und wird `online: false`.
   `session:participants` beim Spielleiter den Eintrag `{ username: "sam", alias:
   "Gandalf" }` und den Eintrag `{ username: "meister" }` ohne Feld `alias`, und kein Eintrag in
   beiden Listen trägt ein Feld `email`
+
+#### Scenario: Entfernter Spieler verschwindet aus der Liste
+
+- **GIVEN** ein Spielleiter, der seine Spielsitzung (`geoeffnet`) betreten hat, und ein
+  Spieler-Mitglied `sam`, das den Raum betreten hat
+- **WHEN** der Spielleiter `DELETE /api/sessions/:id/members/:userId` mit der `userId` von
+  `sam` sendet
+- **THEN** erhält der Spielleiter ein `session:participants`, das `sam` nicht mehr enthält
+  (weder mit `online: true` noch mit `online: false`), und in der Datenbank existiert die
+  Mitgliedschaft von `sam` zu dieser Spielsitzung nicht mehr
 
 ### Requirement: Eine Verbindung pro Nutzer und Spielsitzung
 
@@ -441,7 +453,7 @@ SHALL dem Acknowledgement von `session:enter` und danach jedem `session:renamed`
 SHALL mit seinem Alias benannt werden, falls einer gesetzt ist, sonst mit seinem
 Nutzernamen. Die eigene Zeile der Teilnehmerliste SHALL ein Eingabefeld für den Alias mit
 dem aktuell gesetzten Wert anbieten; das Absenden SHALL `session:alias` mit dem
-eingegebenen Wert senden. Die angezeigte Benennung SHALL der zuletzt vom Server gesendeten
+eingegebenen Wert senden. Die eigene Zeile eines Spielers SHALL zusätzlich die Aktion `Austreten` tragen; die eigene Zeile des Spielleiters MUST NOT sie tragen. Dem Spielleiter SHALL jede Spieler-Zeile die Aktion `Entfernen` tragen; einem Spieler MUST NOT eine fremde Zeile eine solche Aktion zeigen. Das Auslösen von `Austreten` oder `Entfernen` SHALL `DELETE /api/sessions/:id/members/:userId` mit der `userId` der betroffenen Zeile senden. Die angezeigte Benennung SHALL der zuletzt vom Server gesendeten
 Teilnehmerliste folgen, nicht der Eingabe (`constitution.md` §9.1); eine Ablehnung des
 Servers SHALL als Meldung sichtbar sein. Szenarien dieses Requirements, die Elemente eines Reiters adressieren, setzen voraus,
 dass der Testaufbau diesen Reiter vorher per Klick aktiviert hat (`session-tabs`,
@@ -487,7 +499,9 @@ Schaltfläche `Zur Übersicht` zeigen; die Schaltfläche, das Schließen des Dia
 `Schließen`) und der Ablauf von 4000 Millisekunden SHALL zur Sitzungsliste mit dem Hinweis
 `Die Spielsitzung wurde beendet.` führen, genau einmal — der Timer wird beim Verlassen
 geräumt. Treffen `session:replaced` und `session:ended` zusammen, SHALL nur der
-Sitzungsende-Dialog erscheinen.
+Sitzungsende-Dialog erscheinen. Erhält die Anwendung `session:removed`, SHALL sie zur
+Sitzungsliste zurückkehren und den Hinweis `Du wurdest aus der Spielsitzung entfernt.`
+(`ui-text`) zeigen.
 
 #### Scenario: Sitzungsliste mit Erstellen und Beitreten
 
@@ -664,6 +678,35 @@ Sitzungsende-Dialog erscheinen.
   kein Element der Rolle `dialog`; nach erneutem Auslösen zeigt das `<code>`-Element wieder
   `••••••`, kein Textknoten lautet `ABC234`, und die Schaltfläche trägt
   `aria-pressed="false"`
+
+#### Scenario: Spieler tritt über die eigene Zeile aus
+
+- **GIVEN** die Raumansicht eines Spielers mit Nutzernamen `sam` und `userId` `U` ist
+  geöffnet, und die Teilnehmerliste nennt `sam` (die eigene Zeile) und einen Spielleiter
+  `meister`
+- **WHEN** der Reiter `Teilnehmer` aktiviert wird und `sam` in seiner eigenen Zeile die
+  Schaltfläche `Austreten` auslöst
+- **THEN** trägt die eigene Zeile von `sam` eine Schaltfläche `Austreten`, keine Zeile trägt
+  für ihn eine Schaltfläche `Entfernen`, und das Auslösen sendet `DELETE
+  /api/sessions/:id/members/U`
+
+#### Scenario: Spielleiter entfernt über die Spielerzeile
+
+- **GIVEN** die Raumansicht des Spielleiters `meister` (die eigene Zeile) ist geöffnet, und
+  die Teilnehmerliste nennt zusätzlich einen Spieler `sam` mit `userId` `U`
+- **WHEN** der Reiter `Teilnehmer` aktiviert wird und der Spielleiter in der Zeile von `sam`
+  die Schaltfläche `Entfernen` auslöst
+- **THEN** trägt die Zeile von `sam` eine Schaltfläche `Entfernen`, die eigene Zeile von
+  `meister` trägt weder `Entfernen` noch `Austreten`, und das Auslösen sendet `DELETE
+  /api/sessions/:id/members/U`
+
+#### Scenario: Entfernt-Ereignis führt zur Sitzungsliste
+
+- **GIVEN** die Raumansicht eines Spielers ist geöffnet
+- **WHEN** die Anwendung `session:removed` mit der `sessionId` des Raums erhält
+- **THEN** zeigt sie die Sitzungsliste (Schaltfläche `Sitzung leiten`), die Raumansicht ist
+  nicht mehr gerendert (keine Gruppe `Sitzung`), und es existiert genau ein Element der Rolle
+  `alert` mit dem Text `Du wurdest aus der Spielsitzung entfernt.`
 
 ### Requirement: Alias pro Mitgliedschaft
 
@@ -904,3 +947,91 @@ Die Sitzungsliste (`GET /api/sessions`) SHALL danach den neuen Namen liefern.
 - **WHEN** dieser `session:rename` mit der `sessionId` und `name: "Samstagsrunde"` sendet
 - **THEN** lautet das Acknowledgement `{ ok: false, message }`, und die Spielsitzung trägt in
   der Datenbank weiterhin den Namen `Freitagsrunde`
+
+### Requirement: Verlassen einer Spielsitzung und Entfernen eines Spielers
+
+Das System SHALL über `DELETE /api/sessions/:id/members/:userId` das Beenden einer
+Spieler-Mitgliedschaft erlauben. Die Berechtigung SHALL pro Aktion aus der Datenbank geprüft
+werden (`constitution.md` §9.3): Der anfragende Nutzer MUST Mitglied der Spielsitzung `:id`
+sein, und erlaubt ist genau
+
+- der **Selbstaustritt** — `:userId` gleich der eigenen `userId` und die eigene Rolle
+  `spieler` —, sowie
+- das **Entfernen durch den Spielleiter** — die eigene Rolle `spielleiter` und `:userId` eine
+  Mitgliedschaft mit Rolle `spieler` derselben Spielsitzung.
+
+Jede andere Kombination — ein Spieler, der eine fremde `:userId` nennt; ein Nutzer, der eine
+`spielleiter`-Mitgliedschaft nennt (auch die eigene); ein Nicht-Mitglied — SHALL mit `403`
+beantwortet werden und MUST NOT etwas verändern. Nennt `:userId` keine Mitgliedschaft dieser
+Spielsitzung, SHALL der Server mit `404` antworten und nichts verändern. Ohne gültige
+Anmelde-Sitzung gilt `401` (Requirement „Sitzungsrouten verlangen eine Anmeldung"). Das
+Verlassen und Entfernen SHALL in jedem Zustand der Spielsitzung möglich sein.
+
+Ein erlaubtes Verlassen oder Entfernen SHALL in **einer** Datenbank-Transaktion geschehen und
+dabei die Mitgliedschaft löschen sowie die abhängigen Daten dieser Spielsitzung bereinigen:
+die Tokens des Betroffenen (Requirement „Bereinigung der Tokens beim Verlassen" in
+`session-token`) und seine Anmerkungen (Requirement „Bereinigung der Anmerkungen beim
+Verlassen" in `session-annotation`). Scheitert ein Teil, MUST NOT ein Teil der Bereinigung
+oder die Löschung der Mitgliedschaft bestehen bleiben.
+
+Nach erfolgreicher Transaktion SHALL der Server mit `200` antworten und allen im Raum
+verbliebenen Verbindungen ein `session:participants` senden, das die entfernte Mitgliedschaft
+nicht mehr enthält (Requirement „Teilnehmerliste in Echtzeit"). Ist der Betroffene über eine
+oder mehrere Verbindungen im Raum anwesend, SHALL der Server diesen `session:removed`
+`{ sessionId }` senden und sie **sofort** aus dem Raum entfernen, sodass sie kein weiteres
+Ereignis dieser Spielsitzung mehr empfangen — nicht erst beim nächsten Verbindungsaufbau
+(`constitution.md` §9.2/§9.3). Ein erneuter Beitritt des Betroffenen SHALL wieder den
+Sitzungscode über `POST /api/sessions/join` erfordern; ein `session:enter` ohne erneute
+Mitgliedschaft SHALL wie bei jedem Nicht-Mitglied abgelehnt werden.
+
+#### Scenario: Spieler verlässt die Spielsitzung
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet` mit einem Spielleiter und einem
+  Spieler-Mitglied `sam`
+- **WHEN** `DELETE /api/sessions/:id/members/:userId` mit der `userId` von `sam`, gesendet mit
+  dem Cookie von `sam`, eingeht
+- **THEN** antwortet der Server mit `200`, und in der Datenbank existiert keine Mitgliedschaft
+  von `sam` zu dieser Spielsitzung mehr
+
+#### Scenario: Spielleiter entfernt einen Spieler
+
+- **GIVEN** eine Spielsitzung mit einem Spielleiter und einem Spieler-Mitglied `tom`
+- **WHEN** `DELETE /api/sessions/:id/members/:userId` mit der `userId` von `tom`, gesendet mit
+  dem Cookie des Spielleiters, eingeht
+- **THEN** antwortet der Server mit `200`, und in der Datenbank existiert die Mitgliedschaft
+  von `tom` zu dieser Spielsitzung nicht mehr
+
+#### Scenario: Spieler darf keinen anderen Spieler entfernen
+
+- **GIVEN** eine Spielsitzung mit zwei Spieler-Mitgliedern `sam` und `tom`
+- **WHEN** `DELETE /api/sessions/:id/members/:userId` mit der `userId` von `tom`, gesendet mit
+  dem Cookie von `sam`, eingeht
+- **THEN** antwortet der Server mit `403`, und die Mitgliedschaft von `tom` existiert in der
+  Datenbank weiterhin
+
+#### Scenario: Spielleiter kann über diese Route nicht selbst austreten
+
+- **GIVEN** eine Spielsitzung, deren Spielleiter angemeldet ist
+- **WHEN** `DELETE /api/sessions/:id/members/:userId` mit der eigenen `userId`, gesendet mit
+  dem Cookie des Spielleiters, eingeht
+- **THEN** antwortet der Server mit `403`, und die Mitgliedschaft des Spielleiters existiert
+  in der Datenbank weiterhin
+
+#### Scenario: Unbekannte Mitgliedschaft
+
+- **GIVEN** eine Spielsitzung mit einem Spielleiter und ein angemeldeter Nutzer `x`, der nicht
+  Mitglied dieser Spielsitzung ist
+- **WHEN** der Spielleiter `DELETE /api/sessions/:id/members/:userId` mit der `userId` von `x`
+  sendet
+- **THEN** antwortet der Server mit `404`, und in der Datenbank ändert sich keine
+  Mitgliedschaft dieser Spielsitzung
+
+#### Scenario: Entfernter anwesender Spieler verliert den Raum sofort
+
+- **GIVEN** eine Spielsitzung im Zustand `geoeffnet`, in deren Raum der Spielleiter und der
+  Spieler `sam` über eine Socket-Verbindung anwesend sind
+- **WHEN** der Spielleiter `DELETE /api/sessions/:id/members/:userId` mit der `userId` von
+  `sam` sendet
+- **THEN** erhält `sam` `session:removed` mit der `sessionId`, `sam` empfängt das aus der
+  Entfernung ausgelöste `session:participants` **nicht** (seine Verbindung ist nicht mehr im
+  Raum), und in der Datenbank existiert die Mitgliedschaft von `sam` nicht mehr

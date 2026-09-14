@@ -14,17 +14,26 @@
 //
 // add-token-cards (#95, design.md D8): `locate` (Lucide `LocateFixed`) zwischen `library` und
 // `lock` - die Registry traegt jetzt 56 Namen.
+//
+// ui-toolbar (#96, design.md D1, spec.md "Registry"): vier neue Namen fuer die
+// Werkzeugleisten von Fog- und Anmerkungsverwaltung - `move` (Lucide `Move`, Bewegen/
+// Schwenken), `area` (Lucide `BoxSelect`, Bereich markieren), `circle` (Lucide `Circle`,
+// Kreis), `angle` (Lucide `Angle`, Winkel). Alphabetisch in die Oberflaeche einsortiert -
+// die Registry traegt jetzt 60 Namen.
 import {
+  Angle,
   ArrowDownToLine,
   Ban,
   BatteryLow,
   Biohazard,
   BowArrow,
+  BoxSelect,
   Brush,
   Bug,
   Check,
   ChevronDown,
   ChevronLeft,
+  Circle,
   CircleDot,
   CircleHelp,
   CircleOff,
@@ -49,6 +58,7 @@ import {
   Map,
   Moon,
   Mountain,
+  Move,
   PawPrint,
   Pause,
   Pencil,
@@ -73,15 +83,18 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-/** Genau die 56 Registry-Namen, in der Reihenfolge aus `specs/ui-icons/spec.md`
+/** Genau die 60 Registry-Namen, in der Reihenfolge aus `specs/ui-icons/spec.md`
  * ("Registry-Namen"): Oberflaeche, Symbolkatalog, Zustandskatalog. */
 export const ICON_NAMES = [
   // Oberflaeche
   'add',
+  'angle',
+  'area',
   'back',
   'ban',
   'check',
   'chevronDown',
+  'circle',
   'close',
   'copy',
   'delete',
@@ -99,6 +112,7 @@ export const ICON_NAMES = [
   'map',
   'measure',
   'more',
+  'move',
   'pause',
   'players',
   'reveal',
@@ -142,10 +156,13 @@ export type IconName = (typeof ICON_NAMES)[number]
 /** Name -> `lucide-react`-Komponente (design.md D1, verbindliche Zuordnungstabelle). */
 export const ICON_REGISTRY: Record<IconName, LucideIcon> = {
   add: Plus,
+  angle: Angle,
+  area: BoxSelect,
   back: ChevronLeft,
   ban: Ban,
   check: Check,
   chevronDown: ChevronDown,
+  circle: Circle,
   close: X,
   copy: Copy,
   delete: Trash2,
@@ -163,6 +180,7 @@ export const ICON_REGISTRY: Record<IconName, LucideIcon> = {
   map: Map,
   measure: Ruler,
   more: Ellipsis,
+  move: Move,
   pause: Pause,
   players: Users,
   reveal: Eye,

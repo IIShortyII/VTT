@@ -21,6 +21,14 @@
 // session-tabs (#94, design.md D7): `tabs.*` und `setup.*` als neue Gruppen nach `bar.*` - die
 // Reiterbeschriftungen der Raumansicht und der Cluster `Bibliothek & Einrichtung` der
 // Kartenverwaltung.
+//
+// ui-toolbar (#96, design.md D6): `tool.*`, `fog.*` und `annotation.*` als neue Gruppen nach
+// den bestehenden Fog-/Anmerkungs-Schluesseln (`empty.fogAreas.*`/`empty.annotations.*`) -
+// Werkzeugnamen, Chip-Beschriftungen, Zaehler, Menuetexte und die vom Client komponierten
+// Chrome-Woerter der Anmerkungszeilen. `annotation.visibility.*` liefert die grossgeschriebene
+// Chip-Beschriftung, `annotation.entryVisibility.*` das kleingeschriebene Eintragswort -
+// getrennte Schluessel fuer denselben Begriff in zwei Rollen (design.md D6, Entscheidung).
+// `menu.delete` (bestehender Schluessel) deckt den Menueeintrag `Löschen` beider Panels ab.
 
 export const de = {
   'shell.back': 'Zurück',
@@ -150,6 +158,55 @@ export const de = {
   'empty.fogAreas.hint': 'Markiere Zellen auf der Karte und speichere sie als Bereich.',
   'empty.annotations.title': 'Noch keine Anmerkungen',
   'empty.annotations.hint': 'Miss eine Strecke oder zeichne auf der Karte.',
+
+  'tool.pan': 'Schwenken',
+  'tool.move': 'Bewegen',
+
+  'fog.legend': 'Fog of War',
+  'fog.toolbar': 'Nebelwerkzeug',
+  'fog.tool.reveal': 'Aufdecken',
+  'fog.tool.hide': 'Verdecken',
+  'fog.tool.area': 'Bereich markieren',
+  'fog.revealAll': 'Alles aufdecken',
+  'fog.hideAll': 'Alles verdecken',
+  'fog.areaName': 'Bereichsname',
+  'fog.saveArea': 'Bereich speichern',
+  'fog.selectionCount': '{count} Zellen markiert',
+  'fog.areaRevealed': '{name} aufgedeckt',
+
+  'annotation.legend': 'Messen & Zeichnen',
+  'annotation.toolbar': 'Anmerkungswerkzeug',
+  'annotation.tool.line': 'Strecke',
+  'annotation.tool.circle': 'Kreis',
+  'annotation.tool.angle': 'Winkel',
+  'annotation.tool.draw': 'Zeichnen',
+  'annotation.mode': 'Modus',
+  'annotation.mode.grid': 'Gerastert',
+  'annotation.mode.free': 'Frei',
+  'annotation.visibility': 'Sichtbarkeit',
+  'annotation.visibility.privat': 'Privat',
+  'annotation.visibility.geteilt': 'Geteilt',
+  'annotation.entryVisibility.privat': 'privat',
+  'annotation.entryVisibility.geteilt': 'geteilt',
+  'annotation.color': 'Farbe',
+  'annotation.color.rot': 'Rot',
+  'annotation.color.orange': 'Orange',
+  'annotation.color.gelb': 'Gelb',
+  'annotation.color.gruen': 'Grün',
+  'annotation.color.blau': 'Blau',
+  'annotation.color.weiss': 'Weiß',
+  'annotation.unit': 'Einheit',
+  'annotation.unit.meter': 'Meter',
+  'annotation.unit.fuss': 'Fuß',
+  'annotation.remove': 'Entfernen',
+  'annotation.removeMine': 'Meine entfernen',
+  'annotation.removeShared': 'Alle geteilten entfernen',
+  'annotation.kind.strecke': 'Strecke',
+  'annotation.kind.kreis': 'Kreis',
+  'annotation.kind.winkel': 'Winkel',
+  'annotation.kind.zeichnung': 'Zeichnung',
+  'annotation.unknownAuthor': 'unbekannt',
+
   'empty.mapInstances.title': 'Noch keine Karten eingehängt',
   'empty.mapInstances.hint': 'Hänge eine Karte aus deiner Bibliothek ein.',
   'empty.library.title': 'Noch keine Karten',

@@ -30,8 +30,8 @@ Abnahme privat weitergenutzt wird, fehlt der Austritt (Issue #70, Epic #68).
   Sitzungscode.
 - **Client: Austreten und Entfernen in der Teilnehmerliste.** Im Reiter `Teilnehmer` trägt
   die eigene Zeile eines Spielers die Aktion `Austreten`, jede Spielerzeile beim Spielleiter
-  die Aktion `Entfernen`; beide fragen vor dem Senden über einen Bestätigungsdialog
-  (`ui-dialog`) nach. Die eigene Zeile des Spielleiters trägt keine solche Aktion. Erhält die
+  die Aktion `Entfernen`; beide lösen den REST-Aufruf direkt aus (ein Bestätigungsdialog ist mögliche
+  Folgearbeit, siehe design.md D4). Die eigene Zeile des Spielleiters trägt keine solche Aktion. Erhält die
   Anwendung `session:removed`, kehrt sie zur Sitzungsliste zurück und zeigt einen Hinweis.
 
 **Nicht im Umfang:** Selbstaustritt des Spielleiters, Löschen einer Spielsitzung, Übergabe
@@ -63,7 +63,7 @@ der Spielleitung (eigene Changes); ein Sperren/Bann, der den erneuten Beitritt v
   Bereinigungs-Transaktion und das serverseitige Emittieren von `session:participants` und
   `session:removed` samt Raumaustritt der betroffenen Verbindungen.
 - `src/client/session/` — `Austreten`/`Entfernen` in der Teilnehmerliste mit
-  Bestätigungsdialog, REST-Aufruf, Behandlung von `session:removed`.
+  REST-Aufruf, Behandlung von `session:removed`.
 - `src/client/i18n/` — neue Textschlüssel (deutsches und englisches Wörterbuch, identische
   Schlüsselmenge; von `ui-text` per Typecheck erzwungen, daher kein `ui-text`-Delta).
 

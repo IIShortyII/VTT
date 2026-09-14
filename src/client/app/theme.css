@@ -869,10 +869,10 @@ main.app-shell--wide {
 
 .tab-list {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
   margin: 0 0 var(--space-4);
   border-bottom: 1px solid var(--color-border);
-  overflow-x: auto;
 }
 
 .tab {

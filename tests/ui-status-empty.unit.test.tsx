@@ -159,6 +159,15 @@ async function betreten(): Promise<void> {
   })
 }
 
+// MODIFIED (#94): Aktiviert einen Bereichs-Reiter der Raumansicht (session-tabs,
+// Testaufbau-Konvention). Inhalte ausserhalb des Reiters `Karte` liegen in versteckten
+// Reiterpanels und werden erst nach dem Klick von den Standardabfragen gefunden.
+async function aktiviereReiter(name: string): Promise<void> {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('tab', { name }))
+  })
+}
+
 async function oeffneBibliothek(): Promise<void> {
   const knopf = await screen.findByRole('button', { name: /kartenbibliothek/i })
   await act(async () => {
@@ -188,6 +197,8 @@ test('Leere Token-Verwaltung zeigt den Leerzustand', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   const scope = must((await screen.findByRole('heading', { name: 'Tokens' })).parentElement, 'die Token-Verwaltung')
   const titel = await within(scope).findByText('Noch keine Tokens')
@@ -204,6 +215,8 @@ test('Leere Tokenwerte zeigen den Leerzustand', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Tokens')
 
   const scope = must((await screen.findByRole('heading', { name: 'Tokenwerte' })).parentElement, 'die Liste Tokenwerte')
   const titel = await within(scope).findByText('Noch keine Tokens')
@@ -267,6 +280,8 @@ test('Ohne eingehängte Karten zeigt die Kartenverwaltung den Leerzustand', asyn
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Karten & Nebel` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Karten & Nebel')
 
   const scope = must((await screen.findByRole('heading', { name: 'Karten' })).parentElement, 'die Kartenverwaltung')
   const titel = await within(scope).findByText('Noch keine Karten eingehängt')

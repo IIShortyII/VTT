@@ -166,6 +166,15 @@ async function betreten(): Promise<void> {
   })
 }
 
+// MODIFIED (#94): Aktiviert einen Bereichs-Reiter der Raumansicht (session-tabs,
+// Testaufbau-Konvention). Inhalte ausserhalb des Reiters `Karte` liegen in versteckten
+// Reiterpanels und werden erst nach dem Klick von den Standardabfragen gefunden.
+async function aktiviereReiter(name: string): Promise<void> {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('tab', { name }))
+  })
+}
+
 function gefragt(pfad: string, method = 'GET'): boolean {
   return calls.some((c) => c.method === method && c.url.includes(pfad))
 }
@@ -321,6 +330,8 @@ test('Spielleiter sieht die Kartenverwaltung', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Karten & Nebel` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Karten & Nebel')
 
   // MODIFIED (#92): die eingehängte Karte trägt einen Trigger `Aktionen für Taverne`, dessen
   // Menü nach dem Öffnen `Aktivieren` und `Aushängen` zeigt — keine eigenen Zeilen-Schaltflächen.
@@ -357,6 +368,8 @@ test('Einhängen sendet die Absicht und lädt die Liste neu', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Karten & Nebel` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Karten & Nebel')
 
   const auswahl = (await screen.findByLabelText('Karte aus der Bibliothek')) as HTMLSelectElement
   await act(async () => {
@@ -388,6 +401,8 @@ test('Aktivieren sendet die Absicht und folgt dem Server', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Kartenverwaltung liegt im Reiter `Karten & Nebel` (session-tabs).
+  await aktiviereReiter('Karten & Nebel')
 
   // MODIFIED (#92): Aktivieren über das Menü `Aktionen für Taverne`.
   await act(async () => {
@@ -398,6 +413,8 @@ test('Aktivieren sendet die Absicht und folgt dem Server', async () => {
   })
 
   await waitFor(() => expect(socketMock.__facade.activateMap).toHaveBeenCalledWith('s1', 'i-tav'))
+  // MODIFIED (#94): der Kartenhinweis liegt im Reiter `Karte`.
+  await aktiviereReiter('Karte')
   // Bis das Server-Ereignis kommt, bleibt der Hinweis stehen (constitution.md §9.1).
   expect(screen.getByText('Keine Karte aktiv')).toBeTruthy()
 
@@ -425,6 +442,8 @@ test('Aushängen sendet die Absicht und lädt die Liste neu', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Inhalt liegt im Reiter `Karten & Nebel` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Karten & Nebel')
 
   // MODIFIED (#92): Aushängen über das Menü `Aktionen für Taverne`.
   await act(async () => {
@@ -457,11 +476,15 @@ test('Zurücksetzen sendet die Absicht', async () => {
   await betreten()
   await screen.findByText('Aktive Karte: Taverne')
 
+  // MODIFIED (#94): `Keine Karte anzeigen` liegt im Reiter `Karten & Nebel` (session-tabs).
+  await aktiviereReiter('Karten & Nebel')
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: /keine karte anzeigen/i }))
   })
 
   await waitFor(() => expect(socketMock.__facade.activateMap).toHaveBeenCalledWith('s1', null))
+  // MODIFIED (#94): der Kartenhinweis liegt im Reiter `Karte`.
+  await aktiviereReiter('Karte')
   // Bis session:map mit null kommt, bleibt Taverne die aktive Karte (constitution.md §9.1).
   expect(screen.getByText('Aktive Karte: Taverne')).toBeTruthy()
 })
@@ -484,6 +507,8 @@ test('Abgelehntes Aktivieren wird angezeigt', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#94): Kartenverwaltung liegt im Reiter `Karten & Nebel` (session-tabs).
+  await aktiviereReiter('Karten & Nebel')
 
   // MODIFIED (#92): Aktivieren über das Menü `Aktionen für Taverne`.
   await act(async () => {
@@ -494,6 +519,8 @@ test('Abgelehntes Aktivieren wird angezeigt', async () => {
   })
 
   await waitFor(() => expect(screen.getAllByText(ABLEHNUNG).length).toBeGreaterThan(0))
+  // MODIFIED (#94): der Kartenhinweis liegt im Reiter `Karte`.
+  await aktiviereReiter('Karte')
   // Die aktive Karte bleibt unveraendert (weiterhin kein Hinweis auf eine aktive Karte).
   expect(screen.getByText('Keine Karte aktiv')).toBeTruthy()
 })

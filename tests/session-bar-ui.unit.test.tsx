@@ -204,9 +204,10 @@ describe('Aufbau der Session-Bar', () => {
     const menü = within(bar).getByRole('button', { name: 'Sitzungsverwaltung' })
     expect(menü.getAttribute('aria-haspopup')).toBe('menu')
 
-    // Die Gruppe `Sitzung` liegt im Dokument vor der Teilnehmerliste (Zeile `alrik`).
-    const teilnehmer = screen.getByText(/alrik/)
-    expect(bar.compareDocumentPosition(teilnehmer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // MODIFIED (#94): die Gruppe `Sitzung` liegt im Dokument vor der Reiterliste `Bereiche`
+    // (session-bar-Delta „Bar des Spielleiters traegt vier Gruppen in fester Reihenfolge").
+    const reiterliste = screen.getByRole('tablist', { name: 'Bereiche' })
+    expect(bar.compareDocumentPosition(reiterliste) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   test('Bar des Spielers ohne Code und Steuerung', async () => {

@@ -346,6 +346,34 @@ test('Inhalt liegt im Hauptbereich', async () => {
   expect(main.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })
 
+test('Raumansicht hebt die Breitenbegrenzung auf', async () => {
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, { id: 'u-selbst', email: 'ich@example.com', username: 'ich' }) },
+    { pfad: '/api/sessions', antwort: antwort(200, [{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]) },
+  ])
+
+  render(<App />)
+  await screen.findByText('Freitagsrunde')
+  await betreten()
+  // Anker: die Raumansicht ist gerendert (Ueberschrift der Ebene 1 mit dem Sitzungsnamen).
+  await screen.findByRole('heading', { level: 1, name: 'Freitagsrunde' })
+
+  // ADDED (#94, ui-shell-Delta): in der Raumansicht traegt das <main> zusaetzlich
+  // `app-shell--wide` (session-tabs, „Stylesheet der Bereiche").
+  const main = must(document.querySelector('main'), 'das <main>-Element der Raumansicht')
+  expect(main.classList.contains('app-shell')).toBe(true)
+  expect(main.classList.contains('app-shell--wide')).toBe(true)
+
+  // Nach der Rueckkehr zur Sitzungsliste ueber `Zurück` faellt `app-shell--wide` weg.
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Zurück' }))
+  })
+  await screen.findByRole('button', { name: 'Sitzung leiten' })
+  const mainDanach = must(document.querySelector('main'), 'das <main>-Element der Sitzungsliste')
+  expect(mainDanach.classList.contains('app-shell')).toBe(true)
+  expect(mainDanach.classList.contains('app-shell--wide')).toBe(false)
+})
+
 test('Footer nennt Version und Build', async () => {
   mockFetch([{ pfad: '/api/auth/me', antwort: antwort(401, { error: 'nicht angemeldet' }) }])
 

@@ -198,6 +198,15 @@ async function betreten(): Promise<void> {
   })
 }
 
+// MODIFIED (#94): Aktiviert einen Bereichs-Reiter der Raumansicht (session-tabs,
+// Testaufbau-Konvention). Inhalte ausserhalb des Reiters `Karte` liegen in versteckten
+// Reiterpanels und werden erst nach dem Klick von den Standardabfragen gefunden.
+async function aktiviereReiter(name: string): Promise<void> {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('tab', { name }))
+  })
+}
+
 beforeEach(() => {
   jest.clearAllMocks()
   for (const key of Object.keys(socketMock.__handlers)) delete socketMock.__handlers[key]
@@ -278,7 +287,7 @@ test('Raumansicht des Spielleiters', async () => {
     ],
   })
 
-  const { container } = render(<App />)
+  render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
 
@@ -297,11 +306,16 @@ test('Raumansicht des Spielleiters', async () => {
   expect(screen.getByRole('button', { name: 'Sitzungscode kopieren' })).toBeTruthy()
   expect(screen.queryByText(/ABC234/)).toBeNull()
 
-  // Beide Teilnehmer mit Nutzernamen, Anwesenheit unterscheidbar.
-  expect(screen.getByText(/alrik/)).toBeTruthy()
-  expect(screen.getByText(/borgil/)).toBeTruthy()
-  expect(container.innerHTML).toMatch(/online|anwesend/i)
-  expect(container.innerHTML).toMatch(/offline|abwesend/i)
+  // MODIFIED (#94): unter der Gruppe die Reiterliste `Bereiche` mit den vier Reitern des
+  // Spielleiters (game-session-Delta „Raumansicht des Spielleiters"). Die Teilnehmerliste liegt
+  // jetzt im Reiter `Teilnehmer` und wird in diesem Szenario nicht mehr geprueft.
+  const reiterliste = screen.getByRole('tablist', { name: 'Bereiche' })
+  expect(within(reiterliste).getAllByRole('tab').map((r) => r.textContent)).toEqual([
+    'Karte',
+    'Tokens',
+    'Karten & Nebel',
+    'Teilnehmer',
+  ])
 
   // MODIFIED (#93): alle vier Uebergaenge gerendert; in `geoeffnet` sind `Starten`/`Beenden`
   // frei, `Öffnen`/`Pausieren` gesperrt (disabled, nicht ausgeblendet).
@@ -348,10 +362,11 @@ test('Raumansicht des Spielers', async () => {
   expect(pille).not.toBeNull()
   expect(pille?.classList.contains('status-pill--active')).toBe(true)
 
-  // Teilnehmer in der Liste im Inhaltsbereich (main), nicht in der Top-Bar (banner).
-  const main = screen.getByRole('main')
-  expect(within(main).getByText(/\bleiter\b/)).toBeTruthy()
-  expect(within(main).getByText(/\bich\b/)).toBeTruthy()
+  // MODIFIED (#94): darunter die Reiterliste `Bereiche` mit den drei Reitern des Spielers
+  // (kein Reiter `Karten & Nebel`); die Teilnehmerliste liegt jetzt im Reiter `Teilnehmer`.
+  const reiterliste = screen.getByRole('tablist', { name: 'Bereiche' })
+  expect(within(reiterliste).getAllByRole('tab').map((r) => r.textContent)).toEqual(['Karte', 'Tokens', 'Teilnehmer'])
+  expect(within(reiterliste).queryByRole('tab', { name: 'Karten & Nebel' })).toBeNull()
 
   // MODIFIED (#93): einem Spieler weder Maske noch Umschalter, Kopieren, Umbenennen oder ein
   // Uebergang.
@@ -1133,6 +1148,8 @@ test('Teilnehmer werden mit Alias oder Nutzername benannt', async () => {
   render(<App />)
   await screen.findByText(/Abendrunde/)
   await betreten()
+  // MODIFIED (#94): Teilnehmerliste liegt im Reiter `Teilnehmer` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Teilnehmer')
 
   await waitFor(() => expect(screen.getByText(/Gandalf der Graue/)).toBeTruthy())
   // Der Teilnehmer mit Alias wird mit dem Alias benannt, der ohne Alias mit dem Nutzernamen …
@@ -1159,6 +1176,8 @@ test('Eigener Alias wird als Absicht gesendet und folgt dem Server', async () =>
   const { container } = render(<App />)
   await screen.findByText(/Abendrunde/)
   await betreten()
+  // MODIFIED (#94): Alias-Formular liegt im Reiter `Teilnehmer` (session-tabs, Testaufbau-Konvention).
+  await aktiviereReiter('Teilnehmer')
   await waitFor(() => expect(screen.getByText(/\bsam\b/)).toBeTruthy())
 
   const feld = must(aliasFeld(container), 'ein Alias-Eingabefeld in der eigenen Zeile')
@@ -1203,6 +1222,8 @@ test('Abgelehnter Alias wird angezeigt', async () => {
   const { container } = render(<App />)
   await screen.findByText(/Abendrunde/)
   await betreten()
+  // MODIFIED (#94): Alias-Formular und Fehlermeldung liegen im Reiter `Teilnehmer` (session-tabs).
+  await aktiviereReiter('Teilnehmer')
   await waitFor(() => expect(screen.getByText(/\bsam\b/)).toBeTruthy())
 
   const feld = must(aliasFeld(container), 'ein Alias-Eingabefeld in der eigenen Zeile')

@@ -39,6 +39,7 @@ import type { TextKey } from '../i18n/de.js'
 import { useT } from '../i18n/locale.js'
 import { MapCanvas, type MapCanvasRef } from '../map/MapCanvas.js'
 import { AnnotationPanel } from './AnnotationPanel.js'
+import { removeMember } from './api.js'
 import { FogPanel } from './FogPanel.js'
 import { sessionMapImageUrl } from './fog-api.js'
 import { MapPanel } from './MapPanel.js'
@@ -128,12 +129,20 @@ import { TokenPanel } from './TokenPanel.js'
 // Zeilen-Trigger als auch das Karten-Kontextmenue. `mapCanvasRef` haelt das durchgereichte
 // Handle der aktiven Kartenansicht (`MapCanvas`, `forwardRef`) fuer den Menueeintrag
 // `Auf Karte zentrieren` (`centerOn`, `map/viewport.ts`).
+//
+// add-session-leave (#70, design.md D4/D5): die eigene Zeile eines Spielers traegt zusaetzlich
+// `Austreten`, der Spielleiter sieht `Entfernen` an jeder Spielerzeile - beide senden
+// `DELETE /api/sessions/:id/members/:userId` ueber `removeMember` (`api.ts`), ohne
+// Bestaetigungsdialog (design.md D4, Non-Goal). `session:removed` wird wie `session:ended`
+// verdrahtet, aber ohne Dialog und ohne Timer - `onRemoved` (Ref wie `onEnded`/`onLeave`)
+// fuehrt sofort zurueck zur Sitzungsliste.
 
 export interface SessionRoomProps {
   sessionId: string
   currentUserId: string
   onEnded: () => void
   onLeave: () => void
+  onRemoved: () => void
   onOpenLibrary: () => void
 }
 
@@ -413,7 +422,7 @@ function EditTokenDialog({ token, onSetStats, onSetConditions, onClose }: EditTo
   )
 }
 
-export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpenLibrary }: SessionRoomProps) {
+export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemoved, onOpenLibrary }: SessionRoomProps) {
   const t = useT()
   const { push } = useToasts()
   const { confirm } = useConfirm()
@@ -458,6 +467,10 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
   // DOM, sobald auch ein Spieler eine abgelehnte Bewegung sieht. add-token-sharing (#62,
   // design.md D6): dieselbe Meldung auch fuer eine abgelehnte Freigabe.
   const [tokenError, setTokenError] = useState<string | null>(null)
+  // add-session-leave (#70, design.md D4): Fehlermeldung eines abgelehnten Austretens/
+  // Entfernens (etwa ein zwischenzeitlich schon entferntes Mitglied) - dieselbe Rolle wie
+  // `aliasError`/`tokenError`, eigener State, weil sie eine andere Absicht betrifft.
+  const [memberError, setMemberError] = useState<string | null>(null)
   // ui-menu (#92, design.md D5/D9): `assignTokenId`/`shareTokenId` steuern die Modals des
   // Token-Menues; `mapMenu`/`mapMenuTokenId` dasselbe Menue am Rechtsklick-Punkt eines Tokens
   // der Karte. add-token-cards (#95, design.md D1): `editTokenId` steuert zusaetzlich das
@@ -515,11 +528,14 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
   // Reconnect-Handler den Toast in der aktuellen Sprache auslösen kann) wandern in Refs, bei
   // jedem Rendern nachgezogen - `wireSocket` liest sie darüber, ohne sie als Abhaengigkeit zu
   // fuehren (Goal "keine neue Fassade bei einem Rendern von `App`"). session-bar (#93,
-  // design.md D6): `onOpenLibrary` ebenso.
+  // design.md D6): `onOpenLibrary` ebenso. add-session-leave (#70, design.md D5): `onRemoved`
+  // nach demselben Muster.
   const onEndedRef = useRef(onEnded)
   onEndedRef.current = onEnded
   const onLeaveRef = useRef(onLeave)
   onLeaveRef.current = onLeave
+  const onRemovedRef = useRef(onRemoved)
+  onRemovedRef.current = onRemoved
   const onOpenLibraryRef = useRef(onOpenLibrary)
   onOpenLibraryRef.current = onOpenLibrary
   const pushRef = useRef(push)
@@ -642,6 +658,16 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
       socket.on('ended', () => {
         endedRef.current = true
         setEnded(true)
+      })
+      // add-session-leave (#70, design.md D5): kein Dialog, kein Timer - der Server hat die
+      // Verbindung bereits vor diesem Ereignis aus dem Raum genommen (Requirement "Verlassen
+      // einer Spielsitzung und Entfernen eines Spielers"). `onRemoved` fuehrt sofort zurueck
+      // zur Sitzungsliste (Muster `onEnded`/`onLeave`, aber ohne Zwischenzustand).
+      socket.on('removed', ({ sessionId: removedSessionId }) => {
+        if (isCancelled() || removedSessionId !== sessionId) {
+          return
+        }
+        onRemovedRef.current()
       })
       // reenter-room-after-reconnect (#46, design.md D2/D3): der Server kennt den Raum einer
       // Verbindung nach einer Trennung nicht mehr - eine gemeldete Wiederverbindung betritt ihn
@@ -793,6 +819,20 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
       .alias(sessionId, aliasInput)
       .then((ack: AliasAck) => {
         setAliasError(ack.ok ? null : ack.message)
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+  }
+
+  // add-session-leave (#70, design.md D4): Austreten/Entfernen senden dieselbe Absicht mit der
+  // `userId` der betroffenen Zeile - der Server entscheidet, ob es ein Selbstaustritt oder ein
+  // Entfernen ist (constitution.md §9.1/§9.3). Keine lokale Aenderung der Liste, sie folgt
+  // ausschliesslich dem naechsten `session:participants`.
+  const handleRemoveMember = (userId: string) => {
+    removeMember(sessionId, userId)
+      .then((result) => {
+        setMemberError(result.ok ? null : result.message)
       })
       .catch((error: unknown) => {
         console.error(error)
@@ -1371,10 +1411,26 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onOpen
                       <button type="submit">Alias setzen</button>
                     </form>
                   )}
+                  {/* add-session-leave (#70, design.md D4, Requirement "Sitzungsoberflaeche"):
+                      die eigene Zeile eines Spielers traegt `Austreten` - nicht die eigene
+                      Zeile des Spielleiters. */}
+                  {state.role === 'spieler' && participant.userId === currentUserId && (
+                    <button type="button" onClick={() => handleRemoveMember(participant.userId)}>
+                      {t('session.leave')}
+                    </button>
+                  )}
+                  {/* add-session-leave (#70, design.md D4): der Spielleiter sieht `Entfernen`
+                      an jeder Spielerzeile, nie an der eigenen. */}
+                  {state.role === 'spielleiter' && participant.role === 'spieler' && (
+                    <button type="button" onClick={() => handleRemoveMember(participant.userId)}>
+                      {t('session.remove')}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
             {aliasError !== null && <p role="alert">{aliasError}</p>}
+            {memberError !== null && <p role="alert">{memberError}</p>}
           </div>
         </TabPanel>
 

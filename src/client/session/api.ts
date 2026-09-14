@@ -15,6 +15,10 @@ import {
 
 export type SessionResult = { ok: true; session: SessionSummary } | { ok: false; message: string; field?: string }
 export type ListSessionsResult = { ok: true; sessions: SessionSummary[] } | { ok: false; message: string }
+// add-session-leave (#70, design.md D6): Ergebnis von `removeMember` - der Fehlerfall traegt
+// nur eine Meldung, kein Feld (die Route kennt kein Formularfeld, anders als beim Erstellen/
+// Beitreten).
+export type RemoveMemberResult = { ok: true } | { ok: false; message: string }
 
 async function postJson(path: string, body: unknown): Promise<Response> {
   return fetch(path, {
@@ -68,4 +72,21 @@ export async function listSessions(): Promise<ListSessionsResult> {
     return { ok: false, message: error.message }
   }
   return { ok: true, sessions: SessionSummarySchema.array().parse(data) }
+}
+
+/** `DELETE /api/sessions/:id/members/:userId` - beendet die eigene Mitgliedschaft
+ * (Austreten) oder die eines Spielers (Entfernen durch den Spielleiter), je nachdem, wessen
+ * `userId` uebergeben wird (add-session-leave #70, Requirement "Verlassen einer Spielsitzung
+ * und Entfernen eines Spielers"). */
+export async function removeMember(sessionId: string, userId: string): Promise<RemoveMemberResult> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/members/${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (response.ok) {
+    return { ok: true }
+  }
+  const data: unknown = await response.json()
+  const error = ErrorOutputSchema.parse(data)
+  return { ok: false, message: error.message }
 }

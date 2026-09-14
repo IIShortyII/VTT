@@ -87,8 +87,9 @@ oder eine Serveranfrage auslösen.
 - **WHEN** die Raumansicht gerendert wird
 - **THEN** enthält das sichtbare Reiterpanel `Karte` den Text `Aktive Karte: Taverne`, die
   Bühne und die Gruppen `Messen & Zeichnen` und `Fog of War`; die Überschriften `Tokens`
-  und `Karten` sowie das Feld `Alias` sind über die Standardabfragen nicht auffindbar,
-  und die Reiterpanels `Tokens`, `Karten & Nebel`, `Teilnehmer` tragen `hidden`
+  und `Karten` der Ebene 2 sowie das Textfeld `Alias` sind über Rollenabfragen nicht
+  auffindbar (versteckte Teilbäume), und die Reiterpanels `Tokens`, `Karten & Nebel`,
+  `Teilnehmer` tragen `hidden`
 
 #### Scenario: Klick auf einen Reiter wechselt den Bereich
 

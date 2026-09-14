@@ -21,10 +21,10 @@ zugleich fest, dass jede Aktion über die Socket-Verbindung einzeln autorisiert 
 - **Acknowledgement**: Antwort des Servers an den Absender eines Client-Ereignisses, entweder
   `{ ok: true, ... }` oder `{ ok: false, message }`.
 
-Drahtformat: REST unter `/api/sessions`; Socket-Ereignisse `session:enter`, `session:alias` und
-`session:transition` (Client → Server, jeweils mit Acknowledgement) sowie
-`session:participants`, `session:status`, `session:replaced` und `session:ended`
-(Server → Client). Eine Spielsitzung wird nach außen als
+Drahtformat: REST unter `/api/sessions`; Socket-Ereignisse `session:enter`, `session:alias`,
+`session:rename` und `session:transition` (Client → Server, jeweils mit Acknowledgement)
+sowie `session:participants`, `session:status`, `session:renamed`, `session:replaced` und
+`session:ended` (Server → Client). Eine Spielsitzung wird nach außen als
 `{ id, name, status, role, code? }` dargestellt; `code` ist nur für den Spielleiter enthalten.
 Ein Teilnehmer als `{ userId, username, alias?, role, online }`; `alias` ist nur enthalten, wenn
 die Mitgliedschaft einen trägt, die E-Mail nie (`constitution.md` §9.2).
@@ -426,32 +426,38 @@ als Karten zeigen (`ui-start`, „Sitzungskarten") sowie das Erstellen (Name) un
 Beitreten (Code) als Aktionen anbieten, deren Formulare erst auf Anforderung erscheinen
 (`ui-start`, „Erstellen und Beitreten auf Anforderung"); die Passwortänderung aus
 `user-auth` und das Abmelden liegen im Kontomenü der Top-Bar der App-Shell (`ui-shell`). Die Rückkehr aus Raum und Kartenbibliothek zur Sitzungsliste SHALL
-ausschließlich über die Top-Bar erfolgen; Raum und Bibliothek MUST NOT eine eigene
-Schaltfläche dafür zeigen. Nach Auswahl einer Spielsitzung SHALL die Raumansicht deren
-Namen als Überschrift der Ebene 1, den Zustand als Zustandspille nach der
-Zuordnungstabelle von `ui-start` (Text in der aktiven Sprache, Icon, Varianten-Klasse;
-`ui-text`) und die Teilnehmerliste mit Anwesenheitskennzeichen zeigen; sie MUST NOT den
-Rohwert des Zustands (`geoeffnet`, `gestartet`, `pausiert`, `geschlossen`) als Text zeigen. Jeder Teilnehmer
+über die Top-Bar erfolgen, aus dem Raum zusätzlich über den Eintrag `Verlassen` des
+Verwaltungsmenüs der Session-Bar (`session-bar`, „Verwaltungsmenü"); Raum und Bibliothek
+MUST NOT eine eigene Schaltfläche `Zurück` zeigen. Nach Auswahl einer Spielsitzung SHALL die Raumansicht als erstes
+Element die Session-Bar (`session-bar`) zeigen — mit dem Namen der Spielsitzung als
+Überschrift der Ebene 1 und dem Zustand als Zustandspille nach der Zuordnungstabelle von
+`ui-start` (Text in der aktiven Sprache, Icon, Varianten-Klasse; `ui-text`) — und darunter
+die Teilnehmerliste mit Anwesenheitskennzeichen; sie MUST NOT den Rohwert des Zustands
+(`geoeffnet`, `gestartet`, `pausiert`, `geschlossen`) als Text zeigen. Der angezeigte Name
+SHALL dem Acknowledgement von `session:enter` und danach jedem `session:renamed` folgen
+(Requirement „Spielsitzung umbenennen"). Jeder Teilnehmer
 SHALL mit seinem Alias benannt werden, falls einer gesetzt ist, sonst mit seinem
 Nutzernamen. Die eigene Zeile der Teilnehmerliste SHALL ein Eingabefeld für den Alias mit
 dem aktuell gesetzten Wert anbieten; das Absenden SHALL `session:alias` mit dem
 eingegebenen Wert senden. Die angezeigte Benennung SHALL der zuletzt vom Server gesendeten
 Teilnehmerliste folgen, nicht der Eingabe (`constitution.md` §9.1); eine Ablehnung des
-Servers SHALL als Meldung sichtbar sein. Dem Spielleiter SHALL sie zusätzlich den
-Sitzungscode und die im aktuellen Zustand erlaubten Übergänge als Schaltflächen anbieten,
-beschriftet mit dem Verb der Aktion in der aktiven Sprache (`ui-text`: `Öffnen`, `Starten`,
+Servers SHALL als Meldung sichtbar sein. Dem Spielleiter SHALL die Session-Bar zusätzlich
+den Sitzungscode und die vier Übergänge des Vertrags als Icon-only-Schaltflächen anbieten,
+benannt mit dem Verb der Aktion in der aktiven Sprache (`ui-text`: `Öffnen`, `Starten`,
 `Pausieren`, `Beenden`), nie mit dem Aktionsnamen des Vertrags (`oeffnen`, `starten`,
-`pausieren`, `beenden`). Der Sitzungscode SHALL maskiert
-stehen — `Code:` gefolgt von so vielen `•` wie der Code Zeichen hat — mit einem Icon-only-
-Trigger `Sitzungscode anzeigen` (`ui-menu`, Icon `info`), der einen Popover `Sitzungscode`
-öffnet; der Popover zeigt den Code im Klartext und eine Schaltfläche `Kopieren` (Text der
-aktiven Sprache, `ui-text`), die den Code in die Zwischenablage legt; gelingt das, SHALL die
-Anwendung den Toast `Sitzungscode kopiert` auslösen (`ui-feedback`), scheitert es, MUST NOT
-ein Toast erscheinen; der Popover bleibt danach offen. Außerhalb des Popovers MUST NOT der
-Klartext des Codes stehen. Einem Spieler MUST NOT sie Maske, Trigger, Popover oder
-Steuerung zeigen. Der angezeigte Zustand SHALL dem
-zuletzt vom Server gemeldeten folgen (`constitution.md` §9.1), nicht der zuletzt geklickten
-Schaltfläche.
+`pausieren`, `beenden`); ein Übergang, den `allowedActions` im aktuellen Zustand nicht
+enthält, ist `disabled`, nicht ausgeblendet (`session-bar`, „Übergänge"). `Beenden` SHALL
+vor dem Senden einen Bestätigungsdialog zeigen; ein vom Server abgelehnter Übergang SHALL
+als Inline-Meldung sichtbar sein. Der Sitzungscode SHALL maskiert stehen — so viele `•` wie
+der Code Zeichen hat — mit einer Umschalt-Schaltfläche `Sitzungscode anzeigen`
+(`aria-pressed`), die den Klartext an derselben Stelle ein- und ausblendet, und einer
+Schaltfläche `Sitzungscode kopieren`, die den Code unabhängig von der Maske in die
+Zwischenablage legt (`session-bar`, „Sitzungscode"); gelingt das, SHALL die Anwendung den
+Toast `Sitzungscode kopiert` auslösen (`ui-feedback`), scheitert es, MUST NOT ein Toast
+erscheinen. Solange die Umschalt-Schaltfläche nicht gedrückt ist, MUST NOT der Klartext des
+Codes in der Ansicht stehen. Einem Spieler MUST NOT sie Maske, Umschalt-Schaltfläche,
+Kopieren oder Übergänge zeigen. Der angezeigte Zustand SHALL dem zuletzt vom Server
+gemeldeten folgen (`constitution.md` §9.1), nicht der zuletzt geklickten Schaltfläche.
 
 Verbindet sich die Socket-Verbindung der Raumansicht nach einer Unterbrechung von selbst
 wieder (Wiederverbindung durch den Client, nicht durch eine Handlung des Nutzers), SHALL die
@@ -496,39 +502,41 @@ Sitzungsende-Dialog erscheinen.
   `role: "spielleiter"`, `status: "geoeffnet"`, `code: "ABC234"` und zwei Teilnehmer, einen
   mit `online: true`, einen mit `online: false`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** zeigt sie die Maske `••••••` mit dem Trigger `Sitzungscode anzeigen`, keinen Textknoten
-  `ABC234`, die Zustandspille `Geöffnet`
-  (Klasse `status-pill`), beide Teilnehmer mit unterscheidbarem Anwesenheitskennzeichen sowie
-  die Schaltflächen `Starten` und `Beenden`, aber keine Schaltfläche `Öffnen` oder `Pausieren`; kein Textknoten lautet
-  `geoeffnet`, `starten` oder `beenden`
+- **THEN** zeigt sie in der Gruppe `Sitzung` den Namen als Überschrift der Ebene 1, die
+  Maske `••••••` mit der Umschalt-Schaltfläche `Sitzungscode anzeigen` (`aria-pressed="false"`)
+  und der Schaltfläche `Sitzungscode kopieren`, keinen Textknoten `ABC234`, die Zustandspille
+  `Geöffnet` (Klasse `status-pill`), beide Teilnehmer mit unterscheidbarem
+  Anwesenheitskennzeichen sowie die vier Schaltflächen `Öffnen`, `Starten`, `Pausieren` und
+  `Beenden`, von denen `Starten` und `Beenden` nicht `disabled` sind und `Öffnen` und
+  `Pausieren` `disabled` sind; kein Textknoten lautet `geoeffnet`, `starten` oder `beenden`
 
 #### Scenario: Raumansicht des Spielers
 
 - **GIVEN** die Anwendung hat den Raum betreten, und das Acknowledgement nennt
   `role: "spieler"`, `status: "gestartet"` und kein Feld `code`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** zeigt sie den Namen als Überschrift der Ebene 1, die Zustandspille `Läuft` mit der
-  Klasse `status-pill--active` und die Teilnehmerliste, aber weder die Maske `••••••` noch einen Trigger `Sitzungscode anzeigen` noch eine
-  Schaltfläche `Kopieren`,
-  `Öffnen`, `Starten`, `Pausieren` oder `Beenden`; kein Textknoten lautet `gestartet`
+- **THEN** zeigt sie in der Gruppe `Sitzung` den Namen als Überschrift der Ebene 1 und die
+  Zustandspille `Läuft` mit der Klasse `status-pill--active`, darunter die Teilnehmerliste,
+  aber weder die Maske `••••••` noch eine Schaltfläche `Sitzungscode anzeigen`,
+  `Sitzungscode kopieren`, `Umbenennen`, `Öffnen`, `Starten`, `Pausieren` oder `Beenden`;
+  kein Textknoten lautet `gestartet`
 
 #### Scenario: Sitzungscode wird kopiert
 
-- **GIVEN** die Raumansicht des Spielleiters (Code `ABC234`) ist gerendert, der Popover
-  `Sitzungscode` ist über den Trigger `Sitzungscode anzeigen` geöffnet und zeigt `ABC234`,
-  und die Zwischenablage des Browsers bestätigt das Schreiben
-- **WHEN** die Schaltfläche `Kopieren` ausgelöst wird
-- **THEN** wurde genau der Text `ABC234` in die Zwischenablage geschrieben, und der
-  Toast-Host (`ui-feedback`) zeigt einen Toast `Sitzungscode kopiert`; der Popover ist
-  weiterhin geöffnet
+- **GIVEN** die Raumansicht des Spielleiters (Code `ABC234`) ist gerendert, der Code ist
+  maskiert (`••••••`), und die Zwischenablage des Browsers bestätigt das Schreiben
+- **WHEN** die Schaltfläche `Sitzungscode kopieren` ausgelöst wird
+- **THEN** wurde genau der Text `ABC234` in die Zwischenablage geschrieben, der Toast-Host
+  (`ui-feedback`) zeigt einen Toast `Sitzungscode kopiert`, und die Ansicht zeigt weiterhin
+  die Maske `••••••` und keinen Textknoten `ABC234`
 
 #### Scenario: Gescheitertes Kopieren zeigt keinen Toast
 
-- **GIVEN** die Raumansicht des Spielleiters (Code `ABC234`) ist gerendert, der Popover
-  `Sitzungscode` ist über den Trigger `Sitzungscode anzeigen` geöffnet und zeigt `ABC234`,
-  und die Zwischenablage des Browsers lehnt das Schreiben ab
-- **WHEN** die Schaltfläche `Kopieren` ausgelöst wird
-- **THEN** zeigt der Toast-Host keinen Toast, und der Popover zeigt weiterhin `ABC234`
+- **GIVEN** die Raumansicht des Spielleiters (Code `ABC234`) ist gerendert, und die
+  Zwischenablage des Browsers lehnt das Schreiben ab
+- **WHEN** die Schaltfläche `Sitzungscode kopieren` ausgelöst wird
+- **THEN** zeigt der Toast-Host keinen Toast, und die Ansicht zeigt weiterhin die Maske
+  `••••••`
 
 #### Scenario: Zustand folgt dem Server
 
@@ -642,12 +650,14 @@ Sitzungsende-Dialog erscheinen.
 
 #### Scenario: Sitzungscode-Popover zeigt den Klartext
 
-- **GIVEN** die Raumansicht des Spielleiters (Code `ABC234`) ist gerendert
-- **WHEN** er den Trigger `Sitzungscode anzeigen` auslöst
-- **THEN** existiert ein Element der Rolle `dialog` mit dem Namen `Sitzungscode`, das den
-  Text `ABC234` und eine Schaltfläche `Kopieren` enthält und den Fokus hat; der Trigger
-  trägt `aria-expanded="true"`; nach `Escape` auf dem Popover existiert kein Element der
-  Rolle `dialog` mehr, und der Trigger hat den Fokus
+- **GIVEN** die Raumansicht des Spielleiters (Code `ABC234`) ist gerendert und zeigt die
+  Maske `••••••`
+- **WHEN** er die Umschalt-Schaltfläche `Sitzungscode anzeigen` auslöst
+- **THEN** zeigt das `<code>`-Element `Sitzungscode` den Text `ABC234`, die Maske `••••••`
+  ist nicht mehr in der Ansicht, die Schaltfläche trägt `aria-pressed="true"` und es existiert
+  kein Element der Rolle `dialog`; nach erneutem Auslösen zeigt das `<code>`-Element wieder
+  `••••••`, kein Textknoten lautet `ABC234`, und die Schaltfläche trägt
+  `aria-pressed="false"`
 
 ### Requirement: Alias pro Mitgliedschaft
 
@@ -834,3 +844,57 @@ erscheinen. Das Overlay SHALL ausschließlich dem zuletzt vom Server gemeldeten 
 - **WHEN** die Anwendung `session:status` mit `gestartet` erhält
 - **THEN** ist kein Element mit der Klasse `map-overlay` mehr vorhanden, und die
   Zustandspille zeigt `Läuft`
+
+### Requirement: Spielsitzung umbenennen
+
+Der Spielleiter SHALL den Namen seiner Spielsitzung mit `session:rename`
+`{ sessionId, name }` ändern. Der Name SHALL vor der Prüfung an den Rändern getrimmt werden
+und danach 1 bis 60 Zeichen lang sein — dieselbe Regel wie beim Erstellen (Requirement
+„Spielsitzung erstellen"), aus demselben Schema des Vertrags. Die Berechtigung SHALL pro
+Aktion geprüft werden wie jede andere Raumaktion (Requirement „Autorisierung pro Aktion",
+`constitution.md` §9.3): ein Mitglied mit Rolle `spieler` und ein Nicht-Mitglied SHALL mit
+`{ ok: false, message }` beantwortet werden.
+
+Ein erlaubter Aufruf SHALL den Namen in der Datenbank ändern, mit `{ ok: true, name }`
+(dem gespeicherten, getrimmten Wert) bestätigt werden und allen im Raum — den Absender
+eingeschlossen — ein `session:renamed` `{ sessionId, name }` senden. Ein Ereignis, dessen
+Payload nicht dem Vertrag entspricht — auch ein nach dem Trimmen leerer oder ein zu langer
+Name — SHALL mit `{ ok: false, message }` beantwortet werden und MUST NOT etwas verändern.
+Die Sitzungsliste (`GET /api/sessions`) SHALL danach den neuen Namen liefern.
+
+#### Scenario: Spielleiter benennt die Spielsitzung um
+
+- **GIVEN** eine Spielsitzung `Freitagsrunde` im Zustand `geoeffnet`, in deren Raum der
+  Spielleiter und ein Spieler anwesend sind
+- **WHEN** der Spielleiter `session:rename` mit `{ sessionId, name: "  Samstagsrunde  " }`
+  (mit umgebenden Leerzeichen) sendet
+- **THEN** lautet das Acknowledgement `{ ok: true, name: "Samstagsrunde" }`, die
+  Spielsitzung trägt in der Datenbank den Namen `Samstagsrunde`, der Spieler und der
+  Spielleiter erhalten je ein `session:renamed` mit `{ sessionId, name: "Samstagsrunde" }`,
+  und `GET /api/sessions` des Spielers nennt die Spielsitzung mit `name: "Samstagsrunde"`
+
+#### Scenario: Ungültiger Name wird abgelehnt
+
+- **GIVEN** der Spielleiter ist im Raum seiner Spielsitzung `Freitagsrunde` anwesend
+- **WHEN** er je ein `session:rename` mit `name: "   "` (nur Leerzeichen), mit einem Namen
+  von 61 Zeichen und mit einer Payload, die kein Objekt ist (eine Zahl), sendet
+- **THEN** lautet jedes Acknowledgement `{ ok: false, message }`, die Spielsitzung trägt in
+  der Datenbank weiterhin den Namen `Freitagsrunde`, und kein `session:renamed` wurde
+  gesendet
+
+#### Scenario: Spieler darf nicht umbenennen
+
+- **GIVEN** eine Spielsitzung `Freitagsrunde` im Zustand `geoeffnet`, in deren Raum der
+  Spielleiter und ein Spieler anwesend sind
+- **WHEN** der Spieler `session:rename` mit `{ sessionId, name: "Samstagsrunde" }` sendet
+- **THEN** lautet das Acknowledgement `{ ok: false, message }`, die Spielsitzung trägt in der
+  Datenbank weiterhin den Namen `Freitagsrunde`, und der Spielleiter erhält kein
+  `session:renamed`
+
+#### Scenario: Nicht-Mitglied kann nicht umbenennen
+
+- **GIVEN** eine Spielsitzung `Freitagsrunde` im Zustand `geoeffnet` und ein angemeldeter
+  Nutzer ohne Mitgliedschaft mit Socket-Verbindung
+- **WHEN** dieser `session:rename` mit der `sessionId` und `name: "Samstagsrunde"` sendet
+- **THEN** lautet das Acknowledgement `{ ok: false, message }`, und die Spielsitzung trägt in
+  der Datenbank weiterhin den Namen `Freitagsrunde`

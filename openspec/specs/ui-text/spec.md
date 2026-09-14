@@ -189,13 +189,15 @@ jeweiligen Menüs bzw. Popovers sichtbar.
   (`status: "geoeffnet"`, `role: "spielleiter"`), und das Acknowledgement von
   `session:enter` nennt `role: "spielleiter"`, `status: "geoeffnet"` und `code: "ABC234"`
 - **WHEN** der Nutzer die Schaltfläche `Enter` der Karte auslöst, die Raumansicht
-  gerendert ist (Überschrift der Ebene 1 `Freitagsrunde`) und er die Schaltfläche
+  gerendert ist (Überschrift der Ebene 1 `Freitagsrunde`) und er die Umschalt-Schaltfläche
   `Show session code` auslöst
 - **THEN** zeigt das `<header>` die Schaltfläche `Back` und die Gruppe `Language`, die
-  Raumansicht zeigt die Zustandspille `Open` (Klasse `status-pill`), die Maske `••••••`,
-  einen Popover `Session code` mit dem Text `ABC234` und der Schaltfläche `Copy` sowie
-  die Schaltflächen `Start` und `End`; es gibt keine Schaltfläche `Zurück`, `Starten`,
-  `Beenden`, `Sitzungscode anzeigen` oder `Kopieren` und keinen Text `Geöffnet`
+  Raumansicht zeigt die Gruppe `Session` mit der Zustandspille `Open` (Klasse
+  `status-pill`), dem `<code>`-Element `Session code` mit dem Text `ABC234`, den
+  Schaltflächen `Show session code` (`aria-pressed="true"`), `Copy session code`,
+  `Rename`, `Open`, `Start`, `Pause`, `End` und der Menü-Schaltfläche `Session settings`;
+  es gibt keine Schaltfläche `Zurück`, `Starten`, `Beenden`, `Sitzungscode anzeigen`,
+  `Sitzungscode kopieren` oder `Umbenennen` und keinen Text `Geöffnet`
 
 ### Requirement: Stylesheet des Sprachschalters
 

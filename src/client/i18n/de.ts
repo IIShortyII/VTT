@@ -38,6 +38,11 @@
 // `participant.*` nach `token.*` - die Teilnehmerkarten des Reiters `Teilnehmer` (Praesenz,
 // Alias-Modal, ⋮-Menue-Eintrag, Einladen-Popover, Entfernen-/Austreten-Bestaetigung,
 // Zuweisen-Modal).
+//
+// player-bar (#98, design.md D3): `playerBar.*` als neue Gruppe nach `tabs.*` - die Spieler-
+// Leiste (Titel der Trigger-Modals, Verbindungsanzeige, Badge-Hinweis). `tabs.tokens`,
+// `tabs.participants` und `session.role.player` werden von den Triggern wiederverwendet,
+// keine neuen Schluessel dafuer.
 
 export const de = {
   'shell.back': 'Zurück',
@@ -137,6 +142,12 @@ export const de = {
   'tabs.tokens': 'Tokens',
   'tabs.mapsFog': 'Karten & Nebel',
   'tabs.participants': 'Teilnehmer',
+
+  'playerBar.label': 'Sitzung',
+  'playerBar.annotations': 'Anmerkungen',
+  'playerBar.connected': 'Verbindung aktiv',
+  'playerBar.disconnected': 'Verbindung getrennt',
+  'playerBar.newValues': 'neue Werte',
 
   'setup.title': 'Bibliothek & Einrichtung',
   'setup.openLibrary': 'Kartenbibliothek öffnen',

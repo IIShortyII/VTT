@@ -339,6 +339,12 @@ test('Entfernte Anmerkung wird gemeldet', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  // MODIFIED (#98): das Anmerkungs-Panel des Spielers liegt im Modal der Spieler-Leiste, das der
+  // Trigger `Anmerkungen` oeffnet (player-bar, „On-Demand-Modals").
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Anmerkungen' }))
+  })
+  await screen.findByRole('dialog', { name: 'Anmerkungen' })
   await screen.findByRole('group', { name: 'Messen & Zeichnen' })
 
   // MODIFIED (#96): Die Zeile traegt statt eines direkten `Entfernen`-Buttons ein ⋮-Menü

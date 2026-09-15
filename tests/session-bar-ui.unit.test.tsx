@@ -219,8 +219,10 @@ describe('Aufbau der Session-Bar', () => {
     const bar = await screen.findByRole('group', { name: 'Sitzung' })
     within(bar).getByRole('heading', { level: 1, name: 'Freitagsrunde' })
     within(bar).getByText('Läuft')
-    within(bar).getByRole('button', { name: 'Sitzungsverwaltung' })
 
+    // MODIFIED (#98): der Kopf des Spielers ist die Spieler-Leiste (player-bar), ohne
+    // Session-Bar-Bedienelemente — insbesondere kein Verwaltungsmenue `Sitzungsverwaltung`.
+    expect(within(bar).queryByRole('button', { name: 'Sitzungsverwaltung' })).toBeNull()
     expect(within(bar).queryByRole('button', { name: 'Umbenennen' })).toBeNull()
     expect(within(bar).queryByRole('button', { name: 'Sitzungscode anzeigen' })).toBeNull()
     expect(within(bar).queryByRole('button', { name: 'Sitzungscode kopieren' })).toBeNull()
@@ -230,6 +232,7 @@ describe('Aufbau der Session-Bar', () => {
     expect(within(bar).queryByRole('button', { name: 'Beenden' })).toBeNull()
     expect(within(bar).queryByRole('group', { name: 'Steuerung' })).toBeNull()
     expect(within(bar).queryByLabelText('Sitzungscode')).toBeNull()
+    expect(bar.querySelector('code')).toBeNull()
   })
 })
 
@@ -411,20 +414,13 @@ describe('Verwaltungsmenü', () => {
     )
     const bar = await screen.findByRole('group', { name: 'Sitzung' })
 
-    await act(async () => {
-      fireEvent.click(within(bar).getByRole('button', { name: 'Sitzungsverwaltung' }))
-    })
-
-    const menü = screen.getByRole('menu', { name: 'Sitzungsverwaltung' })
-    const umbenennen = within(menü).getByRole('menuitem', { name: 'Umbenennen…' })
-    expect(umbenennen.getAttribute('aria-disabled')).toBe('true')
-    expect(within(menü).getByRole('menuitem', { name: 'Kartenbibliothek' }).getAttribute('aria-disabled')).toBeNull()
-    expect(within(menü).getByRole('menuitem', { name: 'Verlassen' }).getAttribute('aria-disabled')).toBeNull()
-
-    await act(async () => {
-      fireEvent.click(umbenennen)
-    })
-    expect(screen.queryByRole('dialog')).toBeNull()
+    // MODIFIED (#98): der Spieler bedient die Spieler-Leiste (player-bar), die kein
+    // Verwaltungsmenue traegt — weder die Schaltflaeche `Sitzungsverwaltung` noch die
+    // Menueeintraege `Umbenennen…`, `Kartenbibliothek` oder `Verlassen`.
+    expect(within(bar).queryByRole('button', { name: 'Sitzungsverwaltung' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Umbenennen…' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Kartenbibliothek' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Verlassen' })).toBeNull()
   })
 
   test('Verlassen führt zur Sitzungsliste', async () => {

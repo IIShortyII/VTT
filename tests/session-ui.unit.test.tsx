@@ -186,13 +186,14 @@ async function betreten(): Promise<void> {
   })
 }
 
-// MODIFIED (#94): Aktiviert einen Bereichs-Reiter der Raumansicht (session-tabs,
-// Testaufbau-Konvention). Inhalte ausserhalb des Reiters `Karte` liegen in versteckten
-// Reiterpanels und werden erst nach dem Klick von den Standardabfragen gefunden.
-async function aktiviereReiter(name: string): Promise<void> {
+// MODIFIED (#98): Der Spieler oeffnet seine Teilnehmerkarten ueber den Trigger `Teilnehmer` der
+// Spieler-Leiste (player-bar, „On-Demand-Modals") — nicht ueber einen Reiter. Trigger ausloesen,
+// Modal `Teilnehmer` zurueckgeben.
+async function oeffneSpielerTeilnehmer(): Promise<HTMLElement> {
   await act(async () => {
-    fireEvent.click(screen.getByRole('tab', { name }))
+    fireEvent.click(screen.getByRole('button', { name: 'Teilnehmer' }))
   })
+  return screen.findByRole('dialog', { name: 'Teilnehmer' })
 }
 
 beforeEach(() => {
@@ -350,11 +351,10 @@ test('Raumansicht des Spielers', async () => {
   expect(pille).not.toBeNull()
   expect(pille?.classList.contains('status-pill--active')).toBe(true)
 
-  // MODIFIED (#94): darunter die Reiterliste `Bereiche` mit den drei Reitern des Spielers
-  // (kein Reiter `Karten & Nebel`); die Teilnehmerliste liegt jetzt im Reiter `Teilnehmer`.
-  const reiterliste = screen.getByRole('tablist', { name: 'Bereiche' })
-  expect(within(reiterliste).getAllByRole('tab').map((r) => r.textContent)).toEqual(['Karte', 'Tokens', 'Teilnehmer'])
-  expect(within(reiterliste).queryByRole('tab', { name: 'Karten & Nebel' })).toBeNull()
+  // MODIFIED (#98): der Spieler hat keine Reiterliste mehr; in der Spieler-Leiste (`player-bar`)
+  // steht die Rollen-Pille `Spieler`, die Reiterliste `Bereiche` gibt es fuer ihn nicht.
+  expect(within(bar).getByText('Spieler')).toBeTruthy()
+  expect(screen.queryByRole('tablist', { name: 'Bereiche' })).toBeNull()
 
   // MODIFIED (#93): einem Spieler weder Maske noch Umschalter, Kopieren, Umbenennen oder ein
   // Uebergang.
@@ -584,10 +584,12 @@ test('Wiederverbindung betritt den Raum erneut', async () => {
   expect(socketMock.createSessionSocket).toHaveBeenCalledTimes(1)
   expect(socketMock.__facade.connect).toHaveBeenCalledTimes(1)
 
-  // Zustand und Anwesenheit folgen dem frischen Acknowledgement: Pille `Läuft`, `meister` abwesend.
+  // Zustand und Anwesenheit folgen dem frischen Acknowledgement: Pille `Läuft`; `meister` abwesend
+  // im ueber den Trigger `Teilnehmer` der Spieler-Leiste geoeffneten Teilnehmer-Modal (#98).
   await screen.findByText('Läuft')
-  expect(screen.getByText(/\bmeister\b/)).toBeTruthy()
-  expect(screen.getByText(/abwesend/i)).toBeTruthy()
+  const teilnehmer = await oeffneSpielerTeilnehmer()
+  expect(within(teilnehmer).getByText(/\bmeister\b/)).toBeTruthy()
+  expect(within(teilnehmer).getByText(/abwesend/i)).toBeTruthy()
 })
 
 test('Ersetzte Verbindung verbindet sich nicht neu', async () => {
@@ -1136,9 +1138,9 @@ test('Teilnehmer werden mit Alias oder Nutzername benannt', async () => {
   render(<App />)
   await screen.findByText(/Abendrunde/)
   await betreten()
-  // MODIFIED (#94/#97): Teilnehmerkarten liegen im Reiter `Teilnehmer` (session-tabs, Testaufbau-Konvention).
-  await aktiviereReiter('Teilnehmer')
-  const panel = screen.getByRole('tabpanel', { name: 'Teilnehmer' })
+  // MODIFIED (#98): die Teilnehmerkarten des Spielers liegen im Teilnehmer-Modal der
+  // Spieler-Leiste (player-bar, „On-Demand-Modals").
+  const panel = await oeffneSpielerTeilnehmer()
 
   // MODIFIED (#97): die Teilnehmerkarten benennen mit Alias, sonst Nutzername.
   await waitFor(() => expect(within(panel).getByText(/Gandalf der Graue/)).toBeTruthy())
@@ -1167,9 +1169,9 @@ test('Eigener Alias wird als Absicht gesendet und folgt dem Server', async () =>
   render(<App />)
   await screen.findByText(/Abendrunde/)
   await betreten()
-  // MODIFIED (#97): der Alias liegt hinter `Alias ändern` im Modal der eigenen Karte (design.md D2/D7).
-  await aktiviereReiter('Teilnehmer')
-  const panel = screen.getByRole('tabpanel', { name: 'Teilnehmer' })
+  // MODIFIED (#98): der Alias liegt hinter `Alias ändern` im Teilnehmer-Modal der Spieler-Leiste;
+  // `Alias ändern` schliesst das Teilnehmer-Modal und oeffnet das Alias-Modal (design.md D5).
+  const panel = await oeffneSpielerTeilnehmer()
   await waitFor(() => expect(within(panel).getByText(/\bsam\b/)).toBeTruthy())
 
   const eigeneKarte = must(
@@ -1187,8 +1189,11 @@ test('Eigener Alias wird als Absicht gesendet und folgt dem Server', async () =>
 
   // Die Anwendung sendet die Absicht an den Server (design.md D6) …
   await waitFor(() => expect(socketMock.__facade.alias).toHaveBeenCalledWith('s1', 'Gandalf'))
-  // … zeigt den Nutzer aber weiterhin als `sam`, bis der Server die Liste aktualisiert (§9.1).
-  expect(within(panel).getByText(/\bsam\b/)).toBeTruthy()
+
+  // … zeigt den Nutzer aber weiterhin als `sam`, bis der Server die Liste aktualisiert (§9.1):
+  // das Teilnehmer-Modal erneut oeffnen (das Alias-Modal hat es beim Oeffnen geschlossen).
+  const panel2 = await oeffneSpielerTeilnehmer()
+  expect(within(panel2).getByText(/\bsam\b/)).toBeTruthy()
 
   await act(async () => {
     socketMock.__emit('participants', {
@@ -1198,8 +1203,8 @@ test('Eigener Alias wird als Absicht gesendet und folgt dem Server', async () =>
   })
 
   // Nach der Server-Liste wird er als `Gandalf` benannt.
-  await waitFor(() => expect(within(panel).getByText(/Gandalf/)).toBeTruthy())
-  expect(within(panel).queryByText(/\bsam\b/)).toBeNull()
+  await waitFor(() => expect(within(panel2).getByText(/Gandalf/)).toBeTruthy())
+  expect(within(panel2).queryByText(/\bsam\b/)).toBeNull()
 })
 
 test('Abgelehnter Alias wird angezeigt', async () => {
@@ -1221,9 +1226,9 @@ test('Abgelehnter Alias wird angezeigt', async () => {
   render(<App />)
   await screen.findByText(/Abendrunde/)
   await betreten()
-  // MODIFIED (#97): der Alias und die Fehlermeldung liegen im Modal `Alias ändern` (design.md D2/D7).
-  await aktiviereReiter('Teilnehmer')
-  const panel = screen.getByRole('tabpanel', { name: 'Teilnehmer' })
+  // MODIFIED (#98): Alias und Fehlermeldung liegen im Modal `Alias ändern`, das die eigene Karte
+  // im Teilnehmer-Modal der Spieler-Leiste oeffnet (player-bar; schliesst das Teilnehmer-Modal).
+  const panel = await oeffneSpielerTeilnehmer()
   await waitFor(() => expect(within(panel).getByText(/\bsam\b/)).toBeTruthy())
 
   const eigeneKarte = must(
@@ -1242,7 +1247,7 @@ test('Abgelehnter Alias wird angezeigt', async () => {
   // Das Modal `Alias ändern` bleibt offen und zeigt die Meldung des Servers als `role="alert"` …
   const modalDanach = screen.getByRole('dialog', { name: 'Alias ändern' })
   await waitFor(() => expect(within(modalDanach).getByRole('alert').textContent).toContain(ABLEHNUNG))
-  // … und die Teilnehmerkarten sind unveraendert (weiterhin `sam`, kein `Gandalf`).
-  expect(within(panel).getByText(/\bsam\b/)).toBeTruthy()
-  expect(within(panel).queryByText(/Gandalf/)).toBeNull()
+  // … und der abgelehnte Alias wird nicht optimistisch uebernommen: nirgends erscheint `Gandalf`
+  // als Teilnehmername (das Teilnehmer-Modal ist zugunsten des Alias-Modals geschlossen, §9.1).
+  expect(screen.queryByText(/Gandalf/)).toBeNull()
 })

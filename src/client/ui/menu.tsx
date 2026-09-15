@@ -319,6 +319,12 @@ export function ActionMenu({ floating, label, entries }: ActionMenuProps) {
         select(active)
         return
       case 'Escape':
+        // Escape schliesst nur dieses Menue (nicht ein umgebendes Modal): `stopPropagation`
+        // haelt das native Event am React-Root an, bevor es den `document`-Escape-Handler des
+        // Modals erreicht (add-player-bar, Szenario "Besitzer sieht Freigabe-Schalter nur am
+        // eigenen Token"). `preventDefault` verhindert daneben Browser-Standardverhalten.
+        event.preventDefault()
+        event.stopPropagation()
         dismiss()
         return
       case 'Tab':

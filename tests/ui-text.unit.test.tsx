@@ -441,6 +441,53 @@ test('Raumansicht unter Englisch', async () => {
   expect(screen.queryByText('Geöffnet')).toBeNull()
 })
 
+test('Spieler-Raumansicht unter Englisch', async () => {
+  localStorage.setItem('vtt.locale', 'en')
+  mockFetch([
+    { pfad: '/api/auth/me', antwort: antwort(200, { id: 'U', email: 's@example.com', username: 'sam' }) },
+    {
+      pfad: '/api/sessions',
+      antwort: antwort(200, [{ id: 's1', name: 'Freitagsrunde', status: 'gestartet', role: 'spieler' }]),
+    },
+  ])
+  socketMock.__facade.enter.mockResolvedValue({
+    ok: true,
+    session: { id: 's1', name: 'Freitagsrunde', status: 'gestartet', role: 'spieler' },
+    participants: [{ userId: 'U', username: 'sam', role: 'spieler', online: true }],
+  })
+
+  render(<App />)
+  // GIVEN: gespeicherte Wahl `en`; die Karte traegt die Schaltflaeche `Enter`.
+  const enter = (await screen.findAllByRole('button', { name: 'Enter' }))[0]
+
+  // WHEN: `Enter` der Karte, Raumansicht gerendert (Ueberschrift der Ebene 1 `Freitagsrunde`).
+  await act(async () => {
+    fireEvent.click(enter)
+  })
+  await screen.findByRole('heading', { level: 1, name: 'Freitagsrunde' })
+
+  // THEN: Top-Bar englisch (`Back`, Gruppe `Language`).
+  const header = screen.getByRole('banner')
+  expect(within(header).getByRole('button', { name: 'Back' })).toBeTruthy()
+  expect(within(header).getByRole('group', { name: 'Language' })).toBeTruthy()
+
+  // Die Gruppe `Session` mit Zustandspille `Running`, Rollen-Pille `Player` und den Triggern
+  // `Tokens`, `Annotations`, `Participants`.
+  const bar = screen.getByRole('group', { name: 'Session' })
+  expect(within(bar).getByText('Running').closest('.status-pill')).not.toBeNull()
+  expect(within(bar).getByText('Player')).toBeTruthy()
+  within(bar).getByRole('button', { name: /^Tokens/ })
+  within(bar).getByRole('button', { name: 'Annotations' })
+  within(bar).getByRole('button', { name: 'Participants' })
+
+  // Keine Reiterliste `Bereiche`, keine deutschen Texte.
+  expect(screen.queryByRole('tablist', { name: 'Bereiche' })).toBeNull()
+  expect(screen.queryByText('Läuft')).toBeNull()
+  expect(screen.queryByText('Spieler')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Anmerkungen' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Teilnehmer' })).toBeNull()
+})
+
 // --- Requirement: Stylesheet des Sprachschalters --------------------------------------------
 // Das Stylesheet wird als Text gelesen (Helfer wie in tests/ui-theme.unit.test.ts, dort nichts
 // geaendert). Ein Selektor ist vorhanden, wenn die normalisierte CSS (`\s+` → ein Leerzeichen,

@@ -259,6 +259,16 @@ async function menuAktion(triggerName: string | RegExp, itemName: string): Promi
   })
 }
 
+// MODIFIED (#98): Der Spieler erreicht das Anmerkungs-Panel (`Messen & Zeichnen`) ueber den
+// Trigger `Anmerkungen` der Spieler-Leiste (player-bar, „On-Demand-Modals") — nicht mehr als
+// dauerhaftes Inline-Panel. Trigger ausloesen, Modal `Anmerkungen` abwarten.
+async function oeffneAnmerkungen(): Promise<void> {
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Anmerkungen' }))
+  })
+  await screen.findByRole('dialog', { name: 'Anmerkungen' })
+}
+
 beforeEach(() => {
   jest.clearAllMocks()
   for (const key of Object.keys(socketMock.__handlers)) delete socketMock.__handlers[key]
@@ -297,6 +307,7 @@ test('Spieler sieht das Panel', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  await oeffneAnmerkungen()
   await screen.findByRole('group', { name: 'Messen & Zeichnen' })
 
   expect(ariaPressed(knopf('Bewegen'))).toBe('true')
@@ -347,6 +358,7 @@ test('Werkzeugwahl erreicht die Kartenansicht', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  await oeffneAnmerkungen()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
   await klick('Strecke')
@@ -365,6 +377,7 @@ test('Tastenkürzel wechselt das Werkzeug', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  await oeffneAnmerkungen()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
   // Fokus liegt auf einer Schaltflaeche der Werkzeugleiste `Anmerkungswerkzeug`.
@@ -404,6 +417,7 @@ test('Zeichnen aktiviert die Farbwahl', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  await oeffneAnmerkungen()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
   await klick('Zeichnen')
@@ -422,6 +436,7 @@ test('Gemessene Strecke wird gesendet', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  await oeffneAnmerkungen()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
   await klick('Strecke')
   await klick('Frei')
@@ -453,6 +468,7 @@ test('Gerasterte Messung wird eingerastet gesendet', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  await oeffneAnmerkungen()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
   await klick('Kreis')
 
@@ -475,6 +491,7 @@ test('Zeichnung wird mit Farbe gesendet', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  await oeffneAnmerkungen()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
   await klick('Zeichnen')
   await klick('Blau')
@@ -503,6 +520,7 @@ test('Bestand folgt dem Server', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  await oeffneAnmerkungen()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
   const a1 = ann({ id: 'a1', kind: 'strecke', mode: 'gerastert', visibility: 'geteilt', authorId: 'u-sam', points: [{ x: 35, y: 35 }, { x: 245, y: 35 }] })
@@ -563,6 +581,7 @@ test('Entfernen nur wo erlaubt', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  await oeffneAnmerkungen()
   await screen.findByRole('group', { name: 'Messen & Zeichnen' })
 
   expect(within(eintrag('Strecke: 3 Felder (4,5 m) · geteilt · sam')).queryByRole('button', { name: /^Aktionen für / })).toBeTruthy()
@@ -599,6 +618,7 @@ test('Entfernen sendet die Absicht', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  await oeffneAnmerkungen()
   await screen.findByRole('group', { name: 'Messen & Zeichnen' })
 
   await menuAktion('Aktionen für Strecke: 3 Felder (4,5 m) · geteilt · sam', 'Entfernen')
@@ -636,6 +656,7 @@ test('Einheit umschalten wirkt sofort und wird gemerkt', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  await oeffneAnmerkungen()
   await screen.findByText('Strecke: 3 Felder (4,5 m) · geteilt · sam')
 
   await klick('Fuß')
@@ -653,6 +674,7 @@ test('Einheit wird aus dem Browser übernommen', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  await oeffneAnmerkungen()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
   expect(ariaPressed(knopf('Fuß'))).toBe('true')
@@ -667,6 +689,7 @@ test('Abgelehntes Anlegen wird angezeigt', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+  await oeffneAnmerkungen()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
   await klick('Strecke')
 

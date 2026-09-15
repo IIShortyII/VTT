@@ -179,7 +179,7 @@ export const de = {
 
   'empty.tokens.title': 'Noch keine Tokens',
   'empty.tokens.hint': 'Lege ein Token an, um es auf der Karte zu sehen.',
-  'empty.tokenValues.hint': 'Sobald die Spielleitung Tokens auf die Karte setzt, erscheinen sie hier.',
+  'empty.tokenValues.hint': 'Die Spielleitung weist dir ein Token zu.',
   'empty.fogAreas.title': 'Noch keine Bereiche',
   'empty.fogAreas.hint': 'Markiere Zellen auf der Karte und speichere sie als Bereich.',
   'empty.annotations.title': 'Noch keine Anmerkungen',

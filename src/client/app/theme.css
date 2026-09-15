@@ -1398,4 +1398,15 @@ main.app-shell--wide {
   .spinner {
     animation: spin 0.8s linear infinite;
   }
+
+  .token-card__value--pulse {
+    animation: value-pulse 0.9s ease-out;
+  }
+
+  @keyframes value-pulse {
+    50% {
+      color: var(--gold-text);
+      transform: scale(1.08);
+    }
+  }
 }

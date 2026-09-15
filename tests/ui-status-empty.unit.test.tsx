@@ -229,7 +229,7 @@ test('Leere Tokenwerte zeigen den Leerzustand', async () => {
   const scope = must((await screen.findByRole('heading', { name: 'Tokenwerte' })).parentElement, 'die Liste Tokenwerte')
   const titel = await within(scope).findByText('Noch keine Tokens')
   expect(titel.closest('.empty-state')).not.toBeNull()
-  expect(within(scope).getByText('Sobald die Spielleitung Tokens auf die Karte setzt, erscheinen sie hier.')).toBeTruthy()
+  expect(within(scope).getByText('Die Spielleitung weist dir ein Token zu.')).toBeTruthy()
   expect(within(scope).queryAllByRole('listitem')).toHaveLength(0)
 }, 15000)
 

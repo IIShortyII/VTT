@@ -41,9 +41,9 @@ Stats je Token als React-State (nicht nur im Ref), setzt sie beim erkannten Anst
 entfernt den betroffenen Eintrag im `onAnimationEnd` des `dd`. `TokenCard` reicht dafür einen
 `onValuePulseEnd(key)`-Rückruf an die `dd`s durch, den nur `PlayerTokenList` belegt.
 
-- In jsdom feuert `animationend` nicht von selbst; der Test simuliert das Ende per
-  `fireEvent.animationEnd(dd)`. Ohne dieses Ereignis bleibt die Klasse stehen — das genügt den
-  Anstiegs-Szenarien, die die Klasse direkt nach dem Update prüfen.
+- In jsdom feuert `animationend` nicht von selbst; das Animationsende wird im Test simuliert.
+  Ohne dieses Ereignis bleibt die Klasse stehen — das genügt den Anstiegs-Szenarien, die die
+  Klasse direkt nach dem Update prüfen.
 
 ## D4. Vorwert-Vergleich (Anstiegsregel)
 
@@ -94,12 +94,12 @@ Szenario „Spieler sieht ohne Werte keine Werte" (unverändert) deckt bereits a
 freigegebener (also `null` eintreffender) Wert keine Zeile erzeugt — deshalb kein neues
 Szenario dafür.
 
-## D8. Tests (Testing-Library, keine `querySelector`-Helfer)
+## D8. Tests (Testing-Library, ohne rohe DOM-Selektoren)
 
 - Wertanzeige über die Beschreibungsliste ansprechen: den `dt` (`HP`/`Temp-HP`/`RK`/
-  `Initiative`) finden und das zugehörige `dd` prüfen (`toHaveClass('token-card__value--pulse')`
-  bzw. `not.toHaveClass`). Da `dd`/`dt` keine Rolle mit zugänglichem Namen tragen, ist der
-  Zugriff über den Text des `dt` und dessen Geschwister-`dd` der stabile Weg.
+  `Initiative`) über seinen Text finden und am zugehörigen Geschwister-`dd` das Vorhandensein
+  bzw. Fehlen der Klasse `token-card__value--pulse` prüfen. Da `dd`/`dt` keine Rolle mit
+  zugänglichem Namen tragen, ist der Weg über den Text des `dt` der stabile.
 - Zweiter Bestand kommt wie in „Tokenbestand folgt dem Server"/„Wertefelder folgen dem
   Bestand" über den Socket-Mock (`session:tokens`) an dieselbe gerenderte Raumansicht.
 - Reiter `Tokens` vor dem Zugriff aktivieren (`session-tabs`, Testaufbau-Konvention).

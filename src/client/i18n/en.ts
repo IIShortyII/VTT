@@ -140,7 +140,7 @@ export const en: Record<TextKey, string> = {
 
   'empty.tokens.title': 'No tokens yet',
   'empty.tokens.hint': 'Create a token to see it on the map.',
-  'empty.tokenValues.hint': 'Tokens appear here once the game master places them on the map.',
+  'empty.tokenValues.hint': 'The game master will assign you a token.',
   'empty.fogAreas.title': 'No areas yet',
   'empty.fogAreas.hint': 'Select cells on the map and save them as an area.',
   'empty.annotations.title': 'No annotations yet',

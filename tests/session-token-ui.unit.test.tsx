@@ -1331,3 +1331,153 @@ test('Spieler sieht im Token-Menü nur Freigeben aktiv', async () => {
   expect(within(menu).getByRole('menuitem', { name: 'Auf Karte zentrieren' }).getAttribute('aria-disabled')).toBeNull()
   expect(document.activeElement).toBe(freigeben)
 }, 15000)
+
+// --- Szenarien: Puls bei Anstieg (add-token-value-pulse, #99) --------------------------------
+// Delta "Tokenansicht im Raum": in der Spieler-Liste `Tokenwerte` traegt die Wertanzeige (`dd`)
+// eines gestiegenen Zahlenwerts zusaetzlich `token-card__value--pulse`; sinkt/gleich/erstmals:
+// nicht; `animationend` entfernt sie wieder. Nur die Spieler-Liste pulsiert (design.md D1–D4).
+//
+// Zugriff auf die Wertanzeige ueber Testing-Library (design.md D8): den `dt` (`HP`/`Temp-HP`/`RK`/
+// `Initiative`) per Text finden und dessen Geschwister-`dd` pruefen — kein `querySelector`, kein
+// `must()`. Der zweite Bestand kommt wie in „Tokenbestand folgt dem Server" ueber den Socket-Mock
+// (`session:tokens`) an dieselbe gerenderte Raumansicht. Die Liste muss dabei schon montiert sein,
+// bevor das Update eintrifft (`PlayerTokenList` merkt sich den Vorwert je Token) — daher zuerst das
+// Tokens-Modal oeffnen, dann `session:tokens` senden.
+
+const PULSE_KLASSE = 'token-card__value--pulse'
+
+// Die Wertanzeige (`dd`) eines Paars: den `dt` per Text finden, dessen Geschwister-`dd` liefern.
+function wertAnzeige(karte: HTMLElement, beschriftung: string): HTMLElement {
+  const dt = within(karte).getByText(beschriftung)
+  const dd = dt.nextElementSibling
+  if (!dd || dd.tagName !== 'DD') throw new Error(`Kein <dd> neben <dt> „${beschriftung}"`)
+  return dd as HTMLElement
+}
+
+test('Steigender HP-Wert pulsiert in der Spieler-Liste', async () => {
+  const MEIN_GOBLIN = { ...GOBLIN, ownerId: 'u-selbst', hp: 10, hpMax: 40 }
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [MEIN_GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await oeffneSpielerTokens()
+
+  await act(async () => {
+    socketMock.__emit('tokens', { sessionId: 's1', tokens: [{ ...MEIN_GOBLIN, hp: 18, hpMax: 40 }] })
+  })
+
+  const dd = wertAnzeige(tokenKarte('Goblin'), 'HP')
+  expect(dd.classList.contains(PULSE_KLASSE)).toBe(true)
+}, 15000)
+
+test('Steigender Temp-HP-Wert pulsiert in der Spieler-Liste', async () => {
+  const MEIN_GOBLIN = { ...GOBLIN, ownerId: 'u-selbst', tempHp: 2 }
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [MEIN_GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await oeffneSpielerTokens()
+
+  await act(async () => {
+    socketMock.__emit('tokens', { sessionId: 's1', tokens: [{ ...MEIN_GOBLIN, tempHp: 6 }] })
+  })
+
+  const dd = wertAnzeige(tokenKarte('Goblin'), 'Temp-HP')
+  expect(dd.classList.contains(PULSE_KLASSE)).toBe(true)
+}, 15000)
+
+test('Steigende RK pulsiert in der Spieler-Liste', async () => {
+  const MEIN_GOBLIN = { ...GOBLIN, ownerId: 'u-selbst', ac: 14 }
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [MEIN_GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await oeffneSpielerTokens()
+
+  await act(async () => {
+    socketMock.__emit('tokens', { sessionId: 's1', tokens: [{ ...MEIN_GOBLIN, ac: 17 }] })
+  })
+
+  const dd = wertAnzeige(tokenKarte('Goblin'), 'RK')
+  expect(dd.classList.contains(PULSE_KLASSE)).toBe(true)
+}, 15000)
+
+test('Steigende Initiative pulsiert in der Spieler-Liste', async () => {
+  const MEIN_GOBLIN = { ...GOBLIN, ownerId: 'u-selbst', initiative: 8 }
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [MEIN_GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await oeffneSpielerTokens()
+
+  await act(async () => {
+    socketMock.__emit('tokens', { sessionId: 's1', tokens: [{ ...MEIN_GOBLIN, initiative: 12 }] })
+  })
+
+  const dd = wertAnzeige(tokenKarte('Goblin'), 'Initiative')
+  expect(dd.classList.contains(PULSE_KLASSE)).toBe(true)
+}, 15000)
+
+test('Sinkender HP-Wert pulsiert nicht in der Spieler-Liste', async () => {
+  const MEIN_GOBLIN = { ...GOBLIN, ownerId: 'u-selbst', hp: 18, hpMax: 40 }
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [MEIN_GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await oeffneSpielerTokens()
+
+  await act(async () => {
+    socketMock.__emit('tokens', { sessionId: 's1', tokens: [{ ...MEIN_GOBLIN, hp: 10, hpMax: 40 }] })
+  })
+
+  const dd = wertAnzeige(tokenKarte('Goblin'), 'HP')
+  expect(dd.classList.contains(PULSE_KLASSE)).toBe(false)
+}, 15000)
+
+test('Erstmals gezeigter Wert pulsiert nicht in der Spieler-Liste', async () => {
+  const MEIN_GOBLIN = { ...GOBLIN, ownerId: 'u-selbst', hp: 18, hpMax: 40 }
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [MEIN_GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await oeffneSpielerTokens()
+
+  const dd = wertAnzeige(tokenKarte('Goblin'), 'HP')
+  expect(dd.classList.contains(PULSE_KLASSE)).toBe(false)
+}, 15000)
+
+test('Puls endet mit der Animation', async () => {
+  const MEIN_GOBLIN = { ...GOBLIN, ownerId: 'u-selbst', hp: 10, hpMax: 40 }
+  installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
+  enterAck('spieler', { map: AKTIVE_KARTE, tokens: [MEIN_GOBLIN] })
+
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await oeffneSpielerTokens()
+
+  await act(async () => {
+    socketMock.__emit('tokens', { sessionId: 's1', tokens: [{ ...MEIN_GOBLIN, hp: 18, hpMax: 40 }] })
+  })
+
+  const dd = wertAnzeige(tokenKarte('Goblin'), 'HP')
+  expect(dd.classList.contains(PULSE_KLASSE)).toBe(true)
+
+  await act(async () => {
+    fireEvent.animationEnd(dd)
+  })
+
+  expect(dd.classList.contains(PULSE_KLASSE)).toBe(false)
+}, 15000)

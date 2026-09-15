@@ -400,7 +400,7 @@ werden. Die Karte MUST NOT eine Schaltfläche `<Tokenname> entfernen`, ein Auswa
 Bestand vom Server, nie der zuletzt gesendeten Absicht.
 
 Jede Rolle SHALL je Token die sichtbaren Werte als Beschreibungsliste (`dl`) sehen: je
-gesetztem Wert ein Paar aus `dt` (Beschriftung) und `dd` (Wert) — `HP` mit `<hp>/<hpMax>`
+gesetztem Wert ein Paar aus `dt` (Beschriftung) und `dd` (Wert, Klasse `token-card__value`) — `HP` mit `<hp>/<hpMax>`
 (nur wenn `hp` und `hpMax` nicht `null`), `Temp-HP` mit `<tempHp>`, `RK` mit `<ac>`,
 `Initiative` mit `<initiative>` (jeweils nur, wenn der Wert nicht `null` ist) — und die
 Markierungen als Chips (`div` der Klasse `token-card__conditions` mit je einem `span` der
@@ -408,14 +408,24 @@ Klasse `chip` aus dem dekorativen Katalog-Icon der Markierung, sonst ohne Icon, 
 als Text) in gespeicherter Reihenfolge, nie Bedeutung allein über Farbe. Der Spielleiter sieht
 die Karten in der Token-Verwaltung; ein Spieler sieht dafür eine Kartenliste mit der
 Überschrift `Tokenwerte` — ohne Tokens statt der Liste den Leerzustand (`ui-status`) mit dem
-Titel `Noch keine Tokens` und dem Hinweis `Sobald die Spielleitung Tokens auf die Karte setzt,
-erscheinen sie hier.`. Spieler MUST NOT die Verwaltung sehen — weder die Schaltfläche
+Titel `Noch keine Tokens` und dem Hinweis `Die Spielleitung weist dir ein Token zu.`. Spieler MUST NOT die Verwaltung sehen — weder die Schaltfläche
 `Token anlegen`, das Anlege-Modal, die Wertefelder, Schaden/Heilung noch die
 Markierungsbedienung; die Einträge `Bearbeiten`, `Zuweisen…` und `Entfernen` seines
 Token-Menüs sind gesperrt. Ein abgelehntes Acknowledgement einer Token-Aktion (Anlegen,
 Bewegen, Entfernen, Zuweisen, Werte, Markierungen, Teilen) SHALL in der Raumansicht als
 Meldung erscheinen — für jede Rolle, also auch für einen Spieler, dessen Bewegung oder
 Freigabe der Server ablehnt.
+
+**Puls bei Anstieg (Spieler).** In der Spieler-Liste `Tokenwerte` SHALL die Wertanzeige
+(`dd`) eines sichtbaren Zahlenwerts (`HP` aus `hp`, `Temp-HP`, `RK`, `Initiative`)
+zusätzlich die Klasse `token-card__value--pulse` tragen, sobald ein `session:tokens`-Update
+diesen Zahlenwert über den Wert im zuvor empfangenen Bestand hebt — für `HP` zählt `hp`,
+nicht das Verhältnis. Sinkt der Wert, bleibt er gleich oder erscheint er erstmals (kein
+früherer Bestand mit diesem Wert), SHALL die Anzeige die Klasse NICHT tragen. Der Puls ist
+einmalig: nach dem Ende der Animation (`animationend`) SHALL die Klasse wieder entfernt
+werden. Die Animation ist bewegungsabhängig (`@media (prefers-reduced-motion: no-preference)`
+in `theme.css`). Die Karten der Token-Verwaltung des Spielleiters SHALL die Klasse
+`token-card__value--pulse` NICHT tragen.
 
 **Token-Menü.** Jede Token-Karte — in der Token-Verwaltung des Spielleiters und in der Liste
 `Tokenwerte` eines Spielers — SHALL einen ⋮-Trigger `Aktionen für <Tokenname>` (`ui-menu`,
@@ -846,7 +856,7 @@ gesperrt, und es MUST NOT ein Freigabe-Schalter gerendert werden.
 - **WHEN** die Raumansicht gerendert ist
 - **THEN** zeigt die Liste `Tokenwerte` (unter der Überschrift `Tokenwerte`) einen Absatz
   der Klasse `empty-state` mit dem Titel `Noch keine Tokens` und dem Hinweis
-  `Sobald die Spielleitung Tokens auf die Karte setzt, erscheinen sie hier.`, und kein
+  `Die Spielleitung weist dir ein Token zu.`, und kein
   Element der Rolle `listitem`
 
 #### Scenario: Kartenansicht erhält den Kontextmenü-Rückruf
@@ -916,6 +926,61 @@ gesperrt, und es MUST NOT ein Freigabe-Schalter gerendert werden.
 - **WHEN** er das Menü `Aktionen für Goblin` unter `Tokenwerte` über den Trigger öffnet
 - **THEN** zeigt das Menü `Bearbeiten`, `Zuweisen…` und `Entfernen` gesperrt sowie
   `Freigeben…` und `Auf Karte zentrieren` nicht gesperrt, und `Freigeben…` hat den Fokus
+
+#### Scenario: Steigender HP-Wert pulsiert in der Spieler-Liste
+
+- **GIVEN** ein Spieler mit `userId` `U` im Raum mit aktiver Karte und einem Token `Goblin`
+  mit `ownerId` `U` und `hp` `10`, `hpMax` `40`; die Raumansicht ist gerendert
+- **WHEN** ein `session:tokens`-Update denselben `Goblin` mit `hp` `18`, `hpMax` `40` liefert
+- **THEN** trägt die Wertanzeige (`dd`) des Paars `HP` unter `Tokenwerte` die Klasse
+  `token-card__value--pulse`
+
+#### Scenario: Steigender Temp-HP-Wert pulsiert in der Spieler-Liste
+
+- **GIVEN** ein Spieler mit `userId` `U` im Raum mit aktiver Karte und einem Token `Goblin`
+  mit `ownerId` `U` und `tempHp` `2`; die Raumansicht ist gerendert
+- **WHEN** ein `session:tokens`-Update denselben `Goblin` mit `tempHp` `6` liefert
+- **THEN** trägt die Wertanzeige (`dd`) des Paars `Temp-HP` unter `Tokenwerte` die Klasse
+  `token-card__value--pulse`
+
+#### Scenario: Steigende RK pulsiert in der Spieler-Liste
+
+- **GIVEN** ein Spieler mit `userId` `U` im Raum mit aktiver Karte und einem Token `Goblin`
+  mit `ownerId` `U` und `ac` `14`; die Raumansicht ist gerendert
+- **WHEN** ein `session:tokens`-Update denselben `Goblin` mit `ac` `17` liefert
+- **THEN** trägt die Wertanzeige (`dd`) des Paars `RK` unter `Tokenwerte` die Klasse
+  `token-card__value--pulse`
+
+#### Scenario: Steigende Initiative pulsiert in der Spieler-Liste
+
+- **GIVEN** ein Spieler mit `userId` `U` im Raum mit aktiver Karte und einem Token `Goblin`
+  mit `ownerId` `U` und `initiative` `8`; die Raumansicht ist gerendert
+- **WHEN** ein `session:tokens`-Update denselben `Goblin` mit `initiative` `12` liefert
+- **THEN** trägt die Wertanzeige (`dd`) des Paars `Initiative` unter `Tokenwerte` die Klasse
+  `token-card__value--pulse`
+
+#### Scenario: Sinkender HP-Wert pulsiert nicht in der Spieler-Liste
+
+- **GIVEN** ein Spieler mit `userId` `U` im Raum mit aktiver Karte und einem Token `Goblin`
+  mit `ownerId` `U`, `hp` `18`, `hpMax` `40`; die Raumansicht ist gerendert
+- **WHEN** ein `session:tokens`-Update denselben `Goblin` mit `hp` `10`, `hpMax` `40` liefert
+- **THEN** trägt die Wertanzeige (`dd`) des Paars `HP` unter `Tokenwerte` die Klasse
+  `token-card__value--pulse` NICHT
+
+#### Scenario: Erstmals gezeigter Wert pulsiert nicht in der Spieler-Liste
+
+- **GIVEN** ein Spieler mit `userId` `U` im Raum mit aktiver Karte, und das Enter-Acknowledgement
+  nennt bereits ein Token `Goblin` mit `ownerId` `U`, `hp` `18`, `hpMax` `40` (kein früherer Bestand)
+- **WHEN** die Raumansicht gerendert ist
+- **THEN** trägt die Wertanzeige (`dd`) des Paars `HP` unter `Tokenwerte` die Klasse
+  `token-card__value--pulse` NICHT
+
+#### Scenario: Puls endet mit der Animation
+
+- **GIVEN** ein Spieler-Token `Goblin` (`ownerId` `U`), dessen `hp` per `session:tokens`-Update
+  von `10` auf `18` gestiegen ist und dessen `HP`-Wertanzeige die Klasse `token-card__value--pulse` trägt
+- **WHEN** die Animation dieser Wertanzeige endet (`animationend`)
+- **THEN** trägt die Wertanzeige die Klasse `token-card__value--pulse` nicht mehr
 
 ### Requirement: Token zuweisen
 

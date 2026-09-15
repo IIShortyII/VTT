@@ -104,6 +104,12 @@ export const en: Record<TextKey, string> = {
   'tabs.mapsFog': 'Maps & Fog',
   'tabs.participants': 'Participants',
 
+  'playerBar.label': 'Session',
+  'playerBar.annotations': 'Annotations',
+  'playerBar.connected': 'Connected',
+  'playerBar.disconnected': 'Disconnected',
+  'playerBar.newValues': 'new values',
+
   'setup.title': 'Library & setup',
   'setup.openLibrary': 'Open map library',
 

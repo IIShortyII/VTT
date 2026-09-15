@@ -77,8 +77,13 @@ Touch (#100).
   und „Tastaturbedienung der Reiter" (Spieler-Szenario → Spielleiter).
 - `session-token`: Requirement „Tokenansicht im Raum" (Spieler-`Tokenwerte` im Modal statt im
   Reiter).
-- `game-session`: Requirement „Sitzungsoberfläche" (rollenabhängige Kopfleiste, Spieler ohne
-  Reiter, Teilnehmer im Modal).
+- `game-session`: Requirements „Sitzungsoberfläche" (rollenabhängige Kopfleiste, Spieler ohne
+  Reiter, Teilnehmer im Modal, Wiederverbindung) und „Teilnehmerkarten" (Spieler-Karten im
+  Teilnehmer-Modal statt im Reiter).
+- `session-annotation`: Requirement „Anmerkungsansicht im Raum" (Panel `Messen & Zeichnen`
+  des Spielers im Anmerkungen-Modal der `player-bar` statt inline).
+- `session-bar`: Requirements „Aufbau der Session-Bar" und „Verwaltungsmenü" (die Session-Bar
+  ist Spielleiter-only; der Spieler bekommt die `player-bar`).
 - `ui-text`: Requirement „Sprachschalter in der Top-Bar" (englisches Spieler-Szenario).
 
 ## Impact

@@ -261,6 +261,16 @@ async function aktiviereReiter(name: string): Promise<void> {
   })
 }
 
+// MODIFIED (#98): Der Spieler oeffnet die Liste `Tokenwerte` ueber den Trigger `Tokens` der
+// Spieler-Leiste (player-bar, „On-Demand-Modals") — nicht mehr ueber einen Reiter. Der
+// Trigger-Name beginnt mit `Tokens` (ggf. gefolgt von der Badge-Zahl).
+async function oeffneSpielerTokens(): Promise<void> {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /^Tokens/ }))
+  })
+  await screen.findByRole('dialog', { name: 'Tokens' })
+}
+
 // MODIFIED (#95): Die Token-Karte (`article.token-card`, Rolle `listitem`), aufgeloest ueber
 // ihren Namen (Klasse `token-card__name`).
 function tokenKarte(name: string): HTMLElement {
@@ -863,7 +873,7 @@ test('Spieler sieht die Werte seines Tokens', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
-  await aktiviereReiter('Tokens')
+  await oeffneSpielerTokens()
 
   expect(await screen.findByRole('heading', { name: 'Tokenwerte' })).toBeTruthy()
   const karte = tokenKarte('Goblin')
@@ -884,7 +894,7 @@ test('Spieler sieht ohne Werte keine Werte', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
-  await aktiviereReiter('Tokens')
+  await oeffneSpielerTokens()
 
   expect(await screen.findByRole('heading', { name: 'Tokenwerte' })).toBeTruthy()
   const karte = tokenKarte('Ork')
@@ -901,12 +911,15 @@ test('Spieler sieht keine Token-Verwaltung', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
-  await aktiviereReiter('Tokens')
+  await oeffneSpielerTokens()
   await waitFor(() => expect(canvasMock.createMapCanvas).toHaveBeenCalled())
 
   expect(canvasMock.createMapCanvas).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tokens: [FREMDER_ORK] }))
   // Keine Verwaltungselemente (weder Überschrift/Knöpfe noch Wertefelder).
-  expect(screen.queryByRole('heading', { name: 'Tokens' })).toBeNull()
+  // MODIFIED (#98): die einzige Ueberschrift `Tokens` ist der Modal-Titel des Tokens-Modals
+  // (Modal rendert den Titel als <h2>, design.md D5) — keine GM-Token-Verwaltung mit dieser
+  // Ueberschrift.
+  expect(screen.getByRole('heading', { name: 'Tokens' }).classList.contains('modal-title')).toBe(true)
   expect(screen.queryByRole('button', { name: 'Token anlegen' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Anlegen' })).toBeNull()
   expect(screen.queryByRole('spinbutton', { name: 'Ork HP' })).toBeNull()
@@ -1087,7 +1100,7 @@ test('Besitzer sieht Freigabe-Schalter nur am eigenen Token', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
-  await aktiviereReiter('Tokens')
+  await oeffneSpielerTokens()
 
   await act(async () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Ork' }))
@@ -1124,7 +1137,7 @@ test('Besitzer teilt über die Liste', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
-  await aktiviereReiter('Tokens')
+  await oeffneSpielerTokens()
 
   await oeffneFreigaben()
   await act(async () => {
@@ -1143,7 +1156,7 @@ test('Abgelehnte Freigabe zeigt die Meldung', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
-  await aktiviereReiter('Tokens')
+  await oeffneSpielerTokens()
 
   await oeffneFreigaben()
   await act(async () => {
@@ -1284,7 +1297,7 @@ test('Spieler zentriert auf sein Token', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
-  await aktiviereReiter('Tokens')
+  await oeffneSpielerTokens()
 
   await act(async () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Goblin' }))
@@ -1304,7 +1317,7 @@ test('Spieler sieht im Token-Menü nur Freigeben aktiv', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
-  await aktiviereReiter('Tokens')
+  await oeffneSpielerTokens()
 
   await act(async () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Aktionen für Goblin' }))

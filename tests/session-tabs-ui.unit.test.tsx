@@ -266,11 +266,13 @@ describe('Bereiche der Raumansicht', () => {
     enterAck('spieler', 'gestartet', { map: null })
     await raumBetreten()
 
-    const liste = screen.getByRole('tablist', { name: 'Bereiche' })
-    const reiter = within(liste).getAllByRole('tab')
-    expect(reiter.map((r) => r.textContent)).toEqual(['Karte', 'Tokens', 'Teilnehmer'])
-    expect(within(liste).queryByRole('tab', { name: 'Karten & Nebel' })).toBeNull()
-    expect(within(liste).getByRole('tab', { name: 'Karte' }).getAttribute('aria-selected')).toBe('true')
+    // MODIFIED (#98): der Spieler hat keine Reiterliste mehr; die Raumansicht traegt die
+    // Spieler-Leiste (`player-bar`) — die Gruppe `Sitzung` mit den drei Triggern.
+    expect(screen.queryByRole('tablist', { name: 'Bereiche' })).toBeNull()
+    const gruppe = screen.getByRole('group', { name: 'Sitzung' })
+    within(gruppe).getByRole('button', { name: /^Tokens/ })
+    within(gruppe).getByRole('button', { name: 'Anmerkungen' })
+    within(gruppe).getByRole('button', { name: 'Teilnehmer' })
   })
 
   test('Reiter Karte zeigt nur seine Panels', async () => {
@@ -379,12 +381,18 @@ describe('Bereiche der Raumansicht', () => {
     installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
     enterAck('spieler', 'geoeffnet', { map: AKTIVE_KARTE, tokens: [MEIN_GOBLIN] })
     await raumBetreten()
-    await klickReiter('Tokens')
 
-    const panel = screen.getByRole('tabpanel', { name: 'Tokens' })
-    within(panel).getByRole('heading', { level: 2, name: 'Tokenwerte' })
-    within(panel).getByText('Goblin')
-    expect(within(panel).queryByRole('heading', { level: 2, name: 'Tokens' })).toBeNull()
+    // MODIFIED (#98): fuer den Spieler existiert kein Reiter/Reiterpanel `Tokens`; die Liste
+    // `Tokenwerte` liegt im Tokens-Modal, das der Trigger `Tokens` der Spieler-Leiste oeffnet.
+    expect(screen.queryByRole('tab', { name: 'Tokens' })).toBeNull()
+    expect(screen.queryByRole('tabpanel', { name: 'Tokens' })).toBeNull()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Tokens/ }))
+    })
+    const dialog = await screen.findByRole('dialog', { name: 'Tokens' })
+    within(dialog).getByRole('heading', { level: 2, name: 'Tokenwerte' })
+    within(dialog).getByText('Goblin')
   })
 })
 
@@ -455,8 +463,9 @@ describe('Tastaturbedienung der Reiter', () => {
   })
 
   test('Leertaste wählt den fokussierten Reiter aus', async () => {
-    installFetch(basis([{ id: 's1', name: 'Freitagsrunde', status: 'geoeffnet', role: 'spieler' }]))
-    enterAck('spieler', 'geoeffnet', { map: null })
+    // MODIFIED (#98): das Szenario adressiert jetzt den Spielleiter (der Spieler hat keine Reiter).
+    spielleiterFetch()
+    enterAck('spielleiter', 'geoeffnet', { map: null })
     await raumBetreten()
     screen.getByRole('tab', { name: 'Karte' }).focus()
 

@@ -43,6 +43,7 @@ import { removeMember } from './api.js'
 import { FogPanel } from './FogPanel.js'
 import { sessionMapImageUrl } from './fog-api.js'
 import { MapPanel } from './MapPanel.js'
+import { PlayerBar } from './PlayerBar.js'
 import { RenameSessionForm, SessionBar } from './SessionBar.js'
 import { createSessionSocket, type SessionSocketFacade } from './socket.js'
 import { SESSION_OVERLAY, SESSION_STATUS_PRESENTATION } from './session-status.js'
@@ -115,14 +116,15 @@ import { TokenPanel } from './TokenPanel.js'
 // `session:rename` (constitution.md §9.1).
 //
 // session-tabs (#94, design.md D2): unter der Bar und den drei Raum-Meldungen liegt jetzt die
-// Reiterliste `Bereiche` - `activeTab` ist reiner Komponentenzustand (Standard `karte`), kein
-// Effekt und kein `setState` des Raumzustands beruehrt ihn; er bleibt beim Wiederverbinden
-// erhalten, weil die Komponente gemountet bleibt. Alle Reiterpanels sind immer gerendert,
-// inaktive tragen `hidden` (kein Canvas-Neuaufbau, kein Fetch bei einem Reiterwechsel). Die
-// Panels selbst (Kartenhinweis/Buehne/`AnnotationPanel`/`FogPanel`, `TokenPanel`/
-// `PlayerTokenList`, `MapPanel`, Teilnehmerliste) sind unveraendert - nur ihre Lage im
-// Dokument hat sich geaendert. `MAP_CANVAS_HEIGHT` entfaellt, die Buehnenhoehe kommt aus dem
-// Stylesheet (`.map-stage`, `session-tabs` "Stylesheet der Bereiche").
+// Reiterliste `Bereiche` (nur fuer den Spielleiter, `player-bar` #98) - `activeTab` ist reiner
+// Komponentenzustand (Standard `karte`), kein Effekt und kein `setState` des Raumzustands
+// beruehrt ihn; er bleibt beim Wiederverbinden erhalten, weil die Komponente gemountet
+// bleibt. Alle Reiterpanels sind immer gerendert, inaktive tragen `hidden` (kein
+// Canvas-Neuaufbau, kein Fetch bei einem Reiterwechsel). Die Panels selbst
+// (Kartenhinweis/Buehne/`AnnotationPanel`/`FogPanel`, `TokenPanel`, Teilnehmerliste) sind
+// unveraendert - nur ihre Lage im Dokument hat sich geaendert. `MAP_CANVAS_HEIGHT` entfaellt,
+// die Buehnenhoehe kommt aus dem Stylesheet (`.map-stage`, `session-tabs` "Stylesheet der
+// Bereiche").
 //
 // add-token-cards (#95, design.md D1/D6/D7/D9): `TokenPanel`/`PlayerTokenList` rendern jetzt
 // Karten (`TokenStats.tsx`, `TokenCard`) statt Zeilen; das Anlege-Formular liegt in einem
@@ -151,6 +153,14 @@ import { TokenPanel } from './TokenPanel.js'
 // `handleRemoveMember`. Der Panel-Kopf traegt zusaetzlich das `Einladen`-Popover
 // (`inviteMenu`) fuer den Spielleiter, das denselben Kopierweg wie die Session-Bar nutzt
 // (`handleCopyCode`).
+//
+// player-bar (#98, design.md D2): der Spieler-Zweig ersetzt `SessionBar` durch `PlayerBar`
+// und die Reiterliste durch die dauerhafte Kartenansicht; Tokenwerte, Anmerkungen und
+// Teilnehmer wandern in drei Modals (`tokensOpen`/`annotationsOpen`/`participantsOpen`). Der
+// `tokens`-Handler erkennt zusaetzlich einen neu freigegebenen Wert eines eigenen Tokens
+// (`hasNewlyReleasedValue`, §9.1/§9.2) und faerbt darueber das Badge des Tokens-Triggers teal,
+// solange das Tokenwerte-Modal geschlossen ist - das Oeffnen quittiert das Ereignis. Der
+// Spielleiter-Zweig (`SessionBar`, `TabList`/`TabPanel`) bleibt unveraendert.
 
 export interface SessionRoomProps {
   sessionId: string
@@ -231,6 +241,26 @@ function readStoredUnit(): DistanceUnit {
   } catch {
     return 'meter'
   }
+}
+
+// player-bar (#98, design.md D2, Requirement "Tokens-Trigger und Badge"): die fuenf
+// Wertefelder, deren Freigabe das Badge teal faerbt - ein neu freigegebener Wert ist ein Feld,
+// das im vorigen Bestand `null` war und im neuen nicht mehr (der Server hat es zuvor
+// herausgefiltert, constitution.md §9.2). Ein neu hinzugekommenes Token (nicht im vorigen
+// Bestand) und ein bloss geaenderter, schon zuvor freigegebener Wert loesen KEIN teal aus.
+const RELEASABLE_TOKEN_FIELDS = ['hp', 'hpMax', 'tempHp', 'ac', 'initiative'] as const
+
+function hasNewlyReleasedValue(previous: Token[], incoming: Token[], userId: string): boolean {
+  return incoming.some((token) => {
+    if (token.ownerId !== userId) {
+      return false
+    }
+    const previousToken = previous.find((candidate) => candidate.id === token.id)
+    if (!previousToken) {
+      return false
+    }
+    return RELEASABLE_TOKEN_FIELDS.some((field) => previousToken[field] === null && token[field] !== null)
+  })
 }
 
 interface AssignTokenDialogProps {
@@ -511,8 +541,25 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
   const [renameOpen, setRenameOpen] = useState(false)
   // session-tabs (#94, design.md D2): reiner Komponentenzustand - beim Betreten `karte`, kein
   // Server-Ereignis und keine Pfeiltaste aendert die Auswahl (nur Klick oder Enter/Leertaste
-  // auf dem fokussierten Reiter, `ui/tabs.tsx`).
+  // auf dem fokussierten Reiter, `ui/tabs.tsx`). Nur fuer den Spielleiter-Zweig relevant
+  // (`player-bar` #98 hat keine Reiter).
   const [activeTab, setActiveTab] = useState<RoomTab>('karte')
+  // player-bar (#98, design.md D2): die drei On-Demand-Modals des Spielers und das
+  // unquittierte Badge-Ereignis (Requirement "Tokens-Trigger und Badge") - `tokensOpenRef`
+  // haelt den aktuellen Oeffnungszustand fuer den `tokens`-Handler, der einmal beim
+  // Verdrahten registriert wird und deshalb keinen `useState`-Wert direkt lesen kann.
+  const [tokensOpen, setTokensOpen] = useState(false)
+  const [annotationsOpen, setAnnotationsOpen] = useState(false)
+  const [participantsOpen, setParticipantsOpen] = useState(false)
+  const [tokenEvent, setTokenEvent] = useState(false)
+  const tokensOpenRef = useRef(false)
+  tokensOpenRef.current = tokensOpen
+  // player-bar (#98, design.md D2): Rolle und vorheriger Tokenbestand fuer den
+  // `tokens`-Handler (Requirement "Tokens-Trigger und Badge") - bei jedem Rendern
+  // nachgezogen (Muster `annotationModeRef`/`gridRef`), damit der einmal registrierte
+  // Handler trotzdem den Stand VOR dem jeweiligen `session:tokens` sieht.
+  const roleRef = useRef<MemberRole | null>(null)
+  const tokensRef = useRef<Token[]>([])
   // add-fog-of-war (#16, design.md D7): lokale Ad-hoc-Auswahl fuer "Bereich markieren" und
   // die Fehlermeldung einer abgelehnten Fog-Aktion. add-measure-draw (#11, design.md D5):
   // `fogTool` wird zu `tool: CanvasTool` - EIN Werkzeugzustand fuer Fog- und
@@ -645,8 +692,15 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
         setState((prev) => (prev.status === 'bereit' ? { ...prev, map } : prev))
       })
       // session-token (#14, Requirement "Tokenbestand beim Betreten und Kartenwechsel"):
-      // ersetzt die Liste vollstaendig.
+      // ersetzt die Liste vollstaendig. player-bar (#98, design.md D2, Requirement
+      // "Tokens-Trigger und Badge"): VOR dem Ersetzen prueft der Handler - nur fuer die Rolle
+      // `spieler` und solange das Tokenwerte-Modal geschlossen ist - ob ein Wertefeld eines
+      // eigenen, schon zuvor bekannten Tokens neu freigegeben wurde; trifft das zu, faerbt
+      // `tokenEvent` das Badge teal, bis das Modal geoeffnet wird (`onOpenTokens` quittiert).
       socket.on('tokens', ({ tokens }) => {
+        if (roleRef.current === 'spieler' && !tokensOpenRef.current && hasNewlyReleasedValue(tokensRef.current, tokens, currentUserId)) {
+          setTokenEvent(true)
+        }
         setState((prev) => (prev.status === 'bereit' ? { ...prev, tokens } : prev))
       })
       // add-fog-of-war (#16, Requirement "Fog beim Betreten und Kartenwechsel"): ersetzt die
@@ -774,6 +828,10 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
   // Render feuert (etwa bei einer Teilnehmerliste-Aktualisierung).
   const currentFog = state.status === 'bereit' ? state.fog : null
   const currentRole = state.status === 'bereit' ? state.role : null
+  // player-bar (#98, design.md D2): `roleRef`/`tokensRef` bei jedem Rendern nachgezogen - der
+  // `tokens`-Handler in `wireSocket` liest sie, ohne selbst neu registriert zu werden.
+  roleRef.current = currentRole
+  tokensRef.current = state.status === 'bereit' ? state.tokens : []
   const fogLayer = useMemo<FogLayer | null>(() => {
     if (!currentFog) {
       return null
@@ -1309,13 +1367,18 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
   // ui-menu (#92, design.md D5/D9): Ableitungen fuer die Token-Modals und die Zielgruppe des
   // Zuweisen-Modals - nur gueltig, wenn der Raum bereit ist, sonst `null`/`[]`. add-token-cards
   // (#95): `editToken` fuer das Bearbeiten-Modal, nach demselben Muster. add-participant-cards
-  // (#97): `assignTokensParticipant` fuer das Zuweisen-Modal einer Teilnehmerkarte.
+  // (#97): `assignTokensParticipant` fuer das Zuweisen-Modal einer Teilnehmerkarte. player-bar
+  // (#98, design.md D2): `menuEntries`/`mapMenuToken` liegen jetzt hier statt im
+  // `content`-Zweig - das Tokenwerte-Modal des Spielers (`dialogs`) braucht `menuEntries`
+  // ebenso wie der `content`-Zweig selbst.
   const assignToken = state.status === 'bereit' ? (state.tokens.find((token) => token.id === assignTokenId) ?? null) : null
   const shareToken = state.status === 'bereit' ? (state.tokens.find((token) => token.id === shareTokenId) ?? null) : null
   const editToken = state.status === 'bereit' ? (state.tokens.find((token) => token.id === editTokenId) ?? null) : null
   const players = state.status === 'bereit' ? state.participants.filter((participant) => participant.role === 'spieler') : []
   const assignTokensParticipant =
     state.status === 'bereit' ? (state.participants.find((participant) => participant.userId === assignTokensParticipantId) ?? null) : null
+  const menuEntries = (token: Token): MenuEntry[] => tokenMenuEntries(token, state.status === 'bereit' && state.role === 'spielleiter', t, handleTokenAction)
+  const mapMenuToken = state.status === 'bereit' ? (state.tokens.find((token) => token.id === mapMenuTokenId) ?? null) : null
 
   let content: ReactNode
   if (state.status === 'lädt') {
@@ -1336,67 +1399,227 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
     // (Enter-Acknowledgement, danach `session:status`) - kein eigener State.
     const overlay = SESSION_OVERLAY[state.sessionStatus]
     const overlayIcon = SESSION_STATUS_PRESENTATION[state.sessionStatus].icon
-    // ui-menu (#92, design.md D5): eine Funktion statt einer Liste - jede Zeile und das
-    // Karten-Menue rufen sie mit ihrem eigenen Token auf (`tokenMenuEntries`, `token-menu.ts`).
-    const menuEntries = (token: Token): MenuEntry[] => tokenMenuEntries(token, state.role === 'spielleiter', t, handleTokenAction)
-    const mapMenuToken = state.tokens.find((token) => token.id === mapMenuTokenId) ?? null
 
-    // session-tabs (#94, design.md D2): die Reiterliste dieser Rolle - `Karten & Nebel` nur
-    // fuer den Spielleiter (`ROOM_TABS`, gefiltert nach `state.role`).
-    const roomTabs = ROOM_TABS.filter((tab) => tab.roles.includes(state.role))
+    if (state.role === 'spielleiter') {
+      // session-tabs (#94, design.md D2): die Reiterliste dieser Rolle - `Karten & Nebel` nur
+      // fuer den Spielleiter (`ROOM_TABS`, gefiltert nach `state.role`).
+      const roomTabs = ROOM_TABS.filter((tab) => tab.roles.includes(state.role))
 
-    content = (
-      <>
-        {/* session-bar (#93, design.md D6): erstes Element der Raumansicht, ersetzt `<h1>`,
-            Zustandsabsatz, Code-Absatz und Uebergangs-Schaltflaechen. */}
-        <SessionBar
-          name={state.name}
-          status={state.sessionStatus}
-          role={state.role}
-          code={state.code}
-          transitionError={transitionError}
-          onTransition={(action) => void handleTransition(action)}
-          onCopyCode={handleCopyCode}
-          onRename={() => setRenameOpen(true)}
-          onOpenLibrary={() => onOpenLibraryRef.current()}
-          onLeave={leave}
-        />
+      content = (
+        <>
+          {/* session-bar (#93, design.md D6): erstes Element der Raumansicht, ersetzt `<h1>`,
+              Zustandsabsatz, Code-Absatz und Uebergangs-Schaltflaechen. */}
+          <SessionBar
+            name={state.name}
+            status={state.sessionStatus}
+            role={state.role}
+            code={state.code}
+            transitionError={transitionError}
+            onTransition={(action) => void handleTransition(action)}
+            onCopyCode={handleCopyCode}
+            onRename={() => setRenameOpen(true)}
+            onOpenLibrary={() => onOpenLibraryRef.current()}
+            onLeave={leave}
+          />
 
-        {/* add-token-assignment (#15, design.md D6): fuer jede Rolle, damit auch ein Spieler
-            eine abgelehnte eigene Bewegung sieht. add-token-sharing (#62): auch eine
-            abgelehnte Freigabe. session-tabs (#94, design.md D2): jetzt vor der Reiterliste,
-            damit die Meldung in jedem Reiter sichtbar bleibt. */}
-        {tokenError !== null && <p role="alert">{tokenError}</p>}
+          {/* add-token-assignment (#15, design.md D6): fuer jede Rolle, damit auch ein Spieler
+              eine abgelehnte eigene Bewegung sieht. add-token-sharing (#62): auch eine
+              abgelehnte Freigabe. session-tabs (#94, design.md D2): jetzt vor der Reiterliste,
+              damit die Meldung in jedem Reiter sichtbar bleibt. */}
+          {tokenError !== null && <p role="alert">{tokenError}</p>}
 
-        {/* add-fog-of-war (#16, design.md D7, D8): fuer jede Rolle, wie `tokenError`. */}
-        {fogError !== null && <p role="alert">{fogError}</p>}
+          {/* add-fog-of-war (#16, design.md D7, D8): fuer jede Rolle, wie `tokenError`. */}
+          {fogError !== null && <p role="alert">{fogError}</p>}
 
-        {/* add-measure-draw (#11, design.md D6): fuer jede Rolle, wie `tokenError`/`fogError`. */}
-        {annotationError !== null && <p role="alert">{annotationError}</p>}
+          {/* add-measure-draw (#11, design.md D6): fuer jede Rolle, wie `tokenError`/`fogError`. */}
+          {annotationError !== null && <p role="alert">{annotationError}</p>}
 
-        {/* session-tabs (#94, design.md D2): die Reiterliste `Bereiche` - "Karte" ist beim
-            Betreten aktiv, ein Reiterwechsel aendert ausschliesslich `activeTab`. */}
-        <TabList
-          label={t('tabs.label')}
-          tabs={roomTabs.map((tab) => ({ id: tab.id, label: t(tab.labelKey) }))}
-          active={activeTab}
-          onSelect={setActiveTab}
-          idPrefix="room"
-        />
+          {/* session-tabs (#94, design.md D2): die Reiterliste `Bereiche` - "Karte" ist beim
+              Betreten aktiv, ein Reiterwechsel aendert ausschliesslich `activeTab`. */}
+          <TabList
+            label={t('tabs.label')}
+            tabs={roomTabs.map((tab) => ({ id: tab.id, label: t(tab.labelKey) }))}
+            active={activeTab}
+            onSelect={setActiveTab}
+            idPrefix="room"
+          />
 
-        <TabPanel id="karte" active={activeTab} idPrefix="room">
-          {/* session-map (#50, Requirement "Kartenansicht im Raum"): der Name folgt genau dem
-              Text "Aktive Karte: <Name>" bzw. "Keine Karte aktiv" (design.md D7). */}
+          <TabPanel id="karte" active={activeTab} idPrefix="room">
+            {/* session-map (#50, Requirement "Kartenansicht im Raum"): der Name folgt genau dem
+                Text "Aktive Karte: <Name>" bzw. "Keine Karte aktiv" (design.md D7). */}
+            {state.map !== null ? (
+              <p className="map-caption">{`Aktive Karte: ${state.map.name}`}</p>
+            ) : (
+              <p className="map-caption">{NO_ACTIVE_MAP_MESSAGE}</p>
+            )}
+            {state.map !== null && (
+              // ui-status (#91, design.md D5): die Buehne ersetzt den bisherigen einfachen
+              // Container - das Overlay liegt als letztes Kind darueber. session-tabs (#94,
+              // design.md D2): kein `style`-Attribut mehr - die Groesse kommt aus dem
+              // Stylesheet (`.map-stage`).
+              <div className="map-stage">
+                <MapCanvas
+                  ref={mapCanvasRef}
+                  imageUrl={imageUrl}
+                  grid={state.map.grid}
+                  tokens={state.tokens}
+                  onTokenMove={handleTokenMove}
+                  canMoveToken={(token) => canMoveToken(token, { role: state.role, userId: currentUserId })}
+                  onTokenContextMenu={handleTokenContextMenu}
+                  fog={fogLayer}
+                  tool={tool}
+                  selection={fogSelection}
+                  onCellsSelected={handleFogCellsSelected}
+                  annotations={state.annotations}
+                  annotationOptions={annotationOptions}
+                  onAnnotationDrawn={handleAnnotationDrawn}
+                />
+              </div>
+            )}
+
+            {/* add-measure-draw (#11, design.md D6): jede Rolle, nur bei aktiver Karte. */}
+            {state.map !== null && (
+              <AnnotationPanel
+                annotations={state.annotations}
+                grid={state.map.grid}
+                participants={state.participants}
+                viewer={{ role: state.role, userId: currentUserId }}
+                tool={tool}
+                mode={annotationMode}
+                visibility={annotationVisibility}
+                color={annotationColor}
+                unit={distanceUnit}
+                onToolChange={setTool}
+                onModeChange={setAnnotationMode}
+                onVisibilityChange={setAnnotationVisibility}
+                onColorChange={setAnnotationColor}
+                onUnitChange={handleUnitChange}
+                onDelete={handleAnnotationDelete}
+              />
+            )}
+
+            {/* add-fog-of-war (#16, design.md D7): nur fuer den Spielleiter und bei vorhandenem
+                Fog (also bei aktiver Karte) - ein Spieler bekommt weder die Verwaltung noch
+                deren Abfragen (constitution.md §9.2). */}
+            {state.fog !== null && (
+              <FogPanel
+                fog={state.fog}
+                tool={tool}
+                selectionCount={fogSelection.length}
+                onToolChange={setTool}
+                onRevealAll={() => sendFogSet(true, { kind: 'alle' })}
+                onHideAll={() => sendFogSet(false, { kind: 'alle' })}
+                onAreaCreate={handleFogAreaCreate}
+                onClearSelection={handleFogClearSelection}
+                onAreaToggle={(areaId, revealed) => sendFogSet(revealed, { kind: 'bereich', areaId })}
+                onAreaDelete={handleFogAreaDelete}
+              />
+            )}
+          </TabPanel>
+
+          <TabPanel id="tokens" active={activeTab} idPrefix="room">
+            <TokenPanel
+              sessionId={sessionId}
+              tokens={state.tokens}
+              participants={state.participants}
+              onCreate={handleTokenCreate}
+              onSetStats={handleTokenStats}
+              menuEntries={menuEntries}
+            />
+          </TabPanel>
+
+          <TabPanel id="karten" active={activeTab} idPrefix="room">
+            <MapPanel
+              sessionId={sessionId}
+              activeInstanceId={state.map?.instanceId ?? null}
+              onActivate={handleActivateMap}
+              activateError={activateError}
+              onOpenLibrary={() => onOpenLibraryRef.current()}
+            />
+          </TabPanel>
+
+          {/* add-participant-cards (#97, design.md D1/D5): die Teilnehmerkarten
+              (`ParticipantCard`) ersetzen die bisherige Liste - Avatar, Name, Rollen-Pill,
+              Praesenzkennzeichen, Token-Chips, `Alias ändern` auf der eigenen Karte, ⋮-Menue je
+              Rolle (`participant-menu.ts`). Der Panel-Kopf traegt zusaetzlich das
+              `Einladen`-Popover mit dem maskierten Code. */}
+          <TabPanel id="teilnehmer" active={activeTab} idPrefix="room">
+            <div className="panel panel--wide">
+              <div className="token-panel__head">
+                <h2>{t('tabs.participants')}</h2>
+                {state.code !== undefined && (
+                  <>
+                    <MenuTrigger floating={inviteMenu} label={t('invite.open')} haspopup="dialog" variant="text" icon="players" />
+                    <Popover floating={inviteMenu} label={t('invite.open')}>
+                      <code aria-label={t('session.code')}>{'•'.repeat(state.code.length)}</code>
+                      <IconButton name="copy" label={t('invite.copy')} onClick={handleCopyCode} />
+                    </Popover>
+                  </>
+                )}
+              </div>
+              <ul className="participant-card-list">
+                {state.participants.map((participant) => (
+                  <ParticipantCard
+                    key={participant.userId}
+                    participant={participant}
+                    isOwn={participant.userId === currentUserId}
+                    tokens={state.tokens}
+                    menuEntries={participantMenuEntries(participant, state.role, currentUserId, t, handleParticipantMenuAction)}
+                    onEditAlias={openAliasModal}
+                  />
+                ))}
+              </ul>
+              {memberError !== null && <p role="alert">{memberError}</p>}
+            </div>
+          </TabPanel>
+
+          {/* ui-menu (#92, design.md D5, "Karte"): dasselbe Token-Menue wie in der Zeile, jetzt
+              am Rechtsklick-Punkt auf der Karte - gerendert, solange das Token noch existiert. */}
+          {mapMenuToken && <ActionMenu floating={mapMenu} label={t('menu.rowActions', { name: mapMenuToken.name })} entries={menuEntries(mapMenuToken)} />}
+        </>
+      )
+    } else {
+      // player-bar (#98, design.md D2, Requirement "Spieler-Raumlayout"): die Leiste ersetzt
+      // die Session-Bar, danach die Raum-Meldungen und dauerhaft die Kartenansicht - keine
+      // Reiterliste, kein inline gerendertes `PlayerTokenList`/`AnnotationPanel`/Teilnehmer;
+      // die drei Panels liegen ausschliesslich in ihren Modals (`dialogs`).
+      const self = state.participants.find((participant) => participant.userId === currentUserId)
+      const ownedTokenCount = state.tokens.filter((token) => token.ownerId === currentUserId).length
+      const ownName = self ? displayName(self) : ''
+      const annotationsDisabled = state.map === null
+
+      content = (
+        <>
+          <PlayerBar
+            name={state.name}
+            ownName={ownName}
+            status={state.sessionStatus}
+            connected={disconnected === null}
+            tokenCount={ownedTokenCount}
+            tokenEvent={tokenEvent}
+            annotationsDisabled={annotationsDisabled}
+            onOpenTokens={() => {
+              setTokenEvent(false)
+              setTokensOpen(true)
+            }}
+            onOpenAnnotations={() => setAnnotationsOpen(true)}
+            onOpenParticipants={() => setParticipantsOpen(true)}
+          />
+
+          {/* player-bar (#98, design.md D2): dieselben Raum-Meldungen wie beim Spielleiter -
+              `fogError` bleibt aus, ein Spieler loest nie eine Fog-Aktion aus. */}
+          {tokenError !== null && <p role="alert">{tokenError}</p>}
+          {annotationError !== null && <p role="alert">{annotationError}</p>}
+
+          {/* player-bar (#98, design.md D2, Requirement "Spieler-Raumlayout"): der Kartenhinweis
+              und, bei aktiver Karte, die Buehne mit Kartenansicht und Overlay - dauerhaft
+              sichtbar, kein Reiter noetig. */}
           {state.map !== null ? (
             <p className="map-caption">{`Aktive Karte: ${state.map.name}`}</p>
           ) : (
             <p className="map-caption">{NO_ACTIVE_MAP_MESSAGE}</p>
           )}
           {state.map !== null && (
-            // ui-status (#91, design.md D5): die Buehne ersetzt den bisherigen einfachen
-            // Container - das Overlay liegt als letztes Kind darueber. session-tabs (#94,
-            // design.md D2): kein `style`-Attribut mehr - die Groesse kommt aus dem
-            // Stylesheet (`.map-stage`).
             <div className="map-stage">
               <MapCanvas
                 ref={mapCanvasRef}
@@ -1414,121 +1637,16 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
                 annotationOptions={annotationOptions}
                 onAnnotationDrawn={handleAnnotationDrawn}
               />
-              {overlay !== undefined && state.role === 'spieler' && (
-                <MapOverlay title={t(overlay.title)} subline={t(overlay.subline)} icon={overlayIcon} />
-              )}
+              {overlay !== undefined && <MapOverlay title={t(overlay.title)} subline={t(overlay.subline)} icon={overlayIcon} />}
             </div>
           )}
 
-          {/* add-measure-draw (#11, design.md D6): jede Rolle, nur bei aktiver Karte. */}
-          {state.map !== null && (
-            <AnnotationPanel
-              annotations={state.annotations}
-              grid={state.map.grid}
-              participants={state.participants}
-              viewer={{ role: state.role, userId: currentUserId }}
-              tool={tool}
-              mode={annotationMode}
-              visibility={annotationVisibility}
-              color={annotationColor}
-              unit={distanceUnit}
-              onToolChange={setTool}
-              onModeChange={setAnnotationMode}
-              onVisibilityChange={setAnnotationVisibility}
-              onColorChange={setAnnotationColor}
-              onUnitChange={handleUnitChange}
-              onDelete={handleAnnotationDelete}
-            />
-          )}
-
-          {/* add-fog-of-war (#16, design.md D7): nur fuer den Spielleiter und bei vorhandenem
-              Fog (also bei aktiver Karte) - ein Spieler bekommt weder die Verwaltung noch
-              deren Abfragen (constitution.md §9.2). */}
-          {state.role === 'spielleiter' && state.fog !== null && (
-            <FogPanel
-              fog={state.fog}
-              tool={tool}
-              selectionCount={fogSelection.length}
-              onToolChange={setTool}
-              onRevealAll={() => sendFogSet(true, { kind: 'alle' })}
-              onHideAll={() => sendFogSet(false, { kind: 'alle' })}
-              onAreaCreate={handleFogAreaCreate}
-              onClearSelection={handleFogClearSelection}
-              onAreaToggle={(areaId, revealed) => sendFogSet(revealed, { kind: 'bereich', areaId })}
-              onAreaDelete={handleFogAreaDelete}
-            />
-          )}
-        </TabPanel>
-
-        <TabPanel id="tokens" active={activeTab} idPrefix="room">
-          {state.role === 'spielleiter' ? (
-            <TokenPanel
-              sessionId={sessionId}
-              tokens={state.tokens}
-              participants={state.participants}
-              onCreate={handleTokenCreate}
-              onSetStats={handleTokenStats}
-              menuEntries={menuEntries}
-            />
-          ) : (
-            // add-token-stats (#61, design.md D10, Requirement "Tokenansicht im Raum"): ein
-            // Spieler sieht statt der Verwaltung die eigene Werteliste.
-            <PlayerTokenList tokens={state.tokens} participants={state.participants} menuEntries={menuEntries} />
-          )}
-        </TabPanel>
-
-        {state.role === 'spielleiter' && (
-          <TabPanel id="karten" active={activeTab} idPrefix="room">
-            <MapPanel
-              sessionId={sessionId}
-              activeInstanceId={state.map?.instanceId ?? null}
-              onActivate={handleActivateMap}
-              activateError={activateError}
-              onOpenLibrary={() => onOpenLibraryRef.current()}
-            />
-          </TabPanel>
-        )}
-
-        {/* add-participant-cards (#97, design.md D1/D5): die Teilnehmerkarten
-            (`ParticipantCard`) ersetzen die bisherige Liste - Avatar, Name, Rollen-Pill,
-            Praesenzkennzeichen, Token-Chips, `Alias ändern` auf der eigenen Karte, ⋮-Menue je
-            Rolle (`participant-menu.ts`). Der Panel-Kopf traegt fuer den Spielleiter
-            zusaetzlich das `Einladen`-Popover mit dem maskierten Code. */}
-        <TabPanel id="teilnehmer" active={activeTab} idPrefix="room">
-          <div className="panel panel--wide">
-            <div className="token-panel__head">
-              <h2>{t('tabs.participants')}</h2>
-              {state.role === 'spielleiter' && state.code !== undefined && (
-                <>
-                  <MenuTrigger floating={inviteMenu} label={t('invite.open')} haspopup="dialog" variant="text" icon="players" />
-                  <Popover floating={inviteMenu} label={t('invite.open')}>
-                    <code aria-label={t('session.code')}>{'•'.repeat(state.code.length)}</code>
-                    <IconButton name="copy" label={t('invite.copy')} onClick={handleCopyCode} />
-                  </Popover>
-                </>
-              )}
-            </div>
-            <ul className="participant-card-list">
-              {state.participants.map((participant) => (
-                <ParticipantCard
-                  key={participant.userId}
-                  participant={participant}
-                  isOwn={participant.userId === currentUserId}
-                  tokens={state.tokens}
-                  menuEntries={participantMenuEntries(participant, state.role, currentUserId, t, handleParticipantMenuAction)}
-                  onEditAlias={openAliasModal}
-                />
-              ))}
-            </ul>
-            {memberError !== null && <p role="alert">{memberError}</p>}
-          </div>
-        </TabPanel>
-
-        {/* ui-menu (#92, design.md D5, "Karte"): dasselbe Token-Menue wie in der Zeile, jetzt
-            am Rechtsklick-Punkt auf der Karte - gerendert, solange das Token noch existiert. */}
-        {mapMenuToken && <ActionMenu floating={mapMenu} label={t('menu.rowActions', { name: mapMenuToken.name })} entries={menuEntries(mapMenuToken)} />}
-      </>
-    )
+          {/* ui-menu (#92, design.md D5, "Karte"): dasselbe Token-Menue wie beim Spielleiter -
+              "jede Rolle" (session-token, Requirement "Tokenansicht im Raum"). */}
+          {mapMenuToken && <ActionMenu floating={mapMenu} label={t('menu.rowActions', { name: mapMenuToken.name })} entries={menuEntries(mapMenuToken)} />}
+        </>
+      )
+    }
   }
 
   // ui-status (#91, design.md D3/D4): treffen `replaced` und `ended` zusammen, zeigt die
@@ -1626,6 +1744,54 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
       {shareToken && state.status === 'bereit' && (
         <Modal title={t('token.share.title', { name: shareToken.name })} wide onClose={() => setShareTokenId(null)}>
           <TokenShareControls token={shareToken} participants={state.participants} onShare={handleTokenShare} />
+        </Modal>
+      )}
+      {/* player-bar (#98, design.md D2, Requirement "On-Demand-Modals"): die drei Trigger-Modals
+          der Spieler-Leiste - Tokenwerte, Anmerkungen (nur bei aktiver Karte moeglich, der
+          Trigger ist sonst gesperrt) und Teilnehmer (ohne Code, constitution.md §9.2). */}
+      {state.status === 'bereit' && state.role === 'spieler' && tokensOpen && (
+        <Modal title={t('tabs.tokens')} onClose={() => setTokensOpen(false)}>
+          <PlayerTokenList tokens={state.tokens} participants={state.participants} menuEntries={menuEntries} />
+        </Modal>
+      )}
+      {state.status === 'bereit' && state.role === 'spieler' && state.map !== null && annotationsOpen && (
+        <Modal title={t('playerBar.annotations')} onClose={() => setAnnotationsOpen(false)}>
+          <AnnotationPanel
+            annotations={state.annotations}
+            grid={state.map.grid}
+            participants={state.participants}
+            viewer={{ role: state.role, userId: currentUserId }}
+            tool={tool}
+            mode={annotationMode}
+            visibility={annotationVisibility}
+            color={annotationColor}
+            unit={distanceUnit}
+            onToolChange={setTool}
+            onModeChange={setAnnotationMode}
+            onVisibilityChange={setAnnotationVisibility}
+            onColorChange={setAnnotationColor}
+            onUnitChange={handleUnitChange}
+            onDelete={handleAnnotationDelete}
+          />
+        </Modal>
+      )}
+      {state.status === 'bereit' && state.role === 'spieler' && participantsOpen && (
+        <Modal title={t('tabs.participants')} onClose={() => setParticipantsOpen(false)}>
+          <ul className="participant-card-list">
+            {state.participants.map((participant) => (
+              <ParticipantCard
+                key={participant.userId}
+                participant={participant}
+                isOwn={participant.userId === currentUserId}
+                tokens={state.tokens}
+                menuEntries={participantMenuEntries(participant, state.role, currentUserId, t, handleParticipantMenuAction)}
+                onEditAlias={() => {
+                  setParticipantsOpen(false)
+                  openAliasModal()
+                }}
+              />
+            ))}
+          </ul>
         </Modal>
       )}
     </>

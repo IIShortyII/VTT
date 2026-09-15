@@ -225,6 +225,26 @@ function karteMit(name: string): HTMLElement {
   return must(nameEl.closest('article.participant-card') as HTMLElement | null, `die Karte für ${name}`)
 }
 
+// MODIFIED (#98): Der Spieler hat keinen Reiter `Teilnehmer`; seine Teilnehmerkarten liegen im
+// Teilnehmer-Modal der Spieler-Leiste, das der Trigger `Teilnehmer` oeffnet (player-bar,
+// „On-Demand-Modals"). Rendert, betritt als Spieler und gibt den Dialog `Teilnehmer` zurueck.
+async function raumUndTeilnehmerModal(): Promise<HTMLElement> {
+  render(<App />)
+  await screen.findByText(/Freitagsrunde/)
+  await betreten()
+  await screen.findByRole('group', { name: 'Sitzung' })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Teilnehmer' }))
+  })
+  return screen.findByRole('dialog', { name: 'Teilnehmer' })
+}
+
+/** Die Karte eines Mitglieds innerhalb eines Containers (Dialog/Panel), ueber seinen Namen. */
+function karteIn(scope: HTMLElement, name: string): HTMLElement {
+  const nameEl = within(scope).getByText(name)
+  return must(nameEl.closest('article.participant-card') as HTMLElement | null, `die Karte für ${name}`)
+}
+
 beforeEach(() => {
   jest.clearAllMocks()
   for (const key of Object.keys(socketMock.__handlers)) delete socketMock.__handlers[key]
@@ -306,16 +326,19 @@ test('Eigene Karte trägt Alias ändern, fremde nicht', async () => {
 })
 
 test('Alias ändern öffnet das Modal', async () => {
-  // GIVEN: Raumansicht eines Nutzers `sam` ohne Alias, Reiter `Teilnehmer` aktiviert.
+  // GIVEN: Raumansicht eines Nutzers `sam` ohne Alias; das Teilnehmer-Modal der Spieler-Leiste
+  // ist geoeffnet (player-bar, „On-Demand-Modals").
   spielerFetch()
   enterAck('spieler', {
     participants: [{ userId: SELBST_ID, username: 'sam', role: 'spieler', online: true }],
   })
-  await raumUndReiter()
+  const modal = await raumUndTeilnehmerModal()
+  const eigene = karteIn(modal, 'sam')
 
-  // WHEN: `Alias ändern` auf der eigenen Karte ausloesen.
+  // WHEN: `Alias ändern` auf der eigenen Karte ausloesen (schliesst das Teilnehmer-Modal und
+  // oeffnet das Alias-Modal, design.md D5).
   await act(async () => {
-    fireEvent.click(within(karteMit('sam')).getByRole('button', { name: 'Alias ändern' }))
+    fireEvent.click(within(eigene).getByRole('button', { name: 'Alias ändern' }))
   })
 
   // THEN: Dialog `Alias ändern` mit leerem Feld `Alias` und Schaltflaeche `Alias setzen`.
@@ -356,13 +379,13 @@ test('Spieler sieht an fremder Karte kein Menü', async () => {
       { userId: SELBST_ID, username: 'sam', role: 'spieler', online: true },
     ],
   })
-  await raumUndReiter()
+  const modal = await raumUndTeilnehmerModal()
 
   // THEN: die fremde Karte `meister` traegt keinen Trigger `Aktionen für meister`, und keine
   // fremde Karte bietet `Entfernen` oder `Tokens zuweisen`.
-  expect(within(karteMit('meister')).queryByRole('button', { name: 'Aktionen für meister' })).toBeNull()
-  expect(within(teilnehmerPanel()).queryByRole('button', { name: 'Entfernen' })).toBeNull()
-  expect(within(teilnehmerPanel()).queryByRole('button', { name: 'Tokens zuweisen' })).toBeNull()
+  expect(within(karteIn(modal, 'meister')).queryByRole('button', { name: 'Aktionen für meister' })).toBeNull()
+  expect(within(modal).queryByRole('button', { name: 'Entfernen' })).toBeNull()
+  expect(within(modal).queryByRole('button', { name: 'Tokens zuweisen' })).toBeNull()
 })
 
 test('Abbrechen im Entfernen-Dialog sendet nichts', async () => {
@@ -439,9 +462,10 @@ test('Spieler bekommt kein Einladen', async () => {
   enterAck('spieler', {
     participants: [{ userId: SELBST_ID, username: 'sam', role: 'spieler', online: true }],
   })
-  await raumUndReiter()
+  const modal = await raumUndTeilnehmerModal()
 
-  // THEN: keine Schaltflaeche `Einladen` und kein Dialog `Einladen`.
+  // THEN: keine Schaltflaeche `Einladen` und kein Dialog `Einladen` (der Spieler hat keinen Code, §9.2).
+  expect(within(modal).queryByRole('button', { name: 'Einladen' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Einladen' })).toBeNull()
   expect(screen.queryByRole('dialog', { name: 'Einladen' })).toBeNull()
 })

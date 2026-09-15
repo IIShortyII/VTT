@@ -109,8 +109,8 @@ Bestand und den Ereignissen des Servers (`constitution.md` §9.1).
 Die Karte ist der einzige dauerhaft sichtbare Bereich der Spieleransicht (Requirement
 „Spieler-Raumlayout"); Tokenwerte, Anmerkungen und Teilnehmer erreicht der Spieler über die
 drei Trigger, die je ein Modal (`ui-dialog`) öffnen. Der Trigger `Tokens` SHALL ein Modal
-`Tokenwerte` öffnen, das die Tokenwerte-Liste des Spielers (`session-token`, „Tokenansicht
-im Raum") enthält. Der Trigger `Anmerkungen` SHALL ein Modal `Anmerkungen` öffnen, das das
+`Tokens` öffnen, das die Tokenwerte-Liste des Spielers (`session-token`, „Tokenansicht
+im Raum") mit ihrer Überschrift `Tokenwerte` der Ebene 2 enthält. Der Trigger `Anmerkungen` SHALL ein Modal `Anmerkungen` öffnen, das das
 Panel `Messen & Zeichnen` (`session-annotation`) enthält; ohne aktive Karte SHALL der Trigger
 `Anmerkungen` gesperrt (`disabled`) sein, weil es dann nichts zu zeichnen gibt. Der Trigger
 `Teilnehmer` SHALL ein Modal `Teilnehmer` öffnen, das die Teilnehmerkarten (`game-session`,
@@ -125,7 +125,7 @@ geschlossenes Modal gibt den Fokus an seinen Trigger zurück (`ui-dialog`).
 - **GIVEN** die Raumansicht eines Spielers mit `userId` `U` und einem Token `Goblin`
   (`ownerId` `U`, `hp` `23`, `hpMax` `40`) ist gerendert
 - **WHEN** der Trigger `Tokens` ausgelöst wird
-- **THEN** existiert ein Element der Rolle `dialog` mit dem Namen `Tokenwerte`, das die
+- **THEN** existiert ein Element der Rolle `dialog` mit dem Namen `Tokens`, das die
   Überschrift `Tokenwerte` der Ebene 2 und die Karte `Goblin` enthält; vor dem Auslösen
   existierte kein Element der Rolle `dialog`
 

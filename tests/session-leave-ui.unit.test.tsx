@@ -181,12 +181,19 @@ test('Spieler tritt über die eigene Zeile aus', async () => {
   render(<App />)
   await screen.findByText(/Abendrunde/)
   await betreten()
-  await aktiviereReiter('Teilnehmer')
-  await waitFor(() => expect(karteMit(/\bsam\b/)).toBeTruthy())
+  // MODIFIED (#98): die Teilnehmerkarten des Spielers liegen im Teilnehmer-Modal, das der
+  // Trigger `Teilnehmer` der Spieler-Leiste oeffnet (player-bar, „On-Demand-Modals").
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Teilnehmer' }))
+  })
+  const modal = await screen.findByRole('dialog', { name: 'Teilnehmer' })
+  const karteImModal = (name: RegExp): HTMLElement =>
+    must(within(modal).getByText(name).closest('article.participant-card') as HTMLElement | null, `eine Teilnehmerkarte fuer ${String(name)}`)
+  await waitFor(() => expect(karteImModal(/\bsam\b/)).toBeTruthy())
 
   // THEN: das ⋮-Menue der eigenen Karte von `sam` bietet `Austreten`; keine Karte bietet fuer
   // ihn `Entfernen`.
-  const eigeneKarte = karteMit(/\bsam\b/)
+  const eigeneKarte = karteImModal(/\bsam\b/)
   await act(async () => {
     fireEvent.click(within(eigeneKarte).getByRole('button', { name: 'Aktionen für sam' }))
   })

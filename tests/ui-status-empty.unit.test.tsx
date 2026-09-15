@@ -219,8 +219,12 @@ test('Leere Tokenwerte zeigen den Leerzustand', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
-  // MODIFIED (#94): Inhalt liegt im Reiter `Tokens` (session-tabs, Testaufbau-Konvention).
-  await aktiviereReiter('Tokens')
+  // MODIFIED (#98): die Liste `Tokenwerte` liegt im Tokens-Modal der Spieler-Leiste
+  // (player-bar, „On-Demand-Modals"), das der Trigger `Tokens` oeffnet — nicht mehr im Reiter.
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /^Tokens/ }))
+  })
+  await screen.findByRole('dialog', { name: 'Tokens' })
 
   const scope = must((await screen.findByRole('heading', { name: 'Tokenwerte' })).parentElement, 'die Liste Tokenwerte')
   const titel = await within(scope).findByText('Noch keine Tokens')
@@ -262,6 +266,13 @@ test('Ohne Anmerkungen zeigt das Panel den Leerzustand', async () => {
   render(<App />)
   await screen.findByText(/Freitagsrunde/)
   await betreten()
+
+  // MODIFIED (#98): das Anmerkungs-Panel liegt im Modal der Spieler-Leiste, das der Trigger
+  // `Anmerkungen` oeffnet (player-bar, „On-Demand-Modals").
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Anmerkungen' }))
+  })
+  await screen.findByRole('dialog', { name: 'Anmerkungen' })
 
   const scope = await screen.findByRole('group', { name: 'Messen & Zeichnen' })
   const titel = await within(scope).findByText('Noch keine Anmerkungen')

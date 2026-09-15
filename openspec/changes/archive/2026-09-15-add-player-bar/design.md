@@ -162,9 +162,10 @@ gehaltenen letzten Bestand fahren. Der Handler bleibt frei von Testinhalt.
 
 **Drei Modals** (im `dialogs`-Fragment, jeweils `state.role === 'spieler' && state.status ===
 'bereit' && <flag>`):
-- Tokenwerte: `<Modal title={t('playerBar.tokensTitle')} onClose={() => setTokensOpen(false)}>
+- Tokenwerte: `<Modal title={t('tabs.tokens')} onClose={() => setTokensOpen(false)}>
   <PlayerTokenList tokens={state.tokens} participants={state.participants}
-  menuEntries={menuEntries} /></Modal>`.
+  menuEntries={menuEntries} /></Modal>` — der Modal-Titel ist `Tokens` (nicht `Tokenwerte`),
+  damit er nicht mit der `<h2>Tokenwerte</h2>` der Liste kollidiert.
 - Anmerkungen: nur zusätzlich bei `state.map !== null` (der Trigger ist sonst gesperrt):
   `<Modal title={t('playerBar.annotations')} onClose={() => setAnnotationsOpen(false)}>
   <AnnotationPanel …dieselben Props wie im heutigen karte-Reiter… /></Modal>`.
@@ -191,7 +192,6 @@ Neue Schlüssel (verbindlich, buchstabengleich), Gruppe `playerBar.*` als neue G
 |---|---|---|
 | `playerBar.label` | Sitzung | Session |
 | `playerBar.annotations` | Anmerkungen | Annotations |
-| `playerBar.tokensTitle` | Tokenwerte | Token values |
 | `playerBar.connected` | Verbindung aktiv | Connected |
 | `playerBar.disconnected` | Verbindung getrennt | Disconnected |
 | `playerBar.newValues` | neue Werte | new values |
@@ -262,7 +262,7 @@ Enter-Acknowledgement nennt `role: "spieler"` und kein `code`). Adressen (Testin
 | Verbindung | `getByRole('img', { name: 'Verbindung aktiv' })` bzw. `Verbindung getrennt`; Attribut `data-connected` (`"true"`/`"false"`) |
 | `session:tokens` | den beim `on('tokens', …)` der Fassade registrierten Handler mit `{ tokens }` aufrufen (wie in den bestehenden Token-Szenarien) |
 | Trennung/Wiederverbindung | den `disconnect`- bzw. `reconnect`-Rückruf der Fassade auslösen, wie in den bestehenden Verbindungs-Szenarien |
-| Tokenwerte-Modal | `getByRole('dialog', { name: 'Tokenwerte' })`, darin Überschrift `Tokenwerte` der Ebene 2 und die Token-Karten (`within`) |
+| Tokenwerte-Modal | `getByRole('dialog', { name: 'Tokens' })`, darin Überschrift `Tokenwerte` der Ebene 2 und die Token-Karten (`within`) |
 | Anmerkungs-Modal | `getByRole('dialog', { name: 'Anmerkungen' })`, darin die Gruppe `Messen & Zeichnen` |
 | Teilnehmer-Modal | `getByRole('dialog', { name: 'Teilnehmer' })`, darin die Teilnehmerkarten (`within`); „kein Code" = kein `<code>` und keine Schaltfläche `Einladen`/`Sitzungscode kopieren` im Dialog; `Alias ändern` = Schaltfläche auf der eigenen Karte |
 | Alias-Modal | nach `Alias ändern`: `queryByRole('dialog', { name: 'Teilnehmer' })` ist `null`, `getByRole('dialog', { name: 'Alias ändern' })` existiert |

@@ -50,13 +50,12 @@ entscheidet der Server pro Aktion (§9.3).
 
 ### Requirement: Aufbau der Session-Bar
 
-Die Raumansicht SHALL die Session-Bar als erstes Element rendern, sobald das
-Acknowledgement von `session:enter` vorliegt — vor der Reiterliste `Bereiche`
-(`session-tabs`). Für den Spielleiter SHALL sie Identität mit
-`Umbenennen`, Sitzungscode-Gruppe, Zustandsgruppe mit Steuerung und Verwaltungsmenü
-enthalten; für einen Spieler Identität ohne `Umbenennen`, Zustandsgruppe ohne Steuerung und
-Verwaltungsmenü — die Sitzungscode-Gruppe MUST NOT für ihn gerendert werden (der Server
-sendet ihm keinen Code, `constitution.md` §9.2). Der Name in der Bar SHALL die einzige
+Die Raumansicht des Spielleiters SHALL die Session-Bar als erstes Element rendern, sobald
+das Acknowledgement von `session:enter` vorliegt — vor der Reiterliste `Bereiche`
+(`session-tabs`); sie SHALL Identität mit `Umbenennen`, Sitzungscode-Gruppe, Zustandsgruppe
+mit Steuerung und Verwaltungsmenü enthalten. Einem Spieler MUST NOT die Session-Bar gezeigt
+werden; seine Raumansicht trägt stattdessen die Spieler-Leiste (`player-bar`, „Aufbau der
+Spieler-Leiste"). Der Name in der Bar SHALL die einzige
 Überschrift der Ebene 1 der Raumansicht sein. Alle Texte der Bar SHALL Texte der aktiven
 Sprache sein (`ui-text`). Die Bar MUST NOT breiter als ihr Container werden; ob der Name
 per Ellipsis schrumpft, wird im App-Test abgenommen (`constitution.md` §3.4).
@@ -80,10 +79,11 @@ per Ellipsis schrumpft, wird im App-Test abgenommen (`constitution.md` §3.4).
 - **GIVEN** die Anwendung hat den Raum betreten, und das Acknowledgement nennt
   `role: "spieler"`, `status: "gestartet"`, `name: "Freitagsrunde"` und kein Feld `code`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** enthält die Gruppe `Sitzung` die Überschrift der Ebene 1 `Freitagsrunde`, die
-  Zustandspille `Läuft` und die Menü-Schaltfläche `Sitzungsverwaltung`, aber keine
-  Schaltfläche `Umbenennen`, `Sitzungscode anzeigen`, `Sitzungscode kopieren`, `Öffnen`,
-  `Starten`, `Pausieren` oder `Beenden`, keine Gruppe `Steuerung` und kein `<code>`-Element
+- **THEN** rendert die Raumansicht keine Session-Bar-Bedienelemente für den Spieler: weder
+  die Menü-Schaltfläche `Sitzungsverwaltung` noch eine Schaltfläche `Umbenennen`,
+  `Sitzungscode anzeigen`, `Sitzungscode kopieren`, `Öffnen`, `Starten`, `Pausieren` oder
+  `Beenden`, keine Gruppe `Steuerung` und kein `<code>`-Element; der Kopf des Spielers ist
+  die Spieler-Leiste (`player-bar`, „Aufbau der Spieler-Leiste")
 
 ### Requirement: Sitzungscode
 
@@ -172,8 +172,9 @@ nie der ausgelösten Schaltfläche. Antwortet der Server auf einen Übergang mit
 
 Das Verwaltungsmenü SHALL über den Trigger `Sitzungsverwaltung` ein Menü (`ui-menu`) mit
 den Einträgen `Umbenennen…`, `Kartenbibliothek` und `Verlassen` öffnen. `Umbenennen…`
-SHALL für einen Spieler gesperrt (`aria-disabled`) und für den Spielleiter aktiv sein und
-das Umbenennen-Modal öffnen. `Kartenbibliothek` SHALL die Kartenbibliothek (`map-library`)
+SHALL für den Spielleiter aktiv sein und das Umbenennen-Modal öffnen; einem Spieler wird das
+Verwaltungsmenü nicht gezeigt — er hat keine Session-Bar, sondern die Spieler-Leiste
+(`player-bar`). `Kartenbibliothek` SHALL die Kartenbibliothek (`map-library`)
 öffnen; `Zurück` in der Top-Bar führt von dort zur Sitzungsliste (`ui-shell`). `Verlassen`
 SHALL zur Sitzungsliste führen wie `Zurück`; die Mitgliedschaft bleibt bestehen.
 
@@ -188,10 +189,10 @@ SHALL zur Sitzungsliste führen wie `Zurück`; die Mitgliedschaft bleibt bestehe
 #### Scenario: Menü des Spielers sperrt Umbenennen
 
 - **GIVEN** die Raumansicht eines Spielers ist gerendert
-- **WHEN** er die Menü-Schaltfläche `Sitzungsverwaltung` auslöst
-- **THEN** trägt der Menüeintrag `Umbenennen…` `aria-disabled="true"`, die Einträge
-  `Kartenbibliothek` und `Verlassen` tragen kein `aria-disabled`, und nach dem Auslösen von
-  `Umbenennen…` existiert kein Element der Rolle `dialog`
+- **WHEN** die Kopfleiste des Spielers gelesen wird
+- **THEN** existiert keine Menü-Schaltfläche `Sitzungsverwaltung` und kein Menüeintrag
+  `Umbenennen…`, `Kartenbibliothek` oder `Verlassen`; der Spieler bedient die Spieler-Leiste
+  (`player-bar`), die kein Verwaltungsmenü trägt
 
 #### Scenario: Verlassen führt zur Sitzungsliste
 

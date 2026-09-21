@@ -397,8 +397,10 @@ zusammen mit den Anzeigeoptionen Modus, Farbe und Einheit (beim Erzeugen und bei
 und unter den Tokens, Messungen mit ihrem Etikett über den Tokens; keines reagiert auf
 Zeiger; das Aussehen nimmt der menschliche App-Test ab.
 
-Bei aktiver Karte SHALL die Raumansicht jeder Rolle ein Panel `Messen & Zeichnen`
-anbieten: eine Werkzeugleiste `Anmerkungswerkzeug` (`ui-toolbar`, „Werkzeugleiste") mit den
+Bei aktiver Karte SHALL die Raumansicht ein Panel `Messen & Zeichnen` anbieten — dem
+Spielleiter im Reiter `Karte` (`session-tabs`, „Bereiche der Raumansicht"), einem Spieler im
+Anmerkungen-Modal der Spieler-Leiste (`player-bar`, „On-Demand-Modals"), das der Trigger
+`Anmerkungen` öffnet: eine Werkzeugleiste `Anmerkungswerkzeug` (`ui-toolbar`, „Werkzeugleiste") mit den
 Icon-Werkzeugbuttons `Bewegen` (Standard, Tastenkürzel `V`, dasselbe Werkzeug wie `Schwenken`
 der Fog-Verwaltung), `Strecke` (Tastenkürzel `M`), `Kreis`, `Winkel`, `Zeichnen`
 (Tastenkürzel `D`), deren aktives Werkzeug sie der Canvas-Fassade per `setTool` übergibt — es
@@ -415,7 +417,12 @@ Eintrag Art, Etikett (außer bei Zeichnung), Sichtbarkeit und Urheber (Alias ode
 aus der Teilnehmerliste, sonst `unbekannt`), und — genau dann, wenn der Betrachter die
 Anmerkung nach „Begriffe" entfernen darf — ein ⋮-Menü `Aktionen für <Eintrag>` (`ui-menu`) mit
 dem Eintrag `Entfernen`; eine Schaltfläche `Meine entfernen`; und für Rolle `spielleiter`
-zusätzlich `Alle geteilten entfernen`. Ohne aktive Karte MUST NOT das Panel erscheinen.
+zusätzlich `Alle geteilten entfernen`. Ohne aktive Karte MUST NOT das Panel erscheinen; für einen Spieler ist der Trigger
+`Anmerkungen` dann gesperrt (`player-bar`). Szenarien dieses Requirements, die das Panel
+`Messen & Zeichnen` eines Spielers adressieren, setzen voraus, dass der Testaufbau zuvor das
+Anmerkungen-Modal über den Trigger `Anmerkungen` der Spieler-Leiste geöffnet hat; Szenarien,
+die es für den Spielleiter adressieren, dass der Reiter `Karte` aktiv ist (Standard beim
+Betreten).
 
 Die vom Client komponierten Wörter der Einträge (Art-Präfix, Sichtbarkeit, Urheber-Fallback
 `unbekannt`) und die Beschriftungen der Bedienelemente bezieht die Raumansicht über das

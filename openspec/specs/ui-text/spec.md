@@ -143,7 +143,8 @@ Schaltfläche der aktiven Sprache SHALL `disabled` sein und `aria-current="true"
 Schaltfläche der anderen Sprache SHALL auslösbar sein und MUST NOT `aria-current` tragen.
 Das Auslösen SHALL die aktive Sprache setzen („Sprachwahl"). Die sichtbaren Texte der
 angemeldeten Startansicht und der Raumansicht (Zustandspille, Übergangs-Verben, Konto,
-Kontomenü, Sitzungscode-Popover, `Zurück`) SHALL der aktiven Sprache folgen; Nutzername,
+Kontomenü, Sitzungscode-Popover, `Zurück`, die Trigger der Spieler-Leiste) SHALL der
+aktiven Sprache folgen; Nutzername,
 Sitzungsname, Sitzungscode und die Marke `VTT` sind Daten bzw. Eigennamen und MUST NOT
 übersetzt werden. Die Abmeldung liegt im Kontomenü (`ui-shell`, „Top-Bar") und der
 Sitzungscode hinter der Maske (`ui-menu`, „Popover"); beide sind erst nach dem Öffnen des
@@ -198,6 +199,21 @@ jeweiligen Menüs bzw. Popovers sichtbar.
   `Rename`, `Open`, `Start`, `Pause`, `End` und der Menü-Schaltfläche `Session settings`;
   es gibt keine Schaltfläche `Zurück`, `Starten`, `Beenden`, `Sitzungscode anzeigen`,
   `Sitzungscode kopieren` oder `Umbenennen` und keinen Text `Geöffnet`
+
+#### Scenario: Spieler-Raumansicht unter Englisch
+
+- **GIVEN** der Browserspeicher enthält `vtt.locale` mit dem Wert `en`; der Server meldet
+  einen angemeldeten Nutzer, `GET /api/sessions` liefert `Freitagsrunde`
+  (`status: "gestartet"`, `role: "spieler"`), und das Acknowledgement von `session:enter`
+  nennt `role: "spieler"`, `status: "gestartet"`, kein Feld `code` und einen Teilnehmer
+  `{ userId: "U", username: "sam" }`
+- **WHEN** der Nutzer die Schaltfläche `Enter` der Karte auslöst und die Raumansicht
+  gerendert ist (Überschrift der Ebene 1 `Freitagsrunde`)
+- **THEN** zeigt das `<header>` die Schaltfläche `Back` und die Gruppe `Language`, die
+  Raumansicht zeigt die Gruppe `Session` mit der Zustandspille `Running` (Klasse
+  `status-pill`), der Rollen-Pille `Player` und den Triggern `Tokens`, `Annotations` und
+  `Participants`; es gibt keine Reiterliste `Bereiche` und keinen Text `Läuft`, `Spieler`,
+  `Anmerkungen` oder `Teilnehmer`
 
 ### Requirement: Stylesheet des Sprachschalters
 

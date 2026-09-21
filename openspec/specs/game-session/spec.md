@@ -441,12 +441,15 @@ Beitreten (Code) als Aktionen anbieten, deren Formulare erst auf Anforderung ers
 über die Top-Bar erfolgen, aus dem Raum zusätzlich über den Eintrag `Verlassen` des
 Verwaltungsmenüs der Session-Bar (`session-bar`, „Verwaltungsmenü"); Raum und Bibliothek
 MUST NOT eine eigene Schaltfläche `Zurück` zeigen. Nach Auswahl einer Spielsitzung SHALL die Raumansicht als erstes
-Element die Session-Bar (`session-bar`) zeigen — mit dem Namen der Spielsitzung als
+Element eine Kopfleiste zeigen — für den Spielleiter die Session-Bar (`session-bar`), für
+einen Spieler die Spieler-Leiste (`player-bar`) — mit dem Namen der Spielsitzung als
 Überschrift der Ebene 1 und dem Zustand als Zustandspille nach der Zuordnungstabelle von
-`ui-start` (Text in der aktiven Sprache, Icon, Varianten-Klasse; `ui-text`) — und darunter
-die Reiterliste `Bereiche` (`session-tabs`, „Bereiche der Raumansicht"), in deren Reiter
-`Teilnehmer` die Teilnehmerkarten mit Anwesenheitskennzeichen liegen (Requirement
-„Teilnehmerkarten"); sie MUST NOT den Rohwert des Zustands
+`ui-start` (Text in der aktiven Sprache, Icon, Varianten-Klasse; `ui-text`). Dem Spielleiter
+SHALL darunter die Reiterliste `Bereiche` (`session-tabs`, „Bereiche der Raumansicht")
+folgen, in deren Reiter `Teilnehmer` die Teilnehmerkarten mit Anwesenheitskennzeichen liegen
+(Requirement „Teilnehmerkarten"); einem Spieler SHALL statt der Reiterliste die dauerhaft
+sichtbare Kartenansicht folgen, und seine Teilnehmerkarten liegen im Teilnehmer-Modal der
+Spieler-Leiste (`player-bar`, „On-Demand-Modals"); sie MUST NOT den Rohwert des Zustands
 (`geoeffnet`, `gestartet`, `pausiert`, `geschlossen`) als Text zeigen. Der angezeigte Name
 SHALL dem Acknowledgement von `session:enter` und danach jedem `session:renamed` folgen
 (Requirement „Spielsitzung umbenennen"). Jeder Teilnehmer
@@ -462,9 +465,11 @@ zeigen und erst nach Bestätigung `DELETE /api/sessions/:id/members/:userId` mit
 der betroffenen Karte senden. Die angezeigte Benennung SHALL der zuletzt vom Server
 gesendeten Teilnehmerliste folgen, nicht der Eingabe (`constitution.md` §9.1); eine
 Ablehnung des Servers SHALL als Meldung sichtbar sein. Szenarien dieses Requirements, die
-Elemente eines Reiters adressieren, setzen voraus, dass der Testaufbau diesen Reiter vorher
-per Klick aktiviert hat (`session-tabs`, „Testaufbau-Konvention"): die Teilnehmerkarten
-liegen im Reiter `Teilnehmer`, das Feld für den Alias im Modal `Alias ändern`. Der Reiter
+Elemente des Spielleiter-Reiters `Teilnehmer` adressieren, setzen voraus, dass der Testaufbau
+diesen Reiter vorher per Klick aktiviert hat (`session-tabs`, „Testaufbau-Konvention");
+Szenarien, die die Teilnehmerkarten eines Spielers adressieren, setzen voraus, dass der
+Testaufbau zuvor den Trigger `Teilnehmer` der Spieler-Leiste ausgelöst hat (`player-bar`,
+„On-Demand-Modals"). Das Feld für den Alias liegt im Modal `Alias ändern`. Der Reiter
 `Karte` ist beim Betreten aktiv.
 Dem Spielleiter SHALL die Session-Bar zusätzlich
 den Sitzungscode und die vier Übergänge des Vertrags als Icon-only-Schaltflächen anbieten,
@@ -542,12 +547,11 @@ Sitzungsliste zurückkehren und den Hinweis `Du wurdest aus der Spielsitzung ent
 - **GIVEN** die Anwendung hat den Raum betreten, und das Acknowledgement nennt
   `role: "spieler"`, `status: "gestartet"` und kein Feld `code`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** zeigt sie in der Gruppe `Sitzung` den Namen als Überschrift der Ebene 1 und die
-  Zustandspille `Läuft` mit der Klasse `status-pill--active`, darunter die Reiterliste
-  `Bereiche` mit den Reitern `Karte`, `Tokens`, `Teilnehmer` (kein Reiter `Karten & Nebel`),
-  aber weder die Maske `••••••` noch eine Schaltfläche `Sitzungscode anzeigen`,
-  `Sitzungscode kopieren`, `Umbenennen`, `Öffnen`, `Starten`, `Pausieren` oder `Beenden`;
-  kein Textknoten lautet `gestartet`
+- **THEN** zeigt sie in der Gruppe `Sitzung` den Namen als Überschrift der Ebene 1, die
+  Zustandspille `Läuft` mit der Klasse `status-pill--active` und die Rollen-Pille `Spieler`,
+  aber keine Reiterliste `Bereiche`, weder die Maske `••••••` noch eine Schaltfläche
+  `Sitzungscode anzeigen`, `Sitzungscode kopieren`, `Umbenennen`, `Öffnen`, `Starten`,
+  `Pausieren` oder `Beenden`; kein Textknoten lautet `gestartet`
 
 #### Scenario: Sitzungscode wird kopiert
 
@@ -582,8 +586,9 @@ Sitzungsliste zurückkehren und den Hinweis `Du wurdest aus der Spielsitzung ent
   `session:enter` mit `{ ok: true, ... }`, `status: "gestartet"` und `meister` als
   `online: false` bestätigt wird
 - **THEN** hat die Anwendung `session:enter` genau zweimal mit der `sessionId` des Raums
-  gesendet, genau eine Fassade erzeugt und genau einmal verbunden, und sie zeigt die Zustandspille
-  `Läuft` und `meister` als abwesend
+  gesendet, genau eine Fassade erzeugt und genau einmal verbunden, und sie zeigt die
+  Zustandspille `Läuft`; im über den Trigger `Teilnehmer` der Spieler-Leiste geöffneten
+  Teilnehmer-Modal erscheint `meister` als abwesend
 
 #### Scenario: Ersetzte Verbindung verbindet sich nicht neu
 
@@ -696,8 +701,9 @@ Sitzungsliste zurückkehren und den Hinweis `Du wurdest aus der Spielsitzung ent
 - **GIVEN** die Raumansicht eines Spielers mit Nutzernamen `sam` und `userId` `U` ist
   geöffnet, und die Teilnehmerliste nennt `sam` (die eigene Karte) und einen Spielleiter
   `meister`
-- **WHEN** der Reiter `Teilnehmer` aktiviert wird, `sam` im ⋮-Menü seiner eigenen Karte
-  `Austreten` auslöst und den Bestätigungsdialog `Spielsitzung verlassen?` bestätigt
+- **WHEN** das Teilnehmer-Modal über den Trigger `Teilnehmer` der Spieler-Leiste geöffnet
+  wird, `sam` im ⋮-Menü seiner eigenen Karte `Austreten` auslöst und den Bestätigungsdialog
+  `Spielsitzung verlassen?` bestätigt
 - **THEN** bietet das ⋮-Menü der eigenen Karte von `sam` den Eintrag `Austreten`, keine Karte
   bietet für ihn den Eintrag `Entfernen`, und das Bestätigen sendet `DELETE
   /api/sessions/:id/members/U`
@@ -1050,9 +1056,11 @@ Mitgliedschaft SHALL wie bei jedem Nicht-Mitglied abgelehnt werden.
 
 ### Requirement: Teilnehmerkarten
 
-Der Reiter `Teilnehmer` SHALL je Mitglied aus der zuletzt vom Server gemeldeten
+Der Reiter `Teilnehmer` (für den Spielleiter) bzw. das Teilnehmer-Modal der Spieler-Leiste
+(`player-bar`, „On-Demand-Modals") SHALL je Mitglied aus der zuletzt vom Server gemeldeten
 Teilnehmerliste (`state.participants`) eine Karte `article.participant-card` rendern, in der
-Reihenfolge der Serverliste. Jede Karte SHALL enthalten: einen dekorativen Avatar-Kreis
+Reihenfolge der Serverliste. Szenarien, die Spieler-Teilnehmerkarten adressieren, setzen
+voraus, dass der Testaufbau zuvor dieses Modal über den Trigger `Teilnehmer` geöffnet hat. Jede Karte SHALL enthalten: einen dekorativen Avatar-Kreis
 (`.participant-card__avatar`, ohne zugänglichen Text), den Anzeigenamen (Alias, sonst
 Nutzername), eine Rollen-Pill mit dem Text `Spielleiter` (`session.role.gm`) bzw. `Spieler`
 (`session.role.player`) als eigenes Element sowie ein Präsenzkennzeichen aus einem dekorativen
@@ -1159,7 +1167,8 @@ zeigen.
 #### Scenario: Spieler sieht an fremder Karte kein Menü
 
 - **GIVEN** die Raumansicht des Spielers `sam` ist geöffnet; die Teilnehmerliste nennt einen
-  Spielleiter `meister` und `sam`, und der Reiter `Teilnehmer` ist aktiviert
+  Spielleiter `meister` und `sam`, und das Teilnehmer-Modal ist über den Trigger `Teilnehmer`
+  der Spieler-Leiste geöffnet
 - **WHEN** die Karten gerendert sind
 - **THEN** trägt die Karte `meister` keinen Trigger `Aktionen für meister`, und keine fremde
   Karte bietet einen Eintrag `Entfernen` oder `Tokens zuweisen`
@@ -1185,9 +1194,9 @@ zeigen.
 
 #### Scenario: Spieler bekommt kein Einladen
 
-- **GIVEN** die Raumansicht eines Spielers ist geöffnet, und der Reiter `Teilnehmer` ist
-  aktiviert
-- **WHEN** das Reiterpanel `Teilnehmer` gerendert ist
+- **GIVEN** die Raumansicht eines Spielers ist geöffnet, und das Teilnehmer-Modal ist über
+  den Trigger `Teilnehmer` der Spieler-Leiste geöffnet
+- **WHEN** das Teilnehmer-Modal gerendert ist
 - **THEN** existiert keine Schaltfläche `Einladen` und kein Dialog `Einladen`
 
 #### Scenario: Zuweisen-Modal spiegelt die aktuelle Zuweisung

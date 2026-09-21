@@ -40,18 +40,17 @@ welche Panels eine Rolle bekommt, entscheidet weiterhin die bestehende Rollenpr�
 
 ### Requirement: Bereiche der Raumansicht
 
-Die Raumansicht SHALL nach der Session-Bar und den Raum-Meldungen die Reiterliste
-`Bereiche` rendern, sobald das Acknowledgement von `session:enter` vorliegt: für Rolle
-`spielleiter` die Reiter `Karte`, `Tokens`, `Karten & Nebel`, `Teilnehmer` in dieser
-Reihenfolge; für Rolle `spieler` `Karte`, `Tokens`, `Teilnehmer` — ein Spieler MUST NOT
-einen Reiter `Karten & Nebel` bekommen. Beim Betreten SHALL `Karte` aktiv sein. Zu jedem
+Die Raumansicht des Spielleiters SHALL nach der Session-Bar und den Raum-Meldungen die
+Reiterliste `Bereiche` rendern, sobald das Acknowledgement von `session:enter` vorliegt:
+die Reiter `Karte`, `Tokens`, `Karten & Nebel`, `Teilnehmer` in dieser Reihenfolge. Für
+einen Spieler MUST NOT eine Reiterliste `Bereiche` gerendert werden; seine Raumansicht trägt
+statt der Reiter die Spieler-Leiste (`player-bar`, „Spieler-Raumlayout"). Beim Betreten SHALL `Karte` aktiv sein. Zu jedem
 Reiter SHALL genau ein Reiterpanel gerendert sein, inaktive mit `hidden`. Die Reiter SHALL
 Texte der aktiven Sprache sein (`ui-text`). Inhalt der Reiterpanels: `Karte` — der
 Kartenhinweis, die Bühne mit der Kartenansicht (`session-map`) und dem Karten-Overlay
 (`ui-status`), das Panel `Messen & Zeichnen` (`session-annotation`) und für den Spielleiter
 das Panel `Fog of War` (`session-fog`), jeweils unter den dort geltenden Bedingungen;
-`Tokens` — die Token-Verwaltung des Spielleiters bzw. die Liste `Tokenwerte` eines
-Spielers (`session-token`); `Karten & Nebel` — die Kartenverwaltung (`session-map`);
+`Tokens` — die Token-Verwaltung des Spielleiters (`session-token`); `Karten & Nebel` — die Kartenverwaltung (`session-map`);
 `Teilnehmer` — ein Panel mit der Überschrift `Teilnehmer` der Ebene 2 und den
 Teilnehmerkarten (`game-session`). Die Raum-Meldungen zu Token, Fog und Anmerkungen
 SHALL vor der Reiterliste liegen, damit sie in jedem Reiter sichtbar sind. Ein Klick auf
@@ -77,8 +76,9 @@ oder eine Serveranfrage auslösen.
 - **GIVEN** die Anwendung hat den Raum betreten, und das Acknowledgement nennt
   `role: "spieler"` und `status: "gestartet"`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** enthält die Reiterliste `Bereiche` genau die Reiter `Karte`, `Tokens`,
-  `Teilnehmer` in dieser Reihenfolge und keinen Reiter `Karten & Nebel`; `Karte` ist aktiv
+- **THEN** existiert keine Reiterliste `Bereiche`; die Raumansicht trägt stattdessen die
+  Spieler-Leiste (`player-bar`, „Aufbau der Spieler-Leiste") — die Gruppe `Sitzung` mit den
+  Triggern `Tokens`, `Anmerkungen` und `Teilnehmer`
 
 #### Scenario: Reiter Karte zeigt nur seine Panels
 
@@ -125,9 +125,10 @@ oder eine Serveranfrage auslösen.
 
 - **GIVEN** die Raumansicht eines Spielers mit einem Token `Goblin`, dessen `ownerId`
   seine `userId` ist
-- **WHEN** der Reiter `Tokens` geklickt wird
-- **THEN** enthält das sichtbare Reiterpanel `Tokens` die Überschrift `Tokenwerte` der
-  Ebene 2 und den Eintrag `Goblin`, aber keine Überschrift `Tokens`
+- **WHEN** die Raumansicht gerendert wird
+- **THEN** existiert für den Spieler kein Reiter `Tokens` und kein Reiterpanel `Tokens`; die
+  Liste `Tokenwerte` erreicht er über den Trigger `Tokens` der Spieler-Leiste
+  (`player-bar`, „On-Demand-Modals"), nicht über einen Reiter
 
 ### Requirement: Tastaturbedienung der Reiter
 
@@ -170,7 +171,7 @@ Fokus oder Auswahl ändern.
 
 #### Scenario: Leertaste wählt den fokussierten Reiter aus
 
-- **GIVEN** die Raumansicht eines Spielers, der Reiter `Karte` hat den Fokus
+- **GIVEN** die Raumansicht des Spielleiters, der Reiter `Karte` hat den Fokus
 - **WHEN** `End` und danach die Leertaste gedrückt wird
 - **THEN** trägt `Teilnehmer` `aria-selected="true"`, das Reiterpanel `Teilnehmer` ist
   sichtbar, und das Reiterpanel `Karte` trägt `hidden`

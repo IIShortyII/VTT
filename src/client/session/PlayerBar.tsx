@@ -11,10 +11,14 @@ import { SESSION_STATUS_PRESENTATION } from './session-status.js'
 // Uebergangs-Schaltflaechen - der Server sendet einem Spieler keinen Code
 // (constitution.md §9.2). Diese Datei importiert nur `react`, `shared/session.ts`,
 // `session-status.ts`, `locale.ts` und `ui/Icon.tsx` (design.md D6).
+//
+// fix-player-bar-avatar (#137, design.md D1, Requirement "Aufbau der Spieler-Leiste"): die
+// Identitaet traegt keinen Avatar mehr - kein Element der Rolle `img` mit dem Anzeigenamen
+// und keine Initiale; der Anzeigename bleibt ueber die Teilnehmerkarten (Modal `Teilnehmer`)
+// erreichbar. Die Verbindungsanzeige bleibt das einzige Element der Rolle `img` in der Leiste.
 
 export interface PlayerBarProps {
   name: string
-  ownName: string
   status: GameSessionStatus
   connected: boolean
   tokenCount: number
@@ -27,7 +31,6 @@ export interface PlayerBarProps {
 
 export function PlayerBar({
   name,
-  ownName,
   status,
   connected,
   tokenCount,
@@ -39,14 +42,10 @@ export function PlayerBar({
 }: PlayerBarProps) {
   const t = useT()
   const presentation = SESSION_STATUS_PRESENTATION[status]
-  const initial = ownName === '' ? '?' : ownName.charAt(0).toUpperCase()
 
   return (
     <div className="player-bar" role="group" aria-label={t('playerBar.label')}>
       <div className="player-bar__group player-bar__identity">
-        <span className="player-bar__avatar" role="img" aria-label={ownName}>
-          {initial}
-        </span>
         <h1 className="player-bar__name">{name}</h1>
         <span className="chip">{t('session.role.player')}</span>
       </div>

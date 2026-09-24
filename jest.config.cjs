@@ -1,6 +1,15 @@
+const { availableParallelism } = require('node:os')
+
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  // Speicherbegrenzung (#140, openspec limit-test-memory): ohne maxWorkers startet Jest
+  // "Kerne - 1" Worker, jeder mit eigenem ts-jest-TypeScript-Programm - auf 20 Kernen 8,4 GB.
+  // Hoechstens 4: gemessen 3,6 GB bei 80 s statt 8,4 GB bei 141 s (design.md D1). Nie mehr als
+  // Jests Vorgabe "Kerne - 1", sonst stiege die Worker-Zahl auf kleinen CI-Runnern. Worker ueber
+  // 1 GB werden zwischen zwei Testdateien neu gestartet (D2).
+  maxWorkers: Math.max(1, Math.min(4, availableParallelism() - 1)),
+  workerIdleMemoryLimit: '1GB',
   // testMatch (Glob) statt testRegex vermeiden: jest-utils replacePathSepForGlob laesst unter
   // Windows den Backslash vor ".harness" unveraendert (der Punkt ist von der Glob-Escape-Ersetzung
   // ausgenommen), wodurch der Glob in Worktree-Pfaden wie .harness/wt/<issue> nichts mehr matcht.

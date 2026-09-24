@@ -26,13 +26,5 @@ und wirkt wie ein Bedienelement, das keines ist. Issue #137 will ihn entfernen.
   Ableitung `initial` entfallen), `src/client/session/SessionRoom.tsx` (Prop `ownName` wird
   nicht mehr übergeben; die lokale Ableitung `ownName` entfällt, `self` bleibt für die übrigen
   Verwendungen), `src/client/app/theme.css` (Regel `.player-bar__avatar` entfällt).
-- Betroffene Tests: `tests/player-bar.unit.test.tsx` (Szenario „Leiste des Spielers trägt
-  Identität, Zustand und drei Trigger") und `tests/player-bar-theme.unit.test.ts` (Szenario
-  „Leisten-Selektoren vorhanden").
 - Kein Serververtrag ändert sich; der Anzeigename des Spielers bleibt über die
   Teilnehmerkarten (Modal `Teilnehmer`) erreichbar.
-- **Haupt-Spec fehlt:** Beim Archivieren von #98 wurde `openspec/specs/player-bar/spec.md`
-  nicht angelegt; die Capability liegt nur als Delta unter
-  `openspec/changes/archive/2026-09-15-add-player-bar/specs/player-bar/spec.md`. Beim
-  Archivieren dieses Changes wird die Haupt-Spec zuerst aus diesem Archiv-Delta angelegt und
-  danach das MODIFIED-Delta angewendet (siehe tasks.md 4.1).

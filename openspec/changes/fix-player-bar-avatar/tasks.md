@@ -13,9 +13,6 @@
   eine `@media`-Abfrage (design.md D3).
 
 ## 4. Archivierung (nach menschlicher App-Freigabe)
-- [ ] 4.1 Haupt-Spec `openspec/specs/player-bar/spec.md` aus dem Archiv-Delta von #98
-  (`openspec/changes/archive/2026-09-15-add-player-bar/specs/player-bar/spec.md`, `## ADDED
-  Requirements` → `## Requirements`, Titelzeile `# player-bar Specification`) anlegen, dann das
-  MODIFIED-Delta dieses Changes anwenden; Change nach
+- [ ] 4.1 Haupt-Spec `player-bar` aus dem MODIFIED-Delta nachziehen; Change nach
   `openspec/changes/archive/YYYY-MM-DD-fix-player-bar-avatar/` verschieben (im selben
   Branch/Commit wie das Feature); `openspec validate --specs`.

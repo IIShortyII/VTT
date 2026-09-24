@@ -207,9 +207,7 @@ describe('Aufbau der Spieler-Leiste', () => {
     await raumBetreten()
 
     const gruppe = leiste()
-    // Avatar (Rolle img mit dem Anzeigenamen), Name (Ebene 1), Rollen-Pille `Spieler` (chip),
-    // Zustandspille `Läuft` (status-pill).
-    within(gruppe).getByRole('img', { name: 'Gandalf' })
+    // Name (Ebene 1), Rollen-Pille `Spieler` (chip), Zustandspille `Läuft` (status-pill).
     within(gruppe).getByRole('heading', { level: 1, name: 'Freitagsrunde' })
     expect(within(gruppe).getByText('Spieler').classList.contains('chip')).toBe(true)
     expect(within(gruppe).getByText('Läuft').closest('.status-pill')).not.toBeNull()
@@ -221,6 +219,12 @@ describe('Aufbau der Spieler-Leiste', () => {
     within(gruppe).getByRole('img', { name: 'Verbindung aktiv' })
     expect(tokens.compareDocumentPosition(anmerkungen) & FOLLOWING).toBeTruthy()
     expect(anmerkungen.compareDocumentPosition(teilnehmer) & FOLLOWING).toBeTruthy()
+
+    // Kein Avatar (#137): kein img mit dem Anzeigenamen; einziges img ist die Verbindungsanzeige.
+    expect(within(gruppe).queryByRole('img', { name: 'Gandalf' })).toBeNull()
+    const bilder = within(gruppe).getAllByRole('img')
+    expect(bilder).toHaveLength(1)
+    expect(bilder[0]).toBe(within(gruppe).getByRole('img', { name: 'Verbindung aktiv' }))
 
     // Keine Reiterliste, kein Code, keine Steuerungs-Schaltflaechen.
     expect(screen.queryByRole('tablist', { name: 'Bereiche' })).toBeNull()

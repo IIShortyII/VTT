@@ -1248,18 +1248,6 @@ main.app-shell--wide {
   flex: 1 1 auto;
 }
 
-.player-bar__avatar {
-  width: 1.9rem;
-  height: 1.9rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  border-radius: var(--radius-pill);
-  background: var(--gold-grad);
-  color: var(--gold-dark);
-}
-
 .player-bar__name {
   margin: 0;
   min-width: 0;

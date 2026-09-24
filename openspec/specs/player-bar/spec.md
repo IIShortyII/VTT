@@ -18,10 +18,12 @@ gefilterten Tokenbestand, nie einer lokalen Schätzung.
 Für die Rolle `spieler` SHALL die Raumansicht als erstes Element die Spieler-Leiste
 rendern, sobald das Acknowledgement von `session:enter` vorliegt — statt der Session-Bar und
 statt der Reiterliste `Bereiche` (`session-tabs`, „Bereiche der Raumansicht"). Die
-Spieler-Leiste SHALL Identität (Avatar, Name der Spielsitzung, Rollen-Pille), Zustandsgruppe
+Spieler-Leiste SHALL Identität (Name der Spielsitzung, Rollen-Pille), Zustandsgruppe
 (Zustandspille) und Trigger-Gruppe (die drei On-Demand-Trigger und die Verbindungsanzeige)
-tragen. Sie zeigt ausschließlich, was der Server gemeldet hat, und sendet Absichten
-(`constitution.md` §9.1); sie MUST NOT einen Sitzungscode, eine Maske, eine
+tragen. Die Identität MUST NOT einen Avatar tragen — kein Element der Rolle `img` mit dem
+Anzeigenamen des Spielers und keine Initiale; der Anzeigename bleibt über die Teilnehmerkarten
+(Modal `Teilnehmer`) erreichbar. Sie zeigt ausschließlich, was der Server gemeldet hat, und
+sendet Absichten (`constitution.md` §9.1); sie MUST NOT einen Sitzungscode, eine Maske, eine
 Umschalt-Schaltfläche, eine Kopieren-Schaltfläche, eine `Umbenennen`-Schaltfläche oder einen
 der Übergänge `Öffnen`, `Starten`, `Pausieren`, `Beenden` enthalten — der Server sendet dem
 Spieler keinen Code (`constitution.md` §9.2), und Steuerung wie Umbenennen bleiben dem
@@ -36,14 +38,16 @@ schrumpft, wird im App-Test abgenommen (`constitution.md` §3.4).
   Acknowledgement nennt `role: "spieler"`, `status: "gestartet"`, `name: "Freitagsrunde"`,
   kein Feld `code` und einen Teilnehmer `{ userId: "U", username: "sam", alias: "Gandalf" }`
 - **WHEN** die Raumansicht gerendert wird
-- **THEN** existiert genau eine Gruppe `Sitzung`; sie enthält in Dokumentreihenfolge ein
-  Element der Rolle `img` mit dem zugänglichen Namen `Gandalf` (der Avatar), die Überschrift
-  der Ebene 1 `Freitagsrunde`, die Rollen-Pille `Spieler` (Klasse `chip`), die Zustandspille
-  `Läuft` (Klasse `status-pill`), die drei Schaltflächen `Tokens`, `Anmerkungen`,
-  `Teilnehmer` in dieser Reihenfolge und die Verbindungsanzeige; die Gruppe `Sitzung` enthält
-  keine Reiterliste `Bereiche`, kein `<code>`-Element und keine Schaltfläche `Sitzungscode
-  anzeigen`, `Sitzungscode kopieren`, `Umbenennen`, `Öffnen`, `Starten`, `Pausieren` oder
-  `Beenden`; die Gruppe `Sitzung` liegt im Dokument vor der Kartenansicht
+- **THEN** existiert genau eine Gruppe `Sitzung`; sie enthält in Dokumentreihenfolge die
+  Überschrift der Ebene 1 `Freitagsrunde`, die Rollen-Pille `Spieler` (Klasse `chip`), die
+  Zustandspille `Läuft` (Klasse `status-pill`), die drei Schaltflächen `Tokens`,
+  `Anmerkungen`, `Teilnehmer` in dieser Reihenfolge und die Verbindungsanzeige (Element der
+  Rolle `img` mit dem Namen `Verbindung aktiv`); die Gruppe `Sitzung` enthält genau ein Element
+  der Rolle `img` (die Verbindungsanzeige) und keines mit dem Namen `Gandalf`, keine
+  Reiterliste `Bereiche`,
+  kein `<code>`-Element und keine Schaltfläche `Sitzungscode anzeigen`, `Sitzungscode
+  kopieren`, `Umbenennen`, `Öffnen`, `Starten`, `Pausieren` oder `Beenden`; die Gruppe
+  `Sitzung` liegt im Dokument vor der Kartenansicht
 
 ### Requirement: Verbindungsanzeige
 
@@ -208,17 +212,19 @@ Token und Anmerkungen SHALL — wie für jede Rolle — sichtbar sein.
 ### Requirement: Stylesheet der Spieler-Leiste
 
 Das Stylesheet SHALL für jeden Leisten-Selektor eine Regel enthalten — `.player-bar`,
-`.player-bar__group`, `.player-bar__identity`, `.player-bar__avatar`, `.player-bar__name`,
-`.player-bar__triggers`, `.player-bar__trigger`, `.player-bar__connection`,
-`.player-bar__badge-note`, `.badge`, `.badge--gold`, `.badge--teal` — und dabei den
-Format-Vertrag von `ui-theme` einhalten (kein Farbwert außerhalb des Tokenblocks, kein
-`@media` außer der Bewegungsabfrage, keine `animation`/`transition` außerhalb des
-Bewegungsblocks). `.player-bar__badge-note` SHALL visuell verborgen sein (für Bildschirmleser
-lesbar, ohne sichtbaren Text), damit `neue Werte` nicht allein über die Farbe getragen wird.
+`.player-bar__group`, `.player-bar__identity`, `.player-bar__name`, `.player-bar__triggers`,
+`.player-bar__trigger`, `.player-bar__connection`, `.player-bar__badge-note`, `.badge`,
+`.badge--gold`, `.badge--teal` — und dabei den Format-Vertrag von `ui-theme` einhalten (kein
+Farbwert außerhalb des Tokenblocks, kein `@media` außer der Bewegungsabfrage, keine
+`animation`/`transition` außerhalb des Bewegungsblocks). Es MUST NOT eine Regel für
+`.player-bar__avatar` enthalten. `.player-bar__badge-note` SHALL visuell verborgen sein (für
+Bildschirmleser lesbar, ohne sichtbaren Text), damit `neue Werte` nicht allein über die Farbe
+getragen wird.
 
 #### Scenario: Leisten-Selektoren vorhanden
 
 - **GIVEN** das Stylesheet ohne Kommentare, Whitespace normalisiert
 - **WHEN** nach jedem Leisten-Selektor gesucht wird
-- **THEN** ist jeder der zwölf Leisten-Selektoren vorhanden, das Stylesheet enthält genau
-  eine `@media`-Abfrage, und sie ist die Bewegungsabfrage
+- **THEN** ist jeder der elf Leisten-Selektoren vorhanden, der Selektor `.player-bar__avatar`
+  ist nicht vorhanden, das Stylesheet enthält genau eine `@media`-Abfrage, und sie ist die
+  Bewegungsabfrage

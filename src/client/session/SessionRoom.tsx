@@ -1583,16 +1583,13 @@ export function SessionRoom({ sessionId, currentUserId, onEnded, onLeave, onRemo
       // die Session-Bar, danach die Raum-Meldungen und dauerhaft die Kartenansicht - keine
       // Reiterliste, kein inline gerendertes `PlayerTokenList`/`AnnotationPanel`/Teilnehmer;
       // die drei Panels liegen ausschliesslich in ihren Modals (`dialogs`).
-      const self = state.participants.find((participant) => participant.userId === currentUserId)
       const ownedTokenCount = state.tokens.filter((token) => token.ownerId === currentUserId).length
-      const ownName = self ? displayName(self) : ''
       const annotationsDisabled = state.map === null
 
       content = (
         <>
           <PlayerBar
             name={state.name}
-            ownName={ownName}
             status={state.sessionStatus}
             connected={disconnected === null}
             tokenCount={ownedTokenCount}

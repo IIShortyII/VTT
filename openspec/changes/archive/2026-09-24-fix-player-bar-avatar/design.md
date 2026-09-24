@@ -16,9 +16,9 @@ der Rolle `img` in der Leiste.
 ## D2. Aufrufer `SessionRoom`
 
 `SessionRoom.tsx` übergibt `ownName` nicht mehr an `PlayerBar`; die lokale Zeile
-`const ownName = self ? displayName(self) : ''` im Spieler-Zweig entfällt. `self` wird dort
-weiterhin für die übrigen Verwendungen (eigene Teilnehmerkarte, Alias-Modal) benötigt und
-bleibt. Kein i18n-Schlüssel ist betroffen (der Avatar hatte keinen eigenen Text).
+`const ownName = self ? displayName(self) : ''` im Spieler-Zweig entfällt, ebenso die Ableitung
+`self` dort: sie diente nur `ownName`. Eigene Teilnehmerkarte und Alias-Modal leiten `self`
+an ihrer Stelle selbst ab und bleiben unberührt. Kein i18n-Schlüssel ist betroffen (der Avatar hatte keinen eigenen Text).
 
 ## D3. Stylesheet
 

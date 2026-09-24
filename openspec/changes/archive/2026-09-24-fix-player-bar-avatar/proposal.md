@@ -24,7 +24,7 @@ und wirkt wie ein Bedienelement, das keines ist. Issue #137 will ihn entfernen.
 - Betroffene Specs: `player-bar` (zwei MODIFIED-Requirements).
 - Betroffener Code: `src/client/session/PlayerBar.tsx` (Avatar-Span, Prop `ownName` und
   Ableitung `initial` entfallen), `src/client/session/SessionRoom.tsx` (Prop `ownName` wird
-  nicht mehr übergeben; die lokale Ableitung `ownName` entfällt, `self` bleibt für die übrigen
-  Verwendungen), `src/client/app/theme.css` (Regel `.player-bar__avatar` entfällt).
+  nicht mehr übergeben; die lokalen Ableitungen `ownName` und `self` im Spieler-Zweig
+  entfallen), `src/client/app/theme.css` (Regel `.player-bar__avatar` entfällt).
 - Kein Serververtrag ändert sich; der Anzeigename des Spielers bleibt über die
   Teilnehmerkarten (Modal `Teilnehmer`) erreichbar.

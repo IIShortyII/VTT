@@ -20,7 +20,6 @@ const LEISTEN_SELEKTOREN = [
   '.player-bar',
   '.player-bar__group',
   '.player-bar__identity',
-  '.player-bar__avatar',
   '.player-bar__name',
   '.player-bar__triggers',
   '.player-bar__trigger',
@@ -63,6 +62,9 @@ test('Leisten-Selektoren vorhanden', () => {
   // Jeder der zwoelf Leisten-Selektoren ist vorhanden.
   const fehlend = LEISTEN_SELEKTOREN.filter((sel) => !selectorPresent(norm, sel))
   expect(fehlend).toEqual([])
+
+  // Der Avatar-Selektor ist entfallen (#137).
+  expect(selectorPresent(norm, '.player-bar__avatar')).toBe(false)
 
   // Die Datei enthaelt genau ein `@media`, und das ist die Bewegungsabfrage.
   const medien = stripped.match(/@media/g) ?? []

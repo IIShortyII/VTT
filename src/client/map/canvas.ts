@@ -189,7 +189,17 @@ function hex(value: number): string {
  * `size` Pixel Kantenlaenge - danach ist die Grafik um ihren Mittelpunkt positionierbar,
  * genau wie die bisherigen `Text`-Objekte mit `anchor.set(0.5)`. */
 function iconGraphics(name: IconName, color: number, size: number): Graphics {
-  const graphics = new Graphics().svg(iconSvg(name, hex(color)))
+  // fix-icon-arc-flags (#124, design.md D4): ein Parserfehler eines einzelnen Icons darf den
+  // Canvas-Aufbau nicht abreissen - gemeldet wird er trotzdem, gezeichnet wird an seiner
+  // Stelle nichts.
+  let graphics = new Graphics()
+  try {
+    graphics.svg(iconSvg(name, hex(color)))
+  } catch (error) {
+    console.error('Icon konnte nicht gezeichnet werden:', name, error)
+    graphics.destroy()
+    graphics = new Graphics()
+  }
   graphics.pivot.set(12, 12)
   graphics.scale.set(size / 24)
   return graphics

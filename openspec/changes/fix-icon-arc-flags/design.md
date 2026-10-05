@@ -77,9 +77,8 @@ Mocks für `createMapCanvas` stünde in keinem Verhältnis zu vier Zeilen Fehler
 tritt der Fall für Registry-Icons nicht mehr auf; der Fang ist Absicherung gegen künftige
 Parser-Eigenheiten. Abnahme: reviewer (Code) und menschlicher App-Test.
 
-## D5. Testdatei
+## D5. Schnittstelle für die Szenarien
 
-Die Szenarien von „Icon-Markup für die Karte" landen in `tests/icon-svg.unit.test.ts`
-(Umgebung `node`, kein jsdom-Docblock nötig). Importe:
-`normalizeArcFlags` und `iconSvg` aus `src/client/ui/icon-svg.ts`, `ICON_NAMES` aus
-`src/client/ui/icons.ts`.
+Die Szenarien von „Icon-Markup für die Karte" laufen als Unit-Tests unter der Umgebung `node`
+(kein jsdom). Sie nutzen `normalizeArcFlags` und `iconSvg` aus `src/client/ui/icon-svg.ts`
+sowie `ICON_NAMES` aus `src/client/ui/icons.ts`.

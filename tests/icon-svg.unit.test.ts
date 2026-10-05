@@ -59,8 +59,7 @@ test('Jedes Registry-Icon liefert getrennte Arc-Flags', async () => {
     const markup = iconSvg(name, '#ffffff')
     const dWerte = [...markup.matchAll(/\sd="([^"]*)"/g)].map((treffer) => treffer[1] ?? '')
 
-    // Name im Vergleichsobjekt, damit ein Fehlschlag das betroffene Icon nennt.
-    expect({ name, hatPfad: dWerte.length > 0 }).toEqual({ name, hatPfad: true })
+    // Icons nur aus circle/rect/line haben kein d-Attribut und tragen nichts bei (Spec-THEN).
     for (const d of dWerte) {
       expect({ name, d: normalizeArcFlags(d) }).toEqual({ name, d })
     }

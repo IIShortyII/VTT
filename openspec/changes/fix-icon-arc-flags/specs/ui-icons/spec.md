@@ -38,6 +38,6 @@ genau ein Leerzeichen ein und MUST NOT sonst ein Zeichen der Pfaddaten veränder
 - **GIVEN** jeder Name aus `ICON_NAMES`
 - **WHEN** `iconSvg(name, '#ffffff')` aufgerufen wird und alle `d`-Attribute des Markups
   gelesen werden
-- **THEN** hat jedes Markup mindestens ein `d`-Attribut, jeder `d`-Wert ist gleich
-  `normalizeArcFlags(<d-Wert>)`, und das Markup von `frightened` enthält die Zeichenfolge
-  `d="M9 16a5 5 0 0 1 6 0"`
+- **THEN** ist jeder `d`-Wert gleich `normalizeArcFlags(<d-Wert>)` (Icons, die nur aus
+  `<circle>`, `<rect>` oder `<line>` bestehen, haben kein `d`-Attribut und tragen nichts bei),
+  und das Markup von `frightened` enthält die Zeichenfolge `d="M9 16a5 5 0 0 1 6 0"`
